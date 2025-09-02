@@ -5,7 +5,7 @@
 Before you begin, ensure you have the following installed:
 
 - CMake (version 3.15 or higher)
-- A C++ compiler (GCC, Clang, or MSVC)
+- A C++17 compiler (GCC, Clang, or MSVC)
 
 Also, all documentation and testing has been done on Ubuntu Linux.
 

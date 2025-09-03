@@ -133,6 +133,7 @@ enum class TokenType : uint8_t {
     ADD = '+',
     BRACE_CLOSE = '}',
     BRACE_OPEN = '{',
+    NEWLINE = '\n',
     PARENTHESIS_CLOSE = ')',
     PARENTHESIS_OPEN = '(',
     TYPE_SEPARATOR = ':',
@@ -157,6 +158,7 @@ constexpr String to_string(TokenType type) {
         case TokenType::BRACE_OPEN:        return STR("{");
         case TokenType::CONST_DEF:         return STR("const_def");
         case TokenType::IDENTIFIER:        return STR("identifier");
+        case TokenType::NEWLINE:           return STR("newline");
         case TokenType::PARENTHESIS_CLOSE: return STR(")");
         case TokenType::PARENTHESIS_OPEN:  return STR("(");
         case TokenType::TYPE_SEPARATOR:    return STR(":");
@@ -202,6 +204,13 @@ Array<Token> tokenize(String *input, ArenaAllocator *allocator) {
                         end - begin + 1
                     )
                 }
+            };
+            result[current_token_index] = token;
+            current_token_index++;
+        }
+        else if (c == static_cast<char>(TokenType::NEWLINE)) {
+            auto token = Token {
+                .type = TokenType::NEWLINE
             };
             result[current_token_index] = token;
             current_token_index++;

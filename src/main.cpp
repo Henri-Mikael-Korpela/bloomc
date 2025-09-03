@@ -129,6 +129,7 @@ enum class TokenType : uint8_t {
     UNKNOWN = 0,
     ARROW,
     CONST_DEF,
+    END,
     IDENTIFIER,
     INDENT,
     ADD = '+',
@@ -163,6 +164,7 @@ constexpr String to_string(TokenType type) {
         case TokenType::BRACE_OPEN:        return STR("{");
         case TokenType::COMMA:             return STR(",");
         case TokenType::CONST_DEF:         return STR("const_def");
+        case TokenType::END:               return STR("end");
         case TokenType::IDENTIFIER:        return STR("identifier");
         case TokenType::INDENT:            return STR("indent");
         case TokenType::NEWLINE:           return STR("newline");
@@ -314,6 +316,11 @@ Array<Token> tokenize(String *input, ArenaAllocator *allocator) {
             current_token_index++;
         }
     }
+
+    result[current_token_index] = Token {
+        .type = TokenType::END
+    };
+    current_token_index++;
 
     // The final token count is known now, shrink the allocation
     tokens_block = shrink_last_allocation(allocator, &tokens_block, current_token_index);

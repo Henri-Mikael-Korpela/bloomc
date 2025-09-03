@@ -134,6 +134,7 @@ enum class TokenType : uint8_t {
     BRACE_OPEN = '{',
     PARENTHESIS_CLOSE = ')',
     PARENTHESIS_OPEN = '(',
+    TYPE_SEPARATOR = ':',
 };
 
 struct Token {
@@ -156,6 +157,7 @@ constexpr String to_string(TokenType type) {
         case TokenType::IDENTIFIER:        return STR("identifier");
         case TokenType::PARENTHESIS_CLOSE: return STR(")");
         case TokenType::PARENTHESIS_OPEN:  return STR("(");
+        case TokenType::TYPE_SEPARATOR:    return STR(":");
         default:                           return STR("undefined");
     }
     #undef STR
@@ -240,11 +242,21 @@ Array<Token> tokenize(String *input, ArenaAllocator *allocator) {
             result[current_token_index] = token;
             current_token_index++;
         }
-        else if (c == ':') {
-            if (char next_char = next_char_or_null_char(input, i); next_char == ':') {
+        else if (c == static_cast<char>(TokenType::TYPE_SEPARATOR)) {
+            if (
+                char next_char = next_char_or_null_char(input, i);
+                next_char == static_cast<char>(TokenType::TYPE_SEPARATOR)
+            ) {
                 i++;
                 auto token = Token {
                     .type = TokenType::CONST_DEF,
+                };
+                result[current_token_index] = token;
+                current_token_index++;
+            }
+            else {
+                auto token = Token {
+                    .type = TokenType::TYPE_SEPARATOR
                 };
                 result[current_token_index] = token;
                 current_token_index++;

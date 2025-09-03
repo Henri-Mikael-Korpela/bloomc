@@ -130,6 +130,7 @@ enum class TokenType : uint8_t {
     ARROW,
     CONST_DEF,
     IDENTIFIER,
+    ADD = '+',
     BRACE_CLOSE = '}',
     BRACE_OPEN = '{',
     PARENTHESIS_CLOSE = ')',
@@ -150,6 +151,7 @@ static_assert(sizeof(Token) == 24, "Token size is not 24 bytes");
 constexpr String to_string(TokenType type) {
     #define STR(x) String::from_null_terminated_str(const_cast<char*>(x))
     switch (type) {
+        case TokenType::ADD:               return STR("+");
         case TokenType::ARROW:             return STR("->");
         case TokenType::BRACE_CLOSE:       return STR("}");
         case TokenType::BRACE_OPEN:        return STR("{");
@@ -242,10 +244,10 @@ Array<Token> tokenize(String *input, ArenaAllocator *allocator) {
             result[current_token_index] = token;
             current_token_index++;
         }
-        else if (c == static_cast<char>(TokenType::TYPE_SEPARATOR)) {
+        else if (c == ':') {
             if (
                 char next_char = next_char_or_null_char(input, i);
-                next_char == static_cast<char>(TokenType::TYPE_SEPARATOR)
+                next_char == ':'
             ) {
                 i++;
                 auto token = Token {
@@ -256,11 +258,18 @@ Array<Token> tokenize(String *input, ArenaAllocator *allocator) {
             }
             else {
                 auto token = Token {
-                    .type = TokenType::TYPE_SEPARATOR
+                    .type = TokenType::TYPE_SEPARATOR,
                 };
                 result[current_token_index] = token;
                 current_token_index++;
             }
+        }
+        else if (c == static_cast<char>(TokenType::ADD)) {
+            auto token = Token {
+                .type = TokenType::ADD
+            };
+            result[current_token_index] = token;
+            current_token_index++;
         }
     }
 

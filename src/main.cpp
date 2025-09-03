@@ -129,6 +129,8 @@ enum class TokenType : uint8_t {
     UNKNOWN = 0,
     CONST_DEF,
     IDENTIFIER,
+    PARENTHESIS_CLOSE = ')',
+    PARENTHESIS_OPEN = '(',
 };
 
 struct Token {
@@ -144,9 +146,11 @@ static_assert(sizeof(Token) == 24, "Token size is not 24 bytes");
 constexpr String to_string(TokenType type) {
     #define STR(x) String::from_null_terminated_str(const_cast<char*>(x))
     switch (type) {
-        case TokenType::CONST_DEF:  return STR("const_def");
-        case TokenType::IDENTIFIER: return STR("identifier");
-        default:                    return STR("undefined");
+        case TokenType::CONST_DEF:         return STR("const_def");
+        case TokenType::IDENTIFIER:        return STR("identifier");
+        case TokenType::PARENTHESIS_CLOSE: return STR(")");
+        case TokenType::PARENTHESIS_OPEN:  return STR("(");
+        default:                           return STR("undefined");
     }
     #undef STR
 }
@@ -188,6 +192,20 @@ Array<Token> tokenize(String *input, ArenaAllocator *allocator) {
                         end - begin + 1
                     )
                 }
+            };
+            result[current_token_index] = token;
+            current_token_index++;
+        }
+        else if (c == static_cast<char>(TokenType::PARENTHESIS_CLOSE)) {
+            auto token = Token {
+                .type = TokenType::PARENTHESIS_CLOSE
+            };
+            result[current_token_index] = token;
+            current_token_index++;
+        }
+        else if (c == static_cast<char>(TokenType::PARENTHESIS_OPEN)) {
+            auto token = Token {
+                .type = TokenType::PARENTHESIS_OPEN
             };
             result[current_token_index] = token;
             current_token_index++;
@@ -275,7 +293,7 @@ int main(int argc, char* argv[]) {
         );
         switch (token.type) {
             case TokenType::IDENTIFIER:
-                printf("\tcontent=%.*s\n\tlength=%zu\n",
+                printf("\t%.*s (%zu chars)\n",
                     static_cast<int>(token.identifier.content.length),
                     token.identifier.content.data,
                     token.identifier.content.length

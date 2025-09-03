@@ -130,6 +130,7 @@ enum class TokenType : uint8_t {
     ARROW,
     CONST_DEF,
     IDENTIFIER,
+    INDENT,
     ADD = '+',
     BRACE_CLOSE = '}',
     BRACE_OPEN = '{',
@@ -145,6 +146,9 @@ struct Token {
         struct {
             String content;
         } identifier;
+        struct {
+            size_t level;
+        } indent;
     };
 };
 static_assert(sizeof(Token) == 24, "Token size is not 24 bytes");
@@ -158,6 +162,7 @@ constexpr String to_string(TokenType type) {
         case TokenType::BRACE_OPEN:        return STR("{");
         case TokenType::CONST_DEF:         return STR("const_def");
         case TokenType::IDENTIFIER:        return STR("identifier");
+        case TokenType::INDENT:            return STR("indent");
         case TokenType::NEWLINE:           return STR("newline");
         case TokenType::PARENTHESIS_CLOSE: return STR(")");
         case TokenType::PARENTHESIS_OPEN:  return STR("(");
@@ -214,6 +219,25 @@ Array<Token> tokenize(String *input, ArenaAllocator *allocator) {
             };
             result[current_token_index] = token;
             current_token_index++;
+        }
+        else if (c == ' ') {
+            if (char next_char = next_char_or_null_char(input, i); next_char == ' ') {
+                i++;
+                // 2 for the number of spaces that were consumed already
+                size_t space_begin = i - 2;
+                do {
+                    i++;
+                    next_char = next_char_or_null_char(input, i);
+                } while (next_char == ' ');
+                auto token = Token {
+                    .type = TokenType::INDENT,
+                    .indent = {
+                        .level = i - space_begin
+                    }
+                };
+                result[current_token_index] = token;
+                current_token_index++;
+            }
         }
         else if (c == '-') {
             if (char next_char = next_char_or_null_char(input, i); next_char == '>') {
@@ -358,6 +382,12 @@ int main(int argc, char* argv[]) {
                     token.identifier.content.data,
                     token.identifier.content.length
                 );
+                break;
+            case TokenType::INDENT:
+                printf("\tIndentation level: %zu\n",
+                    token.indent.level
+                );
+                break;
         }
     }
 

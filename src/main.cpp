@@ -330,9 +330,9 @@ int main(int argc, char* argv[]) {
     }
 
     byte *mapped_memory = static_cast<byte*>(mmap(nullptr, file_stat.st_size, PROT_READ, MAP_PRIVATE, fd, 0));
+    close(fd);
     if (mapped_memory == MAP_FAILED) {
         perror("Error mapping the input source file");
-        close(fd);
         return 1;
     }
 
@@ -370,7 +370,6 @@ int main(int argc, char* argv[]) {
     }
 
     munmap(mapped_memory, file_stat.st_size);
-    close(fd);
 
     printf("Main memory left: %zu\n", memory_left(&main_allocator));
     return 0;

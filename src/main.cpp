@@ -191,6 +191,15 @@ Array<Token> tokenize(String *input, ArenaAllocator *allocator) {
     };
     size_t current_token_index = 0;
 
+    auto append_token = [&](Token &&token) {
+        result[current_token_index] = token;
+        current_token_index++;
+    };
+    auto append_token_of_type = [&](TokenType token_type) {
+        result[current_token_index] = { .type = token_type };
+        current_token_index++;
+    };
+
     for (size_t i = 0; i < input->length; i++) {
         char c = char_at(input, i);
         if (isalpha(c)) {
@@ -205,7 +214,7 @@ Array<Token> tokenize(String *input, ArenaAllocator *allocator) {
                 }
             }
             auto end = i;
-            auto token = Token {
+            append_token({
                 .type = TokenType::IDENTIFIER,
                 .identifier = {
                     .content = String::from_data_and_length(
@@ -213,23 +222,13 @@ Array<Token> tokenize(String *input, ArenaAllocator *allocator) {
                         end - begin + 1
                     )
                 }
-            };
-            result[current_token_index] = token;
-            current_token_index++;
+            });
         }
         else if (c == static_cast<char>(TokenType::COMMA)) {
-            auto token = Token {
-                .type = TokenType::COMMA
-            };
-            result[current_token_index] = token;
-            current_token_index++;
+            append_token_of_type(TokenType::COMMA);
         }
         else if (c == static_cast<char>(TokenType::NEWLINE)) {
-            auto token = Token {
-                .type = TokenType::NEWLINE
-            };
-            result[current_token_index] = token;
-            current_token_index++;
+            append_token_of_type(TokenType::NEWLINE);
         }
         else if (c == ' ') {
             if (char next_char = next_char_or_null_char(input, i); next_char == ' ') {
@@ -240,53 +239,31 @@ Array<Token> tokenize(String *input, ArenaAllocator *allocator) {
                     i++;
                     next_char = next_char_or_null_char(input, i);
                 } while (next_char == ' ');
-                auto token = Token {
+                append_token({
                     .type = TokenType::INDENT,
                     .indent = {
                         .level = i - space_begin
                     }
-                };
-                result[current_token_index] = token;
-                current_token_index++;
+                });
             }
         }
         else if (c == '-') {
             if (char next_char = next_char_or_null_char(input, i); next_char == '>') {
                 i++;
-                auto token = Token {
-                    .type = TokenType::ARROW
-                };
-                result[current_token_index] = token;
-                current_token_index++;
+                append_token_of_type(TokenType::ARROW);
             }
         }
         else if (c == static_cast<char>(TokenType::BRACE_CLOSE)) {
-            auto token = Token {
-                .type = TokenType::BRACE_CLOSE
-            };
-            result[current_token_index] = token;
-            current_token_index++;
+            append_token_of_type(TokenType::BRACE_CLOSE);
         }
         else if (c == static_cast<char>(TokenType::BRACE_OPEN)) {
-            auto token = Token {
-                .type = TokenType::BRACE_OPEN
-            };
-            result[current_token_index] = token;
-            current_token_index++;
+            append_token_of_type(TokenType::BRACE_OPEN);
         }
         else if (c == static_cast<char>(TokenType::PARENTHESIS_CLOSE)) {
-            auto token = Token {
-                .type = TokenType::PARENTHESIS_CLOSE
-            };
-            result[current_token_index] = token;
-            current_token_index++;
+            append_token_of_type(TokenType::PARENTHESIS_CLOSE);
         }
         else if (c == static_cast<char>(TokenType::PARENTHESIS_OPEN)) {
-            auto token = Token {
-                .type = TokenType::PARENTHESIS_OPEN
-            };
-            result[current_token_index] = token;
-            current_token_index++;
+            append_token_of_type(TokenType::PARENTHESIS_OPEN);
         }
         else if (c == ':') {
             if (
@@ -294,33 +271,18 @@ Array<Token> tokenize(String *input, ArenaAllocator *allocator) {
                 next_char == ':'
             ) {
                 i++;
-                auto token = Token {
-                    .type = TokenType::CONST_DEF,
-                };
-                result[current_token_index] = token;
-                current_token_index++;
+                append_token_of_type(TokenType::CONST_DEF);
             }
             else {
-                auto token = Token {
-                    .type = TokenType::TYPE_SEPARATOR,
-                };
-                result[current_token_index] = token;
-                current_token_index++;
+                append_token_of_type(TokenType::TYPE_SEPARATOR);
             }
         }
         else if (c == static_cast<char>(TokenType::ADD)) {
-            auto token = Token {
-                .type = TokenType::ADD
-            };
-            result[current_token_index] = token;
-            current_token_index++;
+            append_token_of_type(TokenType::ADD);
         }
     }
 
-    result[current_token_index] = Token {
-        .type = TokenType::END
-    };
-    current_token_index++;
+    append_token_of_type(TokenType::END);
 
     // The final token count is known now, shrink the allocation
     tokens_block = shrink_last_allocation(allocator, &tokens_block, current_token_index);

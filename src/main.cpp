@@ -132,6 +132,7 @@ enum class TokenType : uint8_t {
     END,
     IDENTIFIER,
     INDENT,
+    VAR_DEF,
     ADD = '+',
     BRACE_CLOSE = '}',
     BRACE_OPEN = '{',
@@ -171,6 +172,7 @@ constexpr String to_string(TokenType type) {
         case TokenType::PARENTHESIS_CLOSE: return STR(")");
         case TokenType::PARENTHESIS_OPEN:  return STR("(");
         case TokenType::TYPE_SEPARATOR:    return STR(":");
+        case TokenType::VAR_DEF:           return STR("var_def");
         default:                           return STR("undefined");
     }
     #undef STR
@@ -272,6 +274,10 @@ Array<Token> tokenize(String *input, ArenaAllocator *allocator) {
             ) {
                 i++;
                 append_token_of_type(TokenType::CONST_DEF);
+            }
+            else if(next_char == '=') {
+                i++;
+                append_token_of_type(TokenType::VAR_DEF);
             }
             else {
                 append_token_of_type(TokenType::TYPE_SEPARATOR);

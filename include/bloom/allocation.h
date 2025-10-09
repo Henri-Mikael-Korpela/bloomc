@@ -2,6 +2,7 @@
 #define __BLOOM_H_ALLOCATION__
 #include <cassert>
 #include <cstdlib>
+#include <cstring>
 #include <bloom/array.h>
 #include <bloom/types.h>
 

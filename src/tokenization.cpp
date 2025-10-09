@@ -1,8 +1,10 @@
 #include <cctype>
 #include <cstdio>
-#include "tokenization.h"
+#include <bloom/print.h>
+#include <bloom/tokenization.h>
+#include <cstring>
 
-static char next_char_or_null_char(String *str, size_t current_index) {
+static auto next_char_or_null_char(String *str, size_t current_index) -> char {
     if (current_index + 1 < str->length) {
         return char_at(str, current_index + 1);
     } else {
@@ -15,10 +17,10 @@ static char next_char_or_null_char(String *str, size_t current_index) {
  *
  * The tokens are stored in an ArenaAllocator for efficient memory management.
  */
-Array<Token> tokenize(String *input, ArenaAllocator *allocator) {
+auto tokenize(String *input, ArenaAllocator *allocator) -> Array<Token> {
     // Allocate initially based on the input string length and
     // shrink the allocation later once the final token count is known
-    auto tokens_block = allocate_object_array<Token>(allocator, input->length);
+    auto tokens_block = allocate_array<Token>(allocator, input->length);
     auto result = Array<Token> {
         .data = tokens_block.data,
         .length = tokens_block.length
@@ -48,12 +50,21 @@ Array<Token> tokenize(String *input, ArenaAllocator *allocator) {
                 }
             }
             auto end = i;
+            auto identifier_len = end - begin + 1;
+            if (identifier_len == 4) {
+                // Check for the 'proc' keyword
+                if (strncmp(input->data + begin, TOKEN_KEYWORD_PROC, identifier_len) == 0) {
+                    append_token_of_type(TokenType::KEYWORD_PROC);
+                    continue;
+                }
+            }
+            // Otherwise, it's a regular identifier
             append_token({
                 .type = TokenType::IDENTIFIER,
                 .identifier = {
                     .content = String::from_data_and_length(
                         input->data + begin,
-                        end - begin + 1
+                        identifier_len
                     )
                 }
             });
@@ -144,6 +155,6 @@ Array<Token> tokenize(String *input, ArenaAllocator *allocator) {
     // The final token count is known now, shrink the allocation
     tokens_block = shrink_last_allocation(allocator, &tokens_block, current_token_index);
     result.length = tokens_block.length;
-    printf("Tokens block allocation size: %zu (%zu tokens)\n", allocation_size(&tokens_block), tokens_block.length);
+    print("Tokens block allocation size: % (% tokens)\n", allocation_size(&tokens_block), tokens_block.length);
     return result;
 }

@@ -2,9 +2,9 @@
 #define __BLOOM_H_TOKENIZATION__
 #include <cstddef>
 #include <cstdint>
-#include "array.h"
-#include "allocation.h"
-#include "string.h"
+#include <bloom/array.h>
+#include <bloom/allocation.h>
+#include <bloom/string.h>
 
 enum class TokenType : uint8_t {
     UNKNOWN = 0,
@@ -14,6 +14,7 @@ enum class TokenType : uint8_t {
     IDENTIFIER,
     INDENT,
     INTEGER_LITERAL,
+    KEYWORD_PROC,
     VAR_DEF,
     ADD = '+',
     BRACE_CLOSE = '}',
@@ -24,6 +25,8 @@ enum class TokenType : uint8_t {
     PARENTHESIS_OPEN = '(',
     TYPE_SEPARATOR = ':',
 };
+
+const auto TOKEN_KEYWORD_PROC = "proc";
 
 struct Token {
     TokenType type;
@@ -44,8 +47,8 @@ struct Token {
 };
 static_assert(sizeof(Token) == 24, "Token size is not 24 bytes");
 
-constexpr String to_string(TokenType type) {
-    #define STR(x) String::from_null_terminated_str(const_cast<char*>(x))
+constexpr auto to_string(TokenType type) -> String {
+    #define STR(x) String::from_null_terminated_str(x)
     switch (type) {
         case TokenType::ADD:               return STR("+");
         case TokenType::ARROW:             return STR("->");
@@ -57,6 +60,7 @@ constexpr String to_string(TokenType type) {
         case TokenType::IDENTIFIER:        return STR("identifier");
         case TokenType::INDENT:            return STR("indent");
         case TokenType::INTEGER_LITERAL:   return STR("integer_literal");
+        case TokenType::KEYWORD_PROC:      return STR(TOKEN_KEYWORD_PROC);
         case TokenType::NEWLINE:           return STR("newline");
         case TokenType::PARENTHESIS_CLOSE: return STR(")");
         case TokenType::PARENTHESIS_OPEN:  return STR("(");
@@ -72,6 +76,6 @@ constexpr String to_string(TokenType type) {
  *
  * The tokens are stored in an ArenaAllocator for efficient memory management.
  */
-Array<Token> tokenize(String *input, ArenaAllocator *allocator);
+auto tokenize(String *input, ArenaAllocator *allocator) -> Array<Token>;
 
 #endif // __BLOOM_H_TOKENIZATION__

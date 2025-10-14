@@ -44,6 +44,9 @@ static auto tokens_peek(TokenIterator *iter) -> Token* {
 }
 
 auto parse(Array<Token> *tokens, ArenaAllocator *allocator) -> Array<ASTNode> {
+    auto types_block = allocate_array<TypeASTNode>(allocator, tokens->length);
+    size_t current_type_index = 0;
+
     // Store the initial allocation offset in order to resize
     // both the nodes array and the proc params array later
     auto initial_marker = allocator_marker_from_current_offset(allocator);
@@ -51,7 +54,7 @@ auto parse(Array<Token> *tokens, ArenaAllocator *allocator) -> Array<ASTNode> {
     auto nodes_block = allocate_array<ASTNode>(allocator, tokens->length);
     size_t current_node_index = 0;
 
-    auto proc_params_block = allocate_array<AstNodeProcParameter>(allocator, tokens->length);
+    auto proc_params_block = allocate_array<ProcParameterASTNode>(allocator, tokens->length);
     size_t current_proc_param_index = 0;
 
     auto append_node = [&](ASTNode &&node) {
@@ -93,7 +96,7 @@ auto parse(Array<Token> *tokens, ArenaAllocator *allocator) -> Array<ASTNode> {
                     }
                     else if(token_is_of_type(peeked_token, TokenType::IDENTIFIER)) {
                         String param_name = peeked_token->identifier.content;
-                        proc_params_block.data[current_proc_param_index] = AstNodeProcParameter {
+                        proc_params_block.data[current_proc_param_index] = ProcParameterASTNode {
                             .name = param_name
                         };
                         current_proc_param_index++;
@@ -115,6 +118,27 @@ auto parse(Array<Token> *tokens, ArenaAllocator *allocator) -> Array<ASTNode> {
                     }
                 } while(true);
 
+                // Parse procedure return type if it exists before the arrow operator
+                TypeASTNode *return_type_node;
+                if (
+                    auto next_node = tokens_next(&tokens_iter);
+                    token_is_of_type(next_node, TokenType::IDENTIFIER)
+                ) {
+                    return_type_node = &types_block.data[current_type_index];
+                    current_type_index++;
+                    *return_type_node = TypeASTNode {
+                        .name = next_node->identifier.content,
+                    };
+                }
+                // If the next token is an arrow operator, meaning there is no return type
+                else if (token_is_of_type(next_node, TokenType::ARROW)) {
+                    return_type_node = nullptr;
+                }
+                else {
+                    eprint("Error: Unexpected token after the procedure parameter list.\n");
+                    goto return_result;
+                }
+
                 auto proc_params = to_array(&proc_params_block);
                 append_node(ASTNode{ 
                     .type = ASTNodeType::PROC_DEF,
@@ -124,7 +148,8 @@ auto parse(Array<Token> *tokens, ArenaAllocator *allocator) -> Array<ASTNode> {
                             &proc_params,
                             proc_param_begin_index,
                             current_proc_param_index - proc_param_begin_index
-                        )
+                        ),
+                        return_type_node = return_type_node,
                     }
                 });
             }
@@ -140,7 +165,7 @@ auto parse(Array<Token> *tokens, ArenaAllocator *allocator) -> Array<ASTNode> {
         auto new_nodes_block = allocate_array_from_copy<ASTNode>(allocator, &nodes_block_arr);
 
         auto old_proc_params_arr = slice_by_offset(to_array(&proc_params_block), 0, current_proc_param_index);
-        auto old_proc_params_block = allocate_array_from_copy<AstNodeProcParameter>(allocator, &old_proc_params_arr);
+        auto old_proc_params_block = allocate_array_from_copy<ProcParameterASTNode>(allocator, &old_proc_params_arr);
 
         // Reset the allocator offset to the initial value and re-allocate
         // the nodes and proc params blocks to be tightly packed
@@ -152,7 +177,7 @@ auto parse(Array<Token> *tokens, ArenaAllocator *allocator) -> Array<ASTNode> {
             "Node count mismatch after re-allocation");
 
         auto new_proc_params_arr = to_array(&old_proc_params_block);
-        auto new_proc_params_block = allocate_array_from_copy<AstNodeProcParameter>(allocator, &new_proc_params_arr);
+        auto new_proc_params_block = allocate_array_from_copy<ProcParameterASTNode>(allocator, &new_proc_params_arr);
         assert(new_proc_params_block.length == current_proc_param_index &&
             "Proc parameter count mismatch after re-allocation");
 

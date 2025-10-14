@@ -9,19 +9,22 @@ enum class ASTNodeType : uint8_t {
     PROC_DEF,
 };
 
-struct AstNodeProcParameter {
+struct ProcParameterASTNode {
     String name;
 };
-static_assert(sizeof(AstNodeProcParameter) == 16, "AstNodeProcParameter size is not 16 bytes");
+
+struct TypeASTNode {
+    String name;
+};
 
 struct ASTNode {
     ASTNodeType type;
     struct {
         String name;
-        Array<AstNodeProcParameter> parameters;
+        Array<ProcParameterASTNode> parameters;
+        TypeASTNode *return_type;
     } proc_def;
 };
-static_assert(sizeof(ASTNode) == 40, "ASTNode size is not 40 bytes");
 
 extern auto parse(Array<Token> *tokens, ArenaAllocator *allocator) -> Array<ASTNode>;
 

@@ -101,6 +101,8 @@ int main(int argc, char* argv[]) {
     // Parse the tokens into an AST
     auto ast_nodes = parse(&tokens, &main_allocator);
 
+    auto MISSING_TYPE = String::from_null_terminated_str("(none)");
+
     for (auto &node : ast_nodes) {
         print("AST Node type: %\n", to_string(node.type));
         switch (node.type) {
@@ -114,6 +116,10 @@ int main(int argc, char* argv[]) {
                     auto &param = node.proc_def.parameters[i];
                     print("\t\t%: % (% chars)\n", i, param.name, param.name.length);
                 }
+                String return_type_name = node.proc_def.return_type
+                    ? node.proc_def.return_type->name
+                    : MISSING_TYPE;
+                print("\tProcedure return type: %\n", return_type_name);
                 break;
         }
     }

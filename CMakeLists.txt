@@ -5,12 +5,16 @@ project(bloomc)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
+# Disable exceptions
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fno-exceptions")
+
 add_executable(bloomc
     src/allocation.cpp
     src/parsing.cpp
     src/print.cpp
     src/string.cpp
     src/tokenization.cpp
+    src/transpilation.cpp
     src/main.cpp
 )
 

@@ -6,8 +6,8 @@
 #include <unistd.h>
 
 #include <bloom/defer.h>
-#include <bloom/parsing.h>
 #include <bloom/print.h>
+#include <bloom/transpilation.h>
 
 constexpr size_t kb(size_t n) { return n * 1024; }
 constexpr size_t mb(size_t n) { return n * 1024 * 1024; }
@@ -104,8 +104,17 @@ int main(int argc, char* argv[]) {
     auto MISSING_TYPE = String::from_null_terminated_str("(none)");
 
     for (auto &node : ast_nodes) {
+        if (node.parent != nullptr) {
+            continue;
+        }
         print("AST Node type: %\n", to_string(node.type));
         switch (node.type) {
+            case ASTNodeType::BINARY_ADD:
+                print("\tBinary operation: % + %\n",
+                    node.binary_operation.identifier_left,
+                    node.binary_operation.identifier_right
+                );
+                break;
             case ASTNodeType::PROC_DEF:
                 print("\tProcedure name: % (% chars)\n",
                     node.proc_def.name,
@@ -120,9 +129,17 @@ int main(int argc, char* argv[]) {
                     ? node.proc_def.return_type->name
                     : MISSING_TYPE;
                 print("\tProcedure return type: %\n", return_type_name);
+                printf("\tProcedure body:\n");
+                for (auto &statement : node.proc_def.body) {
+                    printf("\t\tStatement\n");
+                }
                 break;
         }
     }
+
+    // Transpile AST nodes into C source code
+    auto target_file_path = String::from_null_terminated_str("/home/henri/Personal/bloomc2/sum.c");
+    transpile_to_c(&target_file_path, &ast_nodes, &main_allocator);
 
     print(
         "Main memory left: %, used: %\n",

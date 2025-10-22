@@ -1,6 +1,7 @@
 #ifndef __BLOOM_H_ARRAY__
 #define __BLOOM_H_ARRAY__
 #include <cassert>
+#include <cstddef>
 
 template<typename ElementType>
 struct Array {
@@ -42,7 +43,7 @@ constexpr auto slice_by_offset(Array<ElementType> &&array, size_t begin, size_t 
 }
 
 template<typename ElementType>
-auto slice_by_length(Array<ElementType> *array, size_t begin, size_t length) -> auto {
+auto slice_by_length(Array<ElementType> *array, size_t begin, size_t length) -> Array<ElementType> {
     assert(begin + length <= array->length && "Slice end out of bounds");
     return Array<ElementType> {
         .data = array->data + begin,

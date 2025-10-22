@@ -32,13 +32,13 @@ extern void print(FILE *file, char const *format);
  * You can use the '%' character as a placeholder
  * without typing the type of the argument.
  */
-template <typename T, typename... Args>
-void print(FILE *file, char const *format, T &&value, Args &&...args) {
+template <typename PointerT, typename... Args>
+void print(FILE *file, char const *format, PointerT &&value, Args &&...args) {
     FILE *current_file = _bloom_test_get_file(file);
     // This involves recursion
     for (; *format; ++format) {
         if (*format == '%') {
-            print_value(current_file, std::forward<T>(value));
+            print_value(current_file, std::forward<PointerT>(value));
             print(current_file, format + 1, std::forward<Args>(args)...);
             return;
         }
@@ -55,9 +55,9 @@ void print(FILE *file, char const *format, T &&value, Args &&...args) {
  * You can use the '%' character as a placeholder
  * without typing the type of the argument.
  */
-template <typename T, typename... Args>
-constexpr void print(char const *format, T &&value, Args &&...args) {
-    print(_bloom_test_get_file(stdout), format, std::forward<T>(value), std::forward<Args>(args)...);
+template <typename PointerT, typename... Args>
+constexpr void print(char const *format, PointerT &&value, Args &&...args) {
+    print(_bloom_test_get_file(stdout), format, std::forward<PointerT>(value), std::forward<Args>(args)...);
 }
 
 /**
@@ -71,9 +71,9 @@ extern void eprint(char const *format);
  * You can use the '%' character as a placeholder
  * without typing the type of the argument.
  */
-template <typename T, typename... Args>
-constexpr void eprint(char const *format, T &&value, Args &&...args) {
-    print(stderr, format, std::forward<T>(value), std::forward<Args>(args)...);
+template <typename PointerT, typename... Args>
+constexpr void eprint(char const *format, PointerT &&value, Args &&...args) {
+    print(stderr, format, std::forward<PointerT>(value), std::forward<Args>(args)...);
 }
 
 #endif // __BLOOM_H_PRINT__

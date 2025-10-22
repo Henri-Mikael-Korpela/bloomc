@@ -37,17 +37,7 @@ inline auto allocator_marker_from_current_offset(ArenaAllocator *allocator) -> A
 }
 
 /**
- * Allocates an array of objects of type ElementType.
- * 
- * @example Allocation of an array of integers.
- * #include <cstdio>
- * #include <bloom/allocation.h>
- * >>> auto block = ArenaAllocator(256);
- * >>> auto arr = allocate_array<int32_t>(&block, 2); // 8 bytes
- * >>> arr.data[0] = 42;
- * >>> arr.data[1] = 43;
- * >>> print("Memory left: %\n", memory_left(&block));
- * Memory left: 248
+ * Allocates an array of the given length from the arena allocator.
  */
 template<typename ElementType>
 auto allocate_array(ArenaAllocator *allocator, size_t length) -> AllocatedArrayBlock<ElementType> {
@@ -143,6 +133,11 @@ extern auto reclaim_memory_by_markers(
     AllocatorMarker *old_marker,
     AllocatorMarker *new_marker
 ) -> void;
+
+inline auto reclaim_to_marker(ArenaAllocator *allocator, AllocatorMarker *marker) -> void {
+    auto old_marker = allocator_marker_from_current_offset(allocator);
+    return reclaim_memory_by_markers(allocator, &old_marker, marker);
+}
 
 extern auto to_array(ArenaAllocator *allocator) -> Array<byte>;
 

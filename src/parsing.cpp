@@ -5,9 +5,9 @@
 /**
  * Converts an AllocatedArrayBlock to an Array.
  */
-template<typename T>
-inline Array<T> to_array(AllocatedArrayBlock<T> *block) {
-    return Array<T> {
+template<typename PointerT>
+inline Array<PointerT> to_array(AllocatedArrayBlock<PointerT> *block) {
+    return Array<PointerT> {
         .data = block->data,
         .length = block->length
     };
@@ -57,9 +57,14 @@ auto parse(Array<Token> *tokens, ArenaAllocator *allocator) -> Array<ASTNode> {
     auto proc_params_block = allocate_array<ProcParameterASTNode>(allocator, tokens->length);
     size_t current_proc_param_index = 0;
 
-    auto append_node = [&](ASTNode &&node) {
+    /**
+     * Appends node to the nodes block and returns a pointer to the appended node.
+     */
+    auto append_node = [&](ASTNode &&node) -> ASTNode* {
         nodes_block.data[current_node_index] = node;
-        current_node_index++;
+        assert(current_node_index + 1 < nodes_block.length &&
+            "Cannot append nodes because there is not enough space to append nodes");
+        return &nodes_block.data[current_node_index++];
     };
 
     auto tokens_iter = TokenIterator {
@@ -129,6 +134,12 @@ auto parse(Array<Token> *tokens, ArenaAllocator *allocator) -> Array<ASTNode> {
                     *return_type_node = TypeASTNode {
                         .name = next_node->identifier.content,
                     };
+
+                    next_node = tokens_next(&tokens_iter);
+                    if (!token_is_of_type(next_node, TokenType::ARROW)) {
+                        eprint("Error: Expected arrow operator after the procedure return type.\n");
+                        goto return_result;
+                    }
                 }
                 // If the next token is an arrow operator, meaning there is no return type
                 else if (token_is_of_type(next_node, TokenType::ARROW)) {
@@ -139,27 +150,81 @@ auto parse(Array<Token> *tokens, ArenaAllocator *allocator) -> Array<ASTNode> {
                     goto return_result;
                 }
 
-                auto proc_params = to_array(&proc_params_block);
-                append_node(ASTNode{ 
+                // Expect newline to begin the procedure body
+                if (
+                    auto next_node = tokens_next(&tokens_iter);
+                    !token_is_of_type(next_node, TokenType::NEWLINE)
+                ) {
+                    eprint("Error: Expected a newline character to begin a procedure body.\n");
+                    goto return_result;
+                }
+
+                // Parse procedure body where each statement begins with an indentation
+                if (
+                    auto next_node = tokens_next(&tokens_iter);
+                    !(token_is_of_type(next_node, TokenType::INDENT) && next_node->indent.level == 1)
+                ) {
+                    eprint("Error: Expected a valid indentation for a statement in a procedure body");
+                    goto return_result;
+                }
+
+                // Parse procedure statements
+                // TODO Hardcoded addition operation with two identifiers, rework to make it more general-purpose!
+                auto next_node = tokens_next(&tokens_iter);
+                if (!token_is_of_type(next_node, TokenType::IDENTIFIER)) {
+                    eprint("Error: Expected an identifier.\n");
+                    goto return_result;
+                }
+                auto identifier_left = &next_node->identifier;
+
+                if (
+                    auto next_node = tokens_next(&tokens_iter);
+                    !token_is_of_type(next_node, TokenType::ADD)
+                ) {
+                    eprint("Error: Expected operator '+'.\n");
+                    goto return_result;
+                }
+
+                next_node = tokens_next(&tokens_iter);
+                if (!token_is_of_type(next_node, TokenType::IDENTIFIER)) {
+                    eprint("Error: Expected an identifier.\n");
+                    goto return_result;
+                }
+                auto identifier_right = &next_node->identifier;
+
+                auto proc_node = append_node(ASTNode { 
                     .type = ASTNodeType::PROC_DEF,
+                    .parent = nullptr,
                     .proc_def = {
                         .name = token->identifier.content,
                         .parameters = slice_by_offset(
-                            &proc_params,
+                            to_array(&proc_params_block),
                             proc_param_begin_index,
                             current_proc_param_index - proc_param_begin_index
                         ),
-                        return_type_node = return_type_node,
+                        .return_type = return_type_node,
                     }
                 });
+
+                append_node(ASTNode {
+                    .type = ASTNodeType::BINARY_ADD,
+                    .parent = proc_node,
+                    .binary_operation = {
+                        .oprt = BinaryOperatorType::ADD,
+                        .identifier_left = identifier_left->content,
+                        .identifier_right = identifier_right->content,
+                    },
+                });
+
+                // Nodes appended after the procedure definition are stored in
+                // the same nodes block so it is possible to take the nodes
+                // appended after the definition
+                proc_node->proc_def.body = slice_by_offset(to_array(&nodes_block), 1, current_node_index);
             }
         }
     }
 
     return_result:
-        auto extra_allocation_marker = allocator_marker_from_current_offset(allocator);
-        size_t allocator_offset_after_extra_allocations = allocator->offset;
-
         // Allocate new blocks with the exact sizes and copy the data over to them
         auto nodes_block_arr = slice_by_offset(to_array(&nodes_block), 0, current_node_index);
         auto new_nodes_block = allocate_array_from_copy<ASTNode>(allocator, &nodes_block_arr);
@@ -181,21 +246,14 @@ auto parse(Array<Token> *tokens, ArenaAllocator *allocator) -> Array<ASTNode> {
         assert(new_proc_params_block.length == current_proc_param_index &&
             "Proc parameter count mismatch after re-allocation");
 
-        auto exact_allocation_marker = allocator_marker_from_current_offset(allocator);
-        size_t allocator_offset_after_exact_allocations = allocator->offset;
-        print("Allocator offset after exact allocations: %\n", allocator_offset_after_exact_allocations);
-
         // Update the proc parameters pointers in the AST nodes to point to the new tightly packed block
-        for (auto &node : new_nodes_block) {
+        for (auto node : new_nodes_block) {
             if (node.type == ASTNodeType::PROC_DEF) {
                 node.proc_def.parameters.data =
                     ptr_sub(node.proc_def.parameters.data,
                         ptr_sub(node.proc_def.parameters.data, new_proc_params_block.data));
             }
         }
-
-        // Reclaim any unused memory in the allocator
-        reclaim_memory_by_markers(allocator, &extra_allocation_marker, &exact_allocation_marker);
 
         return to_array(&new_nodes_block);
 }

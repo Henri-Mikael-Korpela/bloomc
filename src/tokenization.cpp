@@ -36,6 +36,8 @@ auto tokenize(String *input, ArenaAllocator *allocator) -> Array<Token> {
         current_token_index++;
     };
 
+    size_t first_indentation_space_count = 0;
+
     for (size_t i = 0; i < input->length; i++) {
         char c = char_at(input, i);
         if (isalpha(c)) {
@@ -84,10 +86,23 @@ auto tokenize(String *input, ArenaAllocator *allocator) -> Array<Token> {
                     i++;
                     next_char = next_char_or_null_char(input, i);
                 } while (next_char == ' ');
+
+                size_t indentation = i - space_begin;
+                if (first_indentation_space_count == 0) {
+                    first_indentation_space_count = indentation;
+                }
+                size_t level = first_indentation_space_count / indentation;
+
+                // Ensure the indentation is not inconsistent. If it is, create an error
+                if ((first_indentation_space_count % indentation) != 0) {
+                    eprint("Inconsistent indentation\n");
+                    exit(1);
+                }
+
                 append_token({
                     .type = TokenType::INDENT,
                     .indent = {
-                        .level = i - space_begin
+                        .level = level,
                     }
                 });
             }

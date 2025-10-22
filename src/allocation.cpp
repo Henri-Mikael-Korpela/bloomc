@@ -44,6 +44,10 @@ auto reclaim_memory_by_markers(
         return;
     }
     memset(allocator->data + allocator->offset, 0, allocation_size_to_reclaim);
+    print("Allocator offset: %\n", allocator->offset);
+    assert (allocator->offset >= allocation_size_to_reclaim &&
+        "Allocator offset underflow on reclaim");
+    allocator->offset -= allocation_size_to_reclaim;
 }
 
 auto to_array(ArenaAllocator *allocator) -> Array<byte> {

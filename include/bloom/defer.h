@@ -9,12 +9,13 @@ public:
     ~Defer() { func(); }
 };
 
+#define _BLOOM_DEFER_CONCAT_INNER(a, b) a##b
+#define _BLOOM_DEFER_CONCAT(a, b) _BLOOM_DEFER_CONCAT_INNER(a, b)
+
 /**
  * Defers the execution of a statement until the end of the current scope.
  */
-// TODO Fix error when using multiple defer in the same scope.
-// "note: ‘Defer _defer___LINE__’ previously declared here"
 #define defer(statement) \
-    Defer _defer_##__LINE__([&]() { statement; })
+    Defer _BLOOM_DEFER_CONCAT(_defer_, __COUNTER__)([&](){ statement; })
 
 #endif // __BLOOM_H_DEFER__

@@ -6,7 +6,7 @@
  * Converts an AllocatedArrayBlock to an Array.
  */
 template<typename PointerT>
-inline Array<PointerT> to_array(AllocatedArrayBlock<PointerT> *block) {
+static inline Array<PointerT> to_array(AllocatedArrayBlock<PointerT> *block) {
     return Array<PointerT> {
         .data = block->data,
         .length = block->length
@@ -20,13 +20,13 @@ struct Iterator {
 };
 
 template<typename ElementType>
-auto to_iterator(AllocatedArrayBlock<ElementType> *block) -> Iterator<ElementType> {
+static auto to_iterator(AllocatedArrayBlock<ElementType> *block) -> Iterator<ElementType> {
     return {
         .elements = to_array(block),
         .current_index = 0,
     };
 }
-auto to_iterator(Array<Token> *tokens) -> Iterator<Token> {
+static auto to_iterator(Array<Token> *tokens) -> Iterator<Token> {
     return {
         .elements = *tokens,
         .current_index = 0,

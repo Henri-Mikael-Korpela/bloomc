@@ -104,35 +104,35 @@ auto parse(Array<Token> *tokens, ArenaAllocator *allocator) -> Array<ASTNode> {
             // Parse procedure parameters (if any)
             do {
                 auto current_token = iter_next(&tokens_iter);
-                if (current_token->type == TokenType::PARENTHESIS_CLOSE) {
-                    break;
-                }
-                else if(current_token->type == TokenType::COMMA) {
-                    // Just skip commas
-                    continue;
-                }
-                else if(current_token->type == TokenType::IDENTIFIER) {
-                    (void)iter_next_and_set(&proc_params_iter, ProcParameterASTNode {
-                        .name = current_token->identifier.content
-                    });
+                switch (current_token->type) {
+                    case TokenType::PARENTHESIS_CLOSE:
+                        goto parse_return_type;
+                    case TokenType::COMMA:
+                        // Just skip commas
+                        continue;
+                    case TokenType::IDENTIFIER:
+                        (void)iter_next_and_set(&proc_params_iter, ProcParameterASTNode {
+                            .name = current_token->identifier.content
+                        });
 
-                    if (iter_next(&tokens_iter)->type != TokenType::TYPE_SEPARATOR) {
-                        eprint("Error: Unexpected end of tokens while parsing procedure parameters\n");
+                        if (iter_next(&tokens_iter)->type != TokenType::TYPE_SEPARATOR) {
+                            eprint("Error: Unexpected end of tokens while parsing procedure parameters\n");
+                            goto return_result;
+                        }
+
+                        // TODO: Skip the type token for now but deal with it later
+                        (void)iter_next(&tokens_iter);
+                        break;
+                    default:
+                        eprint(
+                            "Error: Unexpected token \"%\" while parsing procedure parameters\n",
+                            to_string(current_token->type)
+                        );
                         goto return_result;
-                    }
-
-                    // TODO: Skip the type token for now but deal with it later
-                    (void)iter_next(&tokens_iter);
-                }
-                else {
-                    eprint(
-                        "Error: Unexpected token \"%\" while parsing procedure parameters\n",
-                        to_string(current_token->type)
-                    );
-                    goto return_result;
                 }
             } while(true);
 
+            parse_return_type:
             // Parse procedure return type if it exists before the arrow operator
             TypeASTNode *return_type_node;
             auto next_node = iter_next(&tokens_iter);

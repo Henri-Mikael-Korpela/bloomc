@@ -13,85 +13,97 @@ inline Array<PointerT> to_array(AllocatedArrayBlock<PointerT> *block) {
     };
 }
 
-struct TokenIterator {
-    Array<Token> *tokens;
+template<typename ElementType>
+struct Iterator {
+    Array<ElementType> elements;
     size_t current_index;
 };
 
-/**
- * Advances the iterator and returns the next token, or nullptr if at the end.
- */
-static auto tokens_next(TokenIterator *iter) -> Token* {
-    assert(iter->current_index < iter->tokens->length &&
-        "Token iterator out of bounds");
-    iter->current_index++;
-    return &iter->tokens->data[iter->current_index - 1];
+template<typename ElementType>
+auto to_iterator(AllocatedArrayBlock<ElementType> *block) -> Iterator<ElementType> {
+    return {
+        .elements = to_array(block),
+        .current_index = 0,
+    };
 }
+auto to_iterator(Array<Token> *tokens) -> Iterator<Token> {
+    return {
+        .elements = *tokens,
+        .current_index = 0,
+    };
+}
+
 /**
- * Peeks at the current token without advancing the iterator.
+ * Advances the iterator and returns the next element.
  */
-static auto tokens_peek(TokenIterator *iter) -> Token* {
-    assert(iter->current_index < iter->tokens->length &&
-        "Token iterator out of bounds");
-    return &iter->tokens->data[iter->current_index];
+template<typename ElementType>
+static auto iter_next(Iterator<ElementType> *iter) -> ElementType* {
+    assert (iter->elements.length > 0 &&
+        "Cannot advance iterator because the iterator length is 0.");
+    assert(iter->current_index < iter->elements.length &&
+        "Iterator out of bounds");
+    return &iter->elements.data[iter->current_index++];
+}
+
+/**
+ * Advances the iterator and sets the next element to the given value, and returns it.
+ */
+template<typename ElementType>
+static auto iter_next_and_set(Iterator<ElementType> *iter, ElementType &&value) -> ElementType* {
+    auto next_elem = iter_next(iter);
+    *next_elem = value;
+    return next_elem;
+}
+
+/**
+ * Peeks at the current element without advancing the iterator.
+ */
+template<typename ElementType>
+static auto iter_peek(Iterator<ElementType> *iter) -> ElementType* {
+    assert(iter->current_index < iter->elements.length &&
+        "Iterator out of bounds");
+    return &iter->elements.data[iter->current_index];
 }
 
 auto parse(Array<Token> *tokens, ArenaAllocator *allocator) -> Array<ASTNode> {
     auto types_block = allocate_array<TypeASTNode>(allocator, tokens->length);
-    size_t current_type_index = 0;
+    auto types_iter = to_iterator(&types_block);
 
     // Store the initial allocation offset in order to resize
     // both the nodes array and the proc params array later
     auto initial_marker = allocator_marker_from_current_offset(allocator);
 
     auto nodes_block = allocate_array<ASTNode>(allocator, tokens->length);
-    size_t current_node_index = 0;
+    auto nodes_block_iter = to_iterator(&nodes_block);
 
     auto proc_params_block = allocate_array<ProcParameterASTNode>(allocator, tokens->length);
-    size_t current_proc_param_index = 0;
+    auto proc_params_iter = to_iterator(&proc_params_block);
 
-    /**
-     * Appends node to the nodes block and returns a pointer to the appended node.
-     */
-    auto append_node = [&](ASTNode &&node) -> ASTNode* {
-        nodes_block.data[current_node_index] = node;
-        assert(current_node_index + 1 < nodes_block.length &&
-            "Cannot append nodes because there is not enough space to append nodes");
-        return &nodes_block.data[current_node_index++];
-    };
-
-    auto tokens_iter = TokenIterator {
-        .tokens = tokens,
-        .current_index = 0
-    };
-
-    while (true) {
-        auto token = tokens_next(&tokens_iter);
+    for (auto tokens_iter = to_iterator(tokens);;) {
+        auto token = iter_next(&tokens_iter);
         if (token->type == TokenType::END) {
             break;
         }
         else if (token->type == TokenType::IDENTIFIER) {
-            if (tokens_peek(&tokens_iter)->type != TokenType::CONST_DEF) {
+            if (iter_peek(&tokens_iter)->type != TokenType::CONST_DEF) {
                 continue;
             }
 
-            (void)tokens_next(&tokens_iter);
+            (void)iter_next(&tokens_iter);
 
             // Expect a procedure definition
-            if (tokens_next(&tokens_iter)->type != TokenType::KEYWORD_PROC) {
+            if (iter_next(&tokens_iter)->type != TokenType::KEYWORD_PROC) {
                 eprint("Error: Expected 'proc' keyword after 'const_def'\n");
                 break;
             }
-            if (tokens_next(&tokens_iter)->type != TokenType::PARENTHESIS_OPEN) {
+            if (iter_next(&tokens_iter)->type != TokenType::PARENTHESIS_OPEN) {
                 eprint("Error: Expected '(' after procedure name\n");
                 break;
             }
 
-            auto proc_param_begin_index = current_proc_param_index;
-
             // Parse procedure parameters (if any)
             do {
-                auto current_token = tokens_next(&tokens_iter);
+                auto current_token = iter_next(&tokens_iter);
                 if (current_token->type == TokenType::PARENTHESIS_CLOSE) {
                     break;
                 }
@@ -100,19 +112,17 @@ auto parse(Array<Token> *tokens, ArenaAllocator *allocator) -> Array<ASTNode> {
                     continue;
                 }
                 else if(current_token->type == TokenType::IDENTIFIER) {
-                    String param_name = current_token->identifier.content;
-                    proc_params_block.data[current_proc_param_index] = ProcParameterASTNode {
-                        .name = param_name
-                    };
-                    current_proc_param_index++;
+                    (void)iter_next_and_set(&proc_params_iter, ProcParameterASTNode {
+                        .name = current_token->identifier.content
+                    });
 
-                    if (tokens_next(&tokens_iter)->type != TokenType::TYPE_SEPARATOR) {
+                    if (iter_next(&tokens_iter)->type != TokenType::TYPE_SEPARATOR) {
                         eprint("Error: Unexpected end of tokens while parsing procedure parameters\n");
                         goto return_result;
                     }
 
                     // TODO: Skip the type token for now but deal with it later
-                    (void)tokens_next(&tokens_iter);
+                    (void)iter_next(&tokens_iter);
                 }
                 else {
                     eprint(
@@ -125,15 +135,13 @@ auto parse(Array<Token> *tokens, ArenaAllocator *allocator) -> Array<ASTNode> {
 
             // Parse procedure return type if it exists before the arrow operator
             TypeASTNode *return_type_node;
-            auto next_node = tokens_next(&tokens_iter);
+            auto next_node = iter_next(&tokens_iter);
             if (next_node->type == TokenType::IDENTIFIER) {
-                return_type_node = &types_block.data[current_type_index];
-                current_type_index++;
-                *return_type_node = TypeASTNode {
+                return_type_node = iter_next_and_set(&types_iter, TypeASTNode {
                     .name = next_node->identifier.content,
-                };
+                });
 
-                next_node = tokens_next(&tokens_iter);
+                next_node = iter_next(&tokens_iter);
                 if (next_node->type != TokenType::ARROW) {
                     eprint("Error: Expected arrow operator after the procedure return type.\n");
                     goto return_result;
@@ -149,13 +157,13 @@ auto parse(Array<Token> *tokens, ArenaAllocator *allocator) -> Array<ASTNode> {
             }
 
             // Expect newline to begin the procedure body
-            if (tokens_next(&tokens_iter)->type != TokenType::NEWLINE) {
+            if (iter_next(&tokens_iter)->type != TokenType::NEWLINE) {
                 eprint("Error: Expected a newline character to begin a procedure body.\n");
                 goto return_result;
             }
 
             // Parse procedure body where each statement begins with an indentation
-            next_node = tokens_next(&tokens_iter);
+            next_node = iter_next(&tokens_iter);
             if (!(next_node->type == TokenType::INDENT && next_node->indent.level == 1)) {
                 eprint("Error: Expected a valid indentation for a statement in a procedure body");
                 goto return_result;
@@ -163,40 +171,36 @@ auto parse(Array<Token> *tokens, ArenaAllocator *allocator) -> Array<ASTNode> {
 
             // Parse procedure statements
             // TODO Hardcoded addition operation with two identifiers, rework to make it more general-purpose!
-            next_node = tokens_next(&tokens_iter);
+            next_node = iter_next(&tokens_iter);
             if (next_node->type != TokenType::IDENTIFIER) {
                 eprint("Error: Expected an identifier.\n");
                 goto return_result;
             }
             auto identifier_left = &next_node->identifier;
 
-            if (tokens_next(&tokens_iter)->type != TokenType::ADD) {
+            if (iter_next(&tokens_iter)->type != TokenType::ADD) {
                 eprint("Error: Expected operator '+'.\n");
                 goto return_result;
             }
 
-            next_node = tokens_next(&tokens_iter);
+            next_node = iter_next(&tokens_iter);
             if (next_node->type != TokenType::IDENTIFIER) {
                 eprint("Error: Expected an identifier.\n");
                 goto return_result;
             }
             auto identifier_right = &next_node->identifier;
 
-            auto proc_node = append_node(ASTNode { 
+            auto proc_node = iter_next_and_set(&nodes_block_iter, ASTNode { 
                 .type = ASTNodeType::PROC_DEF,
                 .parent = nullptr,
                 .proc_def = {
                     .name = token->identifier.content,
-                    .parameters = slice_by_offset(
-                        to_array(&proc_params_block),
-                        proc_param_begin_index,
-                        current_proc_param_index - proc_param_begin_index
-                    ),
+                    .parameters = slice_by_offset(to_array(&proc_params_block), 0, proc_params_iter.current_index),
                     .return_type = return_type_node,
                 }
             });
 
-            append_node(ASTNode {
+            (void)iter_next_and_set(&nodes_block_iter, ASTNode {
                 .type = ASTNodeType::BINARY_ADD,
                 .parent = proc_node,
                 .binary_operation = {
@@ -209,16 +213,16 @@ auto parse(Array<Token> *tokens, ArenaAllocator *allocator) -> Array<ASTNode> {
             // Nodes appended after the procedure definition are stored in
             // the same nodes block so it is possible to take the nodes
             // appended after the definition
-            proc_node->proc_def.body = slice_by_offset(to_array(&nodes_block), 1, current_node_index);
+            proc_node->proc_def.body = slice_by_offset(to_array(&nodes_block), 1, nodes_block_iter.current_index);
         }
     }
 
     return_result:
         // Allocate new blocks with the exact sizes and copy the data over to them
-        auto nodes_block_arr = slice_by_offset(to_array(&nodes_block), 0, current_node_index);
+        auto nodes_block_arr = slice_by_offset(to_array(&nodes_block), 0, nodes_block_iter.current_index);
         auto new_nodes_block = allocate_array_from_copy<ASTNode>(allocator, &nodes_block_arr);
 
-        auto old_proc_params_arr = slice_by_offset(to_array(&proc_params_block), 0, current_proc_param_index);
+        auto old_proc_params_arr = slice_by_offset(to_array(&proc_params_block), 0, proc_params_iter.current_index);
         auto old_proc_params_block = allocate_array_from_copy<ProcParameterASTNode>(allocator, &old_proc_params_arr);
 
         // Reset the allocator offset to the initial value and re-allocate
@@ -227,12 +231,12 @@ auto parse(Array<Token> *tokens, ArenaAllocator *allocator) -> Array<ASTNode> {
 
         auto new_nodes_block_arr = to_array(&new_nodes_block);
         new_nodes_block = allocate_array_from_copy<ASTNode>(allocator, &new_nodes_block_arr);
-        assert(new_nodes_block.length == current_node_index &&
+        assert(new_nodes_block.length == nodes_block_iter.current_index &&
             "Node count mismatch after re-allocation");
 
         auto new_proc_params_arr = to_array(&old_proc_params_block);
         auto new_proc_params_block = allocate_array_from_copy<ProcParameterASTNode>(allocator, &new_proc_params_arr);
-        assert(new_proc_params_block.length == current_proc_param_index &&
+        assert(new_proc_params_block.length == proc_params_iter.current_index &&
             "Proc parameter count mismatch after re-allocation");
 
         // Update the proc parameters pointers in the AST nodes to point to the new tightly packed block

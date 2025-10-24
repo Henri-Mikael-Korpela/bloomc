@@ -18,29 +18,22 @@ struct TokenIterator {
     size_t current_index;
 };
 
-static inline auto token_is_of_type(Token *token, TokenType type) -> bool {
-    return token != nullptr && token->type == type;
-}
 /**
  * Advances the iterator and returns the next token, or nullptr if at the end.
  */
 static auto tokens_next(TokenIterator *iter) -> Token* {
-    if (iter->current_index < iter->tokens->length) {
-        iter->current_index++;
-        return &iter->tokens->data[iter->current_index - 1];
-    } else {
-        return nullptr;
-    }
+    assert(iter->current_index < iter->tokens->length &&
+        "Token iterator out of bounds");
+    iter->current_index++;
+    return &iter->tokens->data[iter->current_index - 1];
 }
 /**
  * Peeks at the current token without advancing the iterator.
  */
 static auto tokens_peek(TokenIterator *iter) -> Token* {
-    if (iter->current_index < iter->tokens->length) {
-        return &iter->tokens->data[iter->current_index];
-    } else {
-        return nullptr;
-    }
+    assert(iter->current_index < iter->tokens->length &&
+        "Token iterator out of bounds");
+    return &iter->tokens->data[iter->current_index];
 }
 
 auto parse(Array<Token> *tokens, ArenaAllocator *allocator) -> Array<ASTNode> {
@@ -72,155 +65,151 @@ auto parse(Array<Token> *tokens, ArenaAllocator *allocator) -> Array<ASTNode> {
         .current_index = 0
     };
 
-    while (auto token = tokens_next(&tokens_iter)) {
-        if (token->type == TokenType::IDENTIFIER) {
-            if (token_is_of_type(tokens_peek(&tokens_iter), TokenType::CONST_DEF)) {
-                (void)tokens_next(&tokens_iter);
+    while (true) {
+        auto token = tokens_next(&tokens_iter);
+        if (token->type == TokenType::END) {
+            break;
+        }
+        else if (token->type == TokenType::IDENTIFIER) {
+            if (tokens_peek(&tokens_iter)->type != TokenType::CONST_DEF) {
+                continue;
+            }
 
-                // Expect a procedure definition
-                if (!token_is_of_type(tokens_next(&tokens_iter), TokenType::KEYWORD_PROC)) {
-                    eprint("Error: Expected 'proc' keyword after 'const_def'\n");
+            (void)tokens_next(&tokens_iter);
+
+            // Expect a procedure definition
+            if (tokens_next(&tokens_iter)->type != TokenType::KEYWORD_PROC) {
+                eprint("Error: Expected 'proc' keyword after 'const_def'\n");
+                break;
+            }
+            if (tokens_next(&tokens_iter)->type != TokenType::PARENTHESIS_OPEN) {
+                eprint("Error: Expected '(' after procedure name\n");
+                break;
+            }
+
+            auto proc_param_begin_index = current_proc_param_index;
+
+            // Parse procedure parameters (if any)
+            do {
+                auto current_token = tokens_next(&tokens_iter);
+                if (current_token->type == TokenType::PARENTHESIS_CLOSE) {
                     break;
                 }
-                if (!token_is_of_type(tokens_next(&tokens_iter), TokenType::PARENTHESIS_OPEN)) {
-                    eprint("Error: Expected '(' after procedure name\n");
-                    break;
+                else if(current_token->type == TokenType::COMMA) {
+                    // Just skip commas
+                    continue;
                 }
-
-                auto proc_param_begin_index = current_proc_param_index;
-
-                // Parse procedure parameters (if any)
-                do {
-                    auto peeked_token = tokens_next(&tokens_iter);
-                    if (token_is_of_type(peeked_token, TokenType::PARENTHESIS_CLOSE)) {
-                        break;
-                    }
-                    else if(token_is_of_type(peeked_token, TokenType::COMMA)) {
-                        // Just skip commas
-                        continue;
-                    }
-                    else if(token_is_of_type(peeked_token, TokenType::IDENTIFIER)) {
-                        String param_name = peeked_token->identifier.content;
-                        proc_params_block.data[current_proc_param_index] = ProcParameterASTNode {
-                            .name = param_name
-                        };
-                        current_proc_param_index++;
-
-                        if (!token_is_of_type(tokens_next(&tokens_iter), TokenType::TYPE_SEPARATOR)) {
-                            eprint("Error: Unexpected end of tokens while parsing procedure parameters\n");
-                            goto return_result;
-                        }
-
-                        // TODO: Skip the type token for now but deal with it later
-                        (void)tokens_next(&tokens_iter);
-                    }
-                    else {
-                        eprint(
-                            "Error: Unexpected token \"%\" while parsing procedure parameters\n",
-                            to_string(peeked_token->type)
-                        );
-                        goto return_result;
-                    }
-                } while(true);
-
-                // Parse procedure return type if it exists before the arrow operator
-                TypeASTNode *return_type_node;
-                if (
-                    auto next_node = tokens_next(&tokens_iter);
-                    token_is_of_type(next_node, TokenType::IDENTIFIER)
-                ) {
-                    return_type_node = &types_block.data[current_type_index];
-                    current_type_index++;
-                    *return_type_node = TypeASTNode {
-                        .name = next_node->identifier.content,
+                else if(current_token->type == TokenType::IDENTIFIER) {
+                    String param_name = current_token->identifier.content;
+                    proc_params_block.data[current_proc_param_index] = ProcParameterASTNode {
+                        .name = param_name
                     };
+                    current_proc_param_index++;
 
-                    next_node = tokens_next(&tokens_iter);
-                    if (!token_is_of_type(next_node, TokenType::ARROW)) {
-                        eprint("Error: Expected arrow operator after the procedure return type.\n");
+                    if (tokens_next(&tokens_iter)->type != TokenType::TYPE_SEPARATOR) {
+                        eprint("Error: Unexpected end of tokens while parsing procedure parameters\n");
                         goto return_result;
                     }
-                }
-                // If the next token is an arrow operator, meaning there is no return type
-                else if (token_is_of_type(next_node, TokenType::ARROW)) {
-                    return_type_node = nullptr;
+
+                    // TODO: Skip the type token for now but deal with it later
+                    (void)tokens_next(&tokens_iter);
                 }
                 else {
-                    eprint("Error: Unexpected token after the procedure parameter list.\n");
+                    eprint(
+                        "Error: Unexpected token \"%\" while parsing procedure parameters\n",
+                        to_string(current_token->type)
+                    );
                     goto return_result;
                 }
+            } while(true);
 
-                // Expect newline to begin the procedure body
-                if (
-                    auto next_node = tokens_next(&tokens_iter);
-                    !token_is_of_type(next_node, TokenType::NEWLINE)
-                ) {
-                    eprint("Error: Expected a newline character to begin a procedure body.\n");
-                    goto return_result;
-                }
-
-                // Parse procedure body where each statement begins with an indentation
-                if (
-                    auto next_node = tokens_next(&tokens_iter);
-                    !(token_is_of_type(next_node, TokenType::INDENT) && next_node->indent.level == 1)
-                ) {
-                    eprint("Error: Expected a valid indentation for a statement in a procedure body");
-                    goto return_result;
-                }
-
-                // Parse procedure statements
-                // TODO Hardcoded addition operation with two identifiers, rework to make it more general-purpose!
-                auto next_node = tokens_next(&tokens_iter);
-                if (!token_is_of_type(next_node, TokenType::IDENTIFIER)) {
-                    eprint("Error: Expected an identifier.\n");
-                    goto return_result;
-                }
-                auto identifier_left = &next_node->identifier;
-
-                if (
-                    auto next_node = tokens_next(&tokens_iter);
-                    !token_is_of_type(next_node, TokenType::ADD)
-                ) {
-                    eprint("Error: Expected operator '+'.\n");
-                    goto return_result;
-                }
+            // Parse procedure return type if it exists before the arrow operator
+            TypeASTNode *return_type_node;
+            auto next_node = tokens_next(&tokens_iter);
+            if (next_node->type == TokenType::IDENTIFIER) {
+                return_type_node = &types_block.data[current_type_index];
+                current_type_index++;
+                *return_type_node = TypeASTNode {
+                    .name = next_node->identifier.content,
+                };
 
                 next_node = tokens_next(&tokens_iter);
-                if (!token_is_of_type(next_node, TokenType::IDENTIFIER)) {
-                    eprint("Error: Expected an identifier.\n");
+                if (next_node->type != TokenType::ARROW) {
+                    eprint("Error: Expected arrow operator after the procedure return type.\n");
                     goto return_result;
                 }
-                auto identifier_right = &next_node->identifier;
-
-                auto proc_node = append_node(ASTNode { 
-                    .type = ASTNodeType::PROC_DEF,
-                    .parent = nullptr,
-                    .proc_def = {
-                        .name = token->identifier.content,
-                        .parameters = slice_by_offset(
-                            to_array(&proc_params_block),
-                            proc_param_begin_index,
-                            current_proc_param_index - proc_param_begin_index
-                        ),
-                        .return_type = return_type_node,
-                    }
-                });
-
-                append_node(ASTNode {
-                    .type = ASTNodeType::BINARY_ADD,
-                    .parent = proc_node,
-                    .binary_operation = {
-                        .oprt = BinaryOperatorType::ADD,
-                        .identifier_left = identifier_left->content,
-                        .identifier_right = identifier_right->content,
-                    },
-                });
-
-                // Nodes appended after the procedure definition are stored in
-                // the same nodes block so it is possible to take the nodes
-                // appended after the definition
-                proc_node->proc_def.body = slice_by_offset(to_array(&nodes_block), 1, current_node_index);
             }
+            // If the next token is an arrow operator, meaning there is no return type
+            else if (next_node->type == TokenType::ARROW) {
+                return_type_node = nullptr;
+            }
+            else {
+                eprint("Error: Unexpected token after the procedure parameter list.\n");
+                goto return_result;
+            }
+
+            // Expect newline to begin the procedure body
+            if (tokens_next(&tokens_iter)->type != TokenType::NEWLINE) {
+                eprint("Error: Expected a newline character to begin a procedure body.\n");
+                goto return_result;
+            }
+
+            // Parse procedure body where each statement begins with an indentation
+            next_node = tokens_next(&tokens_iter);
+            if (!(next_node->type == TokenType::INDENT && next_node->indent.level == 1)) {
+                eprint("Error: Expected a valid indentation for a statement in a procedure body");
+                goto return_result;
+            }
+
+            // Parse procedure statements
+            // TODO Hardcoded addition operation with two identifiers, rework to make it more general-purpose!
+            next_node = tokens_next(&tokens_iter);
+            if (next_node->type != TokenType::IDENTIFIER) {
+                eprint("Error: Expected an identifier.\n");
+                goto return_result;
+            }
+            auto identifier_left = &next_node->identifier;
+
+            if (tokens_next(&tokens_iter)->type != TokenType::ADD) {
+                eprint("Error: Expected operator '+'.\n");
+                goto return_result;
+            }
+
+            next_node = tokens_next(&tokens_iter);
+            if (next_node->type != TokenType::IDENTIFIER) {
+                eprint("Error: Expected an identifier.\n");
+                goto return_result;
+            }
+            auto identifier_right = &next_node->identifier;
+
+            auto proc_node = append_node(ASTNode { 
+                .type = ASTNodeType::PROC_DEF,
+                .parent = nullptr,
+                .proc_def = {
+                    .name = token->identifier.content,
+                    .parameters = slice_by_offset(
+                        to_array(&proc_params_block),
+                        proc_param_begin_index,
+                        current_proc_param_index - proc_param_begin_index
+                    ),
+                    .return_type = return_type_node,
+                }
+            });
+
+            append_node(ASTNode {
+                .type = ASTNodeType::BINARY_ADD,
+                .parent = proc_node,
+                .binary_operation = {
+                    .oprt = BinaryOperatorType::ADD,
+                    .identifier_left = identifier_left->content,
+                    .identifier_right = identifier_right->content,
+                },
+            });
+
+            // Nodes appended after the procedure definition are stored in
+            // the same nodes block so it is possible to take the nodes
+            // appended after the definition
+            proc_node->proc_def.body = slice_by_offset(to_array(&nodes_block), 1, current_node_index);
         }
     }
 

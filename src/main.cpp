@@ -142,7 +142,8 @@ int main(int argc, char* argv[]) {
     transpile_to_c(&target_file_path, &ast_nodes, &main_allocator);
 
     print(
-        "Main memory left: %, used: %\n",
+        "Main memory total: %, left: %, used: %\n",
+        MAIN_MEMORY_SIZE,
         memory_left(&main_allocator),
         main_allocator.length - memory_left(&main_allocator)
     );

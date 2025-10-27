@@ -45,7 +45,7 @@ auto tokenize(String *input, ArenaAllocator *allocator) -> Array<Token> {
             auto begin = i;
             while (i + 1 < input->length) {
                 // Keep going if the next character is an alphabet
-                if (isalpha(char_at(input, i + 1))) {
+                if (isalnum(char_at(input, i + 1))) {
                     i++;
                 } else {
                     break;

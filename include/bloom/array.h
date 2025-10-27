@@ -32,16 +32,6 @@ auto slice_by_offset(Array<ElementType> *array, size_t begin, size_t end) -> Arr
     };
 }
 
-/**
- * Returns a slice of the array from begin (inclusive) to end (exclusive).
- * @param begin The starting index of the slice (inclusive).
- * @param end The end index of the slice (exclusive). This is NOT the slice length.
- */
-template<typename ElementType>
-constexpr auto slice_by_offset(Array<ElementType> &&array, size_t begin, size_t end) -> Array<ElementType> {
-    return slice_by_offset(&array, begin, end);
-}
-
 template<typename ElementType>
 auto slice_by_length(Array<ElementType> *array, size_t begin, size_t length) -> Array<ElementType> {
     assert(begin + length <= array->length && "Slice end out of bounds");

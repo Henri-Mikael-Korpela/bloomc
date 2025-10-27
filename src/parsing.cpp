@@ -80,7 +80,7 @@ auto parse(Array<Token> *tokens, ArenaAllocator *allocator) -> Array<ASTNode> {
     auto proc_params_iter = to_iterator(&proc_params_block);
 
     for (auto tokens_iter = to_iterator(tokens);;) {
-        auto token = iter_next(&tokens_iter);
+        Token *token = iter_next(&tokens_iter);
         if (token->type == TokenType::END) {
             break;
         }
@@ -190,12 +190,13 @@ auto parse(Array<Token> *tokens, ArenaAllocator *allocator) -> Array<ASTNode> {
             }
             auto identifier_right = &next_node->identifier;
 
+            auto proc_params_arr = to_array(&proc_params_block);
             auto proc_node = iter_next_and_set(&nodes_block_iter, ASTNode { 
                 .type = ASTNodeType::PROC_DEF,
                 .parent = nullptr,
                 .proc_def = {
                     .name = token->identifier.content,
-                    .parameters = slice_by_offset(to_array(&proc_params_block), 0, proc_params_iter.current_index),
+                    .parameters = slice_by_offset(&proc_params_arr, 0, proc_params_iter.current_index),
                     .return_type = return_type_node,
                 }
             });
@@ -213,16 +214,19 @@ auto parse(Array<Token> *tokens, ArenaAllocator *allocator) -> Array<ASTNode> {
             // Nodes appended after the procedure definition are stored in
             // the same nodes block so it is possible to take the nodes
             // appended after the definition
-            proc_node->proc_def.body = slice_by_offset(to_array(&nodes_block), 1, nodes_block_iter.current_index);
+            auto nodes_block_arr = to_array(&nodes_block);
+            proc_node->proc_def.body = slice_by_offset(&nodes_block_arr, 1, nodes_block_iter.current_index);
         }
     }
 
     return_result:
         // Allocate new blocks with the exact sizes and copy the data over to them
-        auto nodes_block_arr = slice_by_offset(to_array(&nodes_block), 0, nodes_block_iter.current_index);
+        auto nodes_block_arr = to_array(&nodes_block);
+        nodes_block_arr = slice_by_offset(&nodes_block_arr, 0, nodes_block_iter.current_index);
         auto new_nodes_block = allocate_array_from_copy<ASTNode>(allocator, &nodes_block_arr);
 
-        auto old_proc_params_arr = slice_by_offset(to_array(&proc_params_block), 0, proc_params_iter.current_index);
+        auto old_proc_params_arr = to_array(&proc_params_block);
+        old_proc_params_arr = slice_by_offset(&old_proc_params_arr, 0, proc_params_iter.current_index);
         auto old_proc_params_block = allocate_array_from_copy<ProcParameterASTNode>(allocator, &old_proc_params_arr);
 
         // Reset the allocator offset to the initial value and re-allocate

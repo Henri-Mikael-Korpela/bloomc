@@ -1,2 +1,5 @@
 sum :: proc(a : Int, b : Int) Int ->
     a + b
+
+sum2 :: proc(c : Int, d : Int) Int ->
+    c + d

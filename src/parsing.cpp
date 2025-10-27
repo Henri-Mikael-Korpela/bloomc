@@ -78,6 +78,8 @@ auto parse(Array<Token> *tokens, ArenaAllocator *allocator) -> Array<ASTNode> {
 
     auto proc_params_block = allocate_array<ProcParameterASTNode>(allocator, tokens->length);
     auto proc_params_iter = to_iterator(&proc_params_block);
+    assert (proc_params_iter.current_index == 0 &&
+        "Procedure parameters iterator current index should be 0 at the start");
 
     for (auto tokens_iter = to_iterator(tokens);;) {
         Token *token = iter_next(&tokens_iter);
@@ -102,6 +104,7 @@ auto parse(Array<Token> *tokens, ArenaAllocator *allocator) -> Array<ASTNode> {
             }
 
             // Parse procedure parameters (if any)
+            size_t const proc_param_begin_index = proc_params_iter.current_index;
             do {
                 auto current_token = iter_next(&tokens_iter);
                 switch (current_token->type) {
@@ -132,7 +135,7 @@ auto parse(Array<Token> *tokens, ArenaAllocator *allocator) -> Array<ASTNode> {
                 }
             } while(true);
 
-            parse_return_type:
+        parse_return_type:
             // Parse procedure return type if it exists before the arrow operator
             TypeASTNode *return_type_node;
             auto next_node = iter_next(&tokens_iter);
@@ -196,7 +199,11 @@ auto parse(Array<Token> *tokens, ArenaAllocator *allocator) -> Array<ASTNode> {
                 .parent = nullptr,
                 .proc_def = {
                     .name = token->identifier.content,
-                    .parameters = slice_by_offset(&proc_params_arr, 0, proc_params_iter.current_index),
+                    .parameters = slice_by_offset(
+                        &proc_params_arr,
+                        proc_param_begin_index,
+                        proc_params_iter.current_index
+                    ),
                     .return_type = return_type_node,
                 }
             });
@@ -215,7 +222,24 @@ auto parse(Array<Token> *tokens, ArenaAllocator *allocator) -> Array<ASTNode> {
             // the same nodes block so it is possible to take the nodes
             // appended after the definition
             auto nodes_block_arr = to_array(&nodes_block);
-            proc_node->proc_def.body = slice_by_offset(&nodes_block_arr, 1, nodes_block_iter.current_index);
+            proc_node->proc_def.body = slice_by_offset(
+                &nodes_block_arr,
+                proc_param_begin_index + 1,
+                nodes_block_iter.current_index
+            );
+
+            next_node = iter_peek(&tokens_iter);
+            switch (next_node->type) {
+                case TokenType::END:
+                    goto return_result;
+                case TokenType::NEWLINE:
+                    next_node = iter_peek(&tokens_iter);
+                    // If the procedure body is finished
+                    if (next_node->type == TokenType::NEWLINE) {
+                        (void)iter_next(&tokens_iter);
+                    }
+                    break;
+            }
         }
     }
 

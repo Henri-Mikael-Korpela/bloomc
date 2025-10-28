@@ -3,3 +3,7 @@ sum :: proc(a : Int, b : Int) Int ->
 
 sum2 :: proc(c : Int, d : Int) Int ->
     c + d
+
+main :: proc() ->
+    pass
+

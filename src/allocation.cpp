@@ -51,8 +51,5 @@ auto reclaim_memory_by_markers(
 }
 
 auto to_array(ArenaAllocator *allocator) -> Array<byte> {
-    return Array<byte> {
-        .data = allocator->data,
-        .length = allocator->length,
-    };
+    return Array<byte>(allocator->data, allocator->length);
 }

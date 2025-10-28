@@ -111,17 +111,17 @@ extern auto debug_print_bytes(Array<DebugByte> bytes, DebugColor color) -> void;
 
 template<typename ElementType>
 inline auto get_debug_printable_bytes(AllocatedArrayBlock<ElementType> *block) -> Array<DebugByte> {
-    return Array<DebugByte> {
-        .data = reinterpret_cast<DebugByte*>(block->data),
-        .length = allocation_size(block)
-    };
+    return Array<DebugByte>(
+        reinterpret_cast<DebugByte*>(block->data),
+        allocation_size(block)
+    );
 }
 
 inline auto get_debug_printable_bytes(Array<byte> *array) -> Array<DebugByte> {
-    return Array<DebugByte> {
-        .data = reinterpret_cast<DebugByte*>(array->data),
-        .length = array->length
-    };
+    return Array<DebugByte>(
+        reinterpret_cast<DebugByte*>(array->data),
+        array->length
+    );
 }
 
 /**

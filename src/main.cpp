@@ -12,7 +12,7 @@
 constexpr size_t kb(size_t n) { return n * 1024; }
 constexpr size_t mb(size_t n) { return n * 1024 * 1024; }
 
-const size_t MAIN_MEMORY_SIZE = kb(3);
+const size_t MAIN_MEMORY_SIZE = kb(8);
 
 int main(int argc, char* argv[]) {
     if (argc < 3) {
@@ -129,7 +129,7 @@ int main(int argc, char* argv[]) {
                     ? node.proc_def.return_type->name
                     : MISSING_TYPE;
                 print("\tProcedure return type: %\n", return_type_name);
-                printf("\tProcedure body:\n");
+                print("\tProcedure body (length %):\n", node.proc_def.body.length);
                 for (auto &statement : node.proc_def.body) {
                     printf("\t\tStatement\n");
                 }
@@ -138,7 +138,7 @@ int main(int argc, char* argv[]) {
     }
 
     // Transpile AST nodes into C source code
-    auto target_file_path = String::from_null_terminated_str("/home/henri/Personal/bloomc2/sum.c");
+    String target_file_path = String::from_null_terminated_str("/home/henri/Personal/bloomc2/sum.c");
     transpile_to_c(&target_file_path, &ast_nodes, &main_allocator);
 
     print(

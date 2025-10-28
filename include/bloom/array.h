@@ -8,6 +8,9 @@ struct Array {
     ElementType *data;
     size_t length;
 
+    Array() : data(nullptr), length(0) {}
+    Array(ElementType *data, size_t length) : data(data), length(length) {}
+
     inline ElementType& operator[](size_t index) {
         assert(index < length && "ArrayPtr index out of bounds");
         return data[index];
@@ -26,19 +29,13 @@ struct Array {
 template<typename ElementType>
 auto slice_by_offset(Array<ElementType> *array, size_t begin, size_t end) -> Array<ElementType> {
     assert(begin <= end && end <= array->length && "Slice end out of bounds");
-    return Array<ElementType> {
-        .data = array->data + begin,
-        .length = end - begin
-    };
+    return Array<ElementType>(array->data + begin, end - begin);
 }
 
 template<typename ElementType>
 auto slice_by_length(Array<ElementType> *array, size_t begin, size_t length) -> Array<ElementType> {
     assert(begin + length <= array->length && "Slice end out of bounds");
-    return Array<ElementType> {
-        .data = array->data + begin,
-        .length = length
-    };
+    return Array<ElementType>(array->data + begin, length);
 }
 
 #endif // __BLOOM_H_ARRAY__

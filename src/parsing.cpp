@@ -7,10 +7,7 @@
  */
 template<typename PointerT>
 static inline Array<PointerT> to_array(AllocatedArrayBlock<PointerT> *block) {
-    return Array<PointerT> {
-        .data = block->data,
-        .length = block->length
-    };
+    return Array<PointerT>(block->data, block->length);
 }
 
 template<typename ElementType>
@@ -77,6 +74,7 @@ auto parse(Array<Token> *tokens, ArenaAllocator *allocator) -> Array<ASTNode> {
     auto nodes_block_iter = to_iterator(&nodes_block);
 
     auto proc_params_block = allocate_array<ProcParameterASTNode>(allocator, tokens->length);
+    print("Proc params block len: %\n", proc_params_block.length);
     auto proc_params_iter = to_iterator(&proc_params_block);
     assert (proc_params_iter.current_index == 0 &&
         "Procedure parameters iterator current index should be 0 at the start");
@@ -104,7 +102,7 @@ auto parse(Array<Token> *tokens, ArenaAllocator *allocator) -> Array<ASTNode> {
             }
 
             // Parse procedure parameters (if any)
-            size_t const proc_param_begin_index = proc_params_iter.current_index;
+            size_t const begin_index = proc_params_iter.current_index;
             do {
                 auto current_token = iter_next(&tokens_iter);
                 switch (current_token->type) {
@@ -137,7 +135,7 @@ auto parse(Array<Token> *tokens, ArenaAllocator *allocator) -> Array<ASTNode> {
 
         parse_return_type:
             // Parse procedure return type if it exists before the arrow operator
-            TypeASTNode *return_type_node;
+            TypeASTNode *return_type_node = nullptr;
             auto next_node = iter_next(&tokens_iter);
             if (next_node->type == TokenType::IDENTIFIER) {
                 return_type_node = iter_next_and_set(&types_iter, TypeASTNode {
@@ -173,60 +171,73 @@ auto parse(Array<Token> *tokens, ArenaAllocator *allocator) -> Array<ASTNode> {
             }
 
             // Parse procedure statements
-            // TODO Hardcoded addition operation with two identifiers, rework to make it more general-purpose!
             next_node = iter_next(&tokens_iter);
-            if (next_node->type != TokenType::IDENTIFIER) {
-                eprint("Error: Expected an identifier.\n");
-                goto return_result;
-            }
-            auto identifier_left = &next_node->identifier;
-
-            if (iter_next(&tokens_iter)->type != TokenType::ADD) {
-                eprint("Error: Expected operator '+'.\n");
-                goto return_result;
-            }
-
-            next_node = iter_next(&tokens_iter);
-            if (next_node->type != TokenType::IDENTIFIER) {
-                eprint("Error: Expected an identifier.\n");
-                goto return_result;
-            }
-            auto identifier_right = &next_node->identifier;
 
             auto proc_params_arr = to_array(&proc_params_block);
-            auto proc_node = iter_next_and_set(&nodes_block_iter, ASTNode { 
+            proc_params_arr = slice_by_offset(
+                &proc_params_arr,
+                begin_index,
+                proc_params_iter.current_index
+            );
+            print("Proc params arr PASS len: %\n", proc_params_arr.length);
+            auto *proc_node = iter_next_and_set(&nodes_block_iter, ASTNode { 
                 .type = ASTNodeType::PROC_DEF,
                 .parent = nullptr,
                 .proc_def = {
                     .name = token->identifier.content,
-                    .parameters = slice_by_offset(
-                        &proc_params_arr,
-                        proc_param_begin_index,
-                        proc_params_iter.current_index
-                    ),
+                    .parameters = proc_params_arr,
                     .return_type = return_type_node,
                 }
             });
 
-            (void)iter_next_and_set(&nodes_block_iter, ASTNode {
-                .type = ASTNodeType::BINARY_ADD,
-                .parent = proc_node,
-                .binary_operation = {
-                    .oprt = BinaryOperatorType::ADD,
-                    .identifier_left = identifier_left->content,
-                    .identifier_right = identifier_right->content,
-                },
-            });
+            switch(next_node->type) {
+                // TODO Hardcoded addition operation with two identifiers,
+                // rework to make it more general-purpose!
+                case TokenType::IDENTIFIER: {
+                    auto identifier_left = &next_node->identifier;
+        
+                    if (iter_next(&tokens_iter)->type != TokenType::ADD) {
+                        eprint("Error: Expected operator '+'.\n");
+                        goto return_result;
+                    }
+        
+                    next_node = iter_next(&tokens_iter);
+                    if (next_node->type != TokenType::IDENTIFIER) {
+                        eprint("Error: Expected an identifier.\n");
+                        goto return_result;
+                    }
+                    auto identifier_right = &next_node->identifier;
+        
+                    (void)iter_next_and_set(&nodes_block_iter, ASTNode {
+                        .type = ASTNodeType::BINARY_ADD,
+                        .parent = proc_node,
+                        .binary_operation = {
+                            .oprt = BinaryOperatorType::ADD,
+                            .identifier_left = identifier_left->content,
+                            .identifier_right = identifier_right->content,
+                        },
+                    });
 
-            // Nodes appended after the procedure definition are stored in
-            // the same nodes block so it is possible to take the nodes
-            // appended after the definition
-            auto nodes_block_arr = to_array(&nodes_block);
-            proc_node->proc_def.body = slice_by_offset(
-                &nodes_block_arr,
-                proc_param_begin_index + 1,
-                nodes_block_iter.current_index
-            );
+                    // Nodes appended after the procedure definition are stored in
+                    // the same nodes block so it is possible to take the nodes
+                    // appended after the definition
+                    auto nodes_block_arr = to_array(&nodes_block);
+                    proc_node->proc_def.body = slice_by_offset(
+                        &nodes_block_arr,
+                        begin_index + 1,
+                        nodes_block_iter.current_index
+                    );
+                    break;
+                }
+                case TokenType::KEYWORD_PASS: {
+                    // For a pass statement, the procedure body is treated as empty
+                    proc_node->proc_def.body = Array<ASTNode>();
+                    break;
+                }
+                default:
+                    eprint("Error: Expected an identifier or pass keyword.\n");
+                    goto return_result;
+            }
 
             next_node = iter_peek(&tokens_iter);
             switch (next_node->type) {

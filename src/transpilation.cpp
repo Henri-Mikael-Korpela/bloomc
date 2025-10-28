@@ -1,5 +1,6 @@
 #include <bloom/defer.h>
 #include <bloom/log.h>
+#include <bloom/print.h>
 #include <bloom/transpilation.h>
 
 static auto allocate_dynamic_str(ArenaAllocator *allocator) -> DynamicString {
@@ -46,13 +47,16 @@ auto transpile_to_c(
     for (auto &node : *ast_nodes) {
         switch (node.type) {
             case ASTNodeType::PROC_DEF: {
-                char const *return_type_name;
-                if (compare_str(&node.proc_def.return_type->name, "Int")) {
-                    return_type_name = "int";
+                char const *return_type_name = nullptr;
+                if (node.proc_def.return_type != nullptr) {
+                    if (compare_str(&node.proc_def.return_type->name, "Int")) {
+                        return_type_name = "int";
+                    }
                 }
                 else {
                     return_type_name = "void";
                 }
+                assert(return_type_name != nullptr && "Unsupported return type in transpilation");
                 PUSH_STR(return_type_name);
                 PUSH_STR(' ');
                 PUSH_STR(&node.proc_def.name);
@@ -92,7 +96,7 @@ auto transpile_to_c(
         }
     }
 
-    PUSH_STR("int main(){\n\tprintf(\"%i\\n\", sum(5, 10));\n\treturn 0;\n}");
+    //PUSH_STR("int main(){\n\tprintf(\"%i\\n\", sum(5, 10));\n\treturn 0;\n}");
 
     #undef PUSH_STR
 

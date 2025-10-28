@@ -14,6 +14,7 @@ enum class TokenType : uint8_t {
     IDENTIFIER,
     INDENT,
     INTEGER_LITERAL,
+    KEYWORD_PASS,
     KEYWORD_PROC,
     VAR_DEF,
     ADD = '+',
@@ -26,6 +27,7 @@ enum class TokenType : uint8_t {
     TYPE_SEPARATOR = ':',
 };
 
+const auto TOKEN_KEYWORD_PASS = "pass";
 const auto TOKEN_KEYWORD_PROC = "proc";
 
 struct Token {
@@ -60,6 +62,7 @@ constexpr auto to_string(TokenType type) -> String {
         case TokenType::IDENTIFIER:        return STR("identifier");
         case TokenType::INDENT:            return STR("indent");
         case TokenType::INTEGER_LITERAL:   return STR("integer_literal");
+        case TokenType::KEYWORD_PASS:      return STR(TOKEN_KEYWORD_PASS);
         case TokenType::KEYWORD_PROC:      return STR(TOKEN_KEYWORD_PROC);
         case TokenType::NEWLINE:           return STR("newline");
         case TokenType::PARENTHESIS_CLOSE: return STR(")");

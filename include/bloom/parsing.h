@@ -7,6 +7,7 @@
 enum class ASTNodeType : uint8_t {
     UNKNOWN = 0,
     BINARY_ADD,
+    PASS,
     PROC_DEF,
 };
 

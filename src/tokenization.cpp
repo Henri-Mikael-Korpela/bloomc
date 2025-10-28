@@ -12,6 +12,10 @@ static auto next_char_or_null_char(String *str, size_t current_index) -> char {
     }
 }
 
+static inline auto to_array(AllocatedArrayBlock<Token> *tokens_block) -> Array<Token> {
+    return Array<Token>(tokens_block->data, tokens_block->length);
+}
+
 /**
  * Tokenizes the input string into an array of tokens.
  *
@@ -21,10 +25,7 @@ auto tokenize(String *input, ArenaAllocator *allocator) -> Array<Token> {
     // Allocate initially based on the input string length and
     // shrink the allocation later once the final token count is known
     auto tokens_block = allocate_array<Token>(allocator, input->length);
-    auto result = Array<Token> {
-        .data = tokens_block.data,
-        .length = tokens_block.length
-    };
+    auto result = to_array(&tokens_block);
     size_t current_token_index = 0;
 
     auto append_token = [&](Token &&token) {
@@ -53,14 +54,22 @@ auto tokenize(String *input, ArenaAllocator *allocator) -> Array<Token> {
             }
             auto end = i;
             auto identifier_len = end - begin + 1;
-            if (identifier_len == 4) {
-                // Check for the 'proc' keyword
-                if (strncmp(input->data + begin, TOKEN_KEYWORD_PROC, identifier_len) == 0) {
-                    append_token_of_type(TokenType::KEYWORD_PROC);
-                    continue;
+
+            // If the text is a keyword
+            #define KEYWORD_COMPARE_AND_IF_MATCH_THEN_APPEND(keyword) \
+                if (strncmp(input->data + begin, TOKEN_KEYWORD_##keyword, identifier_len) == 0) { \
+                    append_token_of_type(TokenType::KEYWORD_##keyword); \
+                    continue; \
                 }
+
+            if (identifier_len == 4) {
+                KEYWORD_COMPARE_AND_IF_MATCH_THEN_APPEND(PASS);
+                KEYWORD_COMPARE_AND_IF_MATCH_THEN_APPEND(PROC);
             }
-            // Otherwise, it's a regular identifier
+
+            #undef KEYWORD_COMPARE_AND_IF_MATCH_THEN_APPEND
+
+            // If the text wasn't a keyword, treat it as a regular identifier
             append_token({
                 .type = TokenType::IDENTIFIER,
                 .identifier = {

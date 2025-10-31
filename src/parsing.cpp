@@ -62,6 +62,41 @@ static auto iter_peek(Iterator<ElementType> *iter) -> ElementType* {
     return &iter->elements.data[iter->current_index];
 }
 
+auto parse_procedure_parameters(
+    Iterator<Token> *tokens_iter,
+    Iterator<ProcParameterASTNode> *proc_params_iter
+) -> bool {
+    do {
+        auto current_token = iter_next(tokens_iter);
+        switch (current_token->type) {
+            case TokenType::PARENTHESIS_CLOSE:
+                return true;
+            case TokenType::COMMA:
+                // Just skip commas
+                continue;
+            case TokenType::IDENTIFIER:
+                (void)iter_next_and_set(proc_params_iter, ProcParameterASTNode {
+                    .name = current_token->identifier.content
+                });
+
+                if (iter_next(tokens_iter)->type != TokenType::TYPE_SEPARATOR) {
+                    eprint("Error: Unexpected end of tokens while parsing procedure parameters\n");
+                    return false;
+                }
+
+                // TODO: Skip the type token for now but deal with it later
+                (void)iter_next(tokens_iter);
+                break;
+            default:
+                eprint(
+                    "Error: Unexpected token \"%\" while parsing procedure parameters\n",
+                    to_string(current_token->type)
+                );
+                return false;
+        }
+    } while(true);
+}
+
 auto parse(Array<Token> *tokens, ArenaAllocator *allocator) -> Array<ASTNode> {
     auto types_block = allocate_array<TypeASTNode>(allocator, tokens->length);
     auto types_iter = to_iterator(&types_block);
@@ -103,37 +138,11 @@ auto parse(Array<Token> *tokens, ArenaAllocator *allocator) -> Array<ASTNode> {
 
             // Parse procedure parameters (if any)
             size_t const begin_index = proc_params_iter.current_index;
-            do {
-                auto current_token = iter_next(&tokens_iter);
-                switch (current_token->type) {
-                    case TokenType::PARENTHESIS_CLOSE:
-                        goto parse_return_type;
-                    case TokenType::COMMA:
-                        // Just skip commas
-                        continue;
-                    case TokenType::IDENTIFIER:
-                        (void)iter_next_and_set(&proc_params_iter, ProcParameterASTNode {
-                            .name = current_token->identifier.content
-                        });
+            bool parsed_params = parse_procedure_parameters(&tokens_iter, &proc_params_iter);
+            if (!parsed_params) {
+                goto return_result;
+            }
 
-                        if (iter_next(&tokens_iter)->type != TokenType::TYPE_SEPARATOR) {
-                            eprint("Error: Unexpected end of tokens while parsing procedure parameters\n");
-                            goto return_result;
-                        }
-
-                        // TODO: Skip the type token for now but deal with it later
-                        (void)iter_next(&tokens_iter);
-                        break;
-                    default:
-                        eprint(
-                            "Error: Unexpected token \"%\" while parsing procedure parameters\n",
-                            to_string(current_token->type)
-                        );
-                        goto return_result;
-                }
-            } while(true);
-
-        parse_return_type:
             // Parse procedure return type if it exists before the arrow operator
             TypeASTNode *return_type_node = nullptr;
             auto next_node = iter_next(&tokens_iter);

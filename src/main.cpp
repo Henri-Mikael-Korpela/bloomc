@@ -12,7 +12,7 @@
 constexpr size_t kb(size_t n) { return n * 1024; }
 constexpr size_t mb(size_t n) { return n * 1024 * 1024; }
 
-const size_t MAIN_MEMORY_SIZE = kb(8);
+const size_t MAIN_MEMORY_SIZE = kb(16);
 
 int main(int argc, char* argv[]) {
     if (argc < 3) {

@@ -74,14 +74,34 @@ auto transpile_to_c(
                 PUSH_STR(')');
                 PUSH_STR("{\n");
                 for (auto &statement : node.proc_def.body) {
-                    PUSH_STR('\t');
                     switch (statement.type) {
                         case ASTNodeType::BINARY_ADD: {
+                            PUSH_STR('\t');
                             PUSH_STR("return ");
                             PUSH_STR(&statement.binary_operation.identifier_left);
                             PUSH_STR(" + ");
                             PUSH_STR(&statement.binary_operation.identifier_right);
                             PUSH_STR(";\n");
+                            break;
+                        }
+                        case ASTNodeType::PROC_CALL: {
+                            // For simplicity, assume procedure calls return void
+                            PUSH_STR('\t');
+                            PUSH_STR(&statement.proc_call.caller_identifier);
+                            PUSH_STR('(');
+                            auto args_len = statement.proc_call.arguments.length;
+                            for (size_t i = 0; i < args_len; i++) {
+                                auto *arg = &statement.proc_call.arguments[i];
+                                assert(arg->type == ASTNodeType::STRING_LITERAL &&
+                                    "Only string literal arguments are supported in transpilation");
+                                PUSH_STR('"');
+                                PUSH_STR(&arg->string_literal.value);
+                                if (i != args_len - 1) {
+                                    PUSH_STR("\", ");
+                                }
+                                PUSH_STR('"');
+                            }
+                            PUSH_STR(");\n");
                             break;
                         }
                         default:

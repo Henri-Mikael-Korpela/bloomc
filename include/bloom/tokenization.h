@@ -8,6 +8,16 @@
 
 enum class TokenType : uint8_t {
     UNKNOWN = 0,
+    
+    // Printable characters, ASCII code in ascending order
+    NEWLINE           = '\n',
+    PARENTHESIS_OPEN  = '(',
+    PARENTHESIS_CLOSE = ')',
+    ADD               = '+',
+    COMMA             = ',',
+    BRACE_OPEN        = '{',
+    BRACE_CLOSE       = '}',
+    
     ARROW,
     CONST_DEF,
     END,
@@ -16,15 +26,9 @@ enum class TokenType : uint8_t {
     INTEGER_LITERAL,
     KEYWORD_PASS,
     KEYWORD_PROC,
+    STRING_LITERAL,
+    TYPE_SEPARATOR,
     VAR_DEF,
-    ADD = '+',
-    BRACE_CLOSE = '}',
-    BRACE_OPEN = '{',
-    COMMA = ',',
-    NEWLINE = '\n',
-    PARENTHESIS_CLOSE = ')',
-    PARENTHESIS_OPEN = '(',
-    TYPE_SEPARATOR = ':',
 };
 
 const auto TOKEN_KEYWORD_PASS = "pass";
@@ -45,6 +49,9 @@ struct Token {
                 uint64_t uvalue;
             };
         } integer_literal;
+        struct {
+            String content;
+        } string_literal;
     };
 };
 static_assert(sizeof(Token) == 24, "Token size is not 24 bytes");
@@ -67,6 +74,7 @@ constexpr auto to_string(TokenType type) -> String {
         case TokenType::NEWLINE:           return STR("newline");
         case TokenType::PARENTHESIS_CLOSE: return STR(")");
         case TokenType::PARENTHESIS_OPEN:  return STR("(");
+        case TokenType::STRING_LITERAL:    return STR("string_literal");
         case TokenType::TYPE_SEPARATOR:    return STR(":");
         case TokenType::VAR_DEF:           return STR("var_def");
         default:                           return STR("undefined");

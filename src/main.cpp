@@ -83,17 +83,22 @@ int main(int argc, char* argv[]) {
                 );
                 break;
             case TokenType::INDENT:
-                print("\tIndentation level: %\n",
+                print("\tLevel: %\n",
                     token.indent.level
                 );
                 break;
             case TokenType::INTEGER_LITERAL:
-                print("\tInteger literal: %\n",
+                print("\tValue: %\n",
                     token.integer_literal.value
                 );
                 break;
             case TokenType::KEYWORD_PROC:
                 print("\tKeyword: %\n", TOKEN_KEYWORD_PROC);
+                break;
+            case TokenType::STRING_LITERAL:
+                print("\tContent: %\n",
+                    token.string_literal.content
+                );
                 break;
         }
     }
@@ -131,7 +136,18 @@ int main(int argc, char* argv[]) {
                 print("\tProcedure return type: %\n", return_type_name);
                 print("\tProcedure body (length %):\n", node.proc_def.body.length);
                 for (auto &statement : node.proc_def.body) {
-                    printf("\t\tStatement\n");
+                    if (statement.parent != &node) {
+                        continue;
+                    }
+                    print("\t\tStatement: %\n", to_string(statement.type));
+                    if (statement.type == ASTNodeType::PROC_CALL) {
+                        print("\t\t\tProcedure call with % arguments\n",
+                            statement.proc_call.arguments.length);
+                    }
+                    else if (statement.type == ASTNodeType::RETURN) {
+                        print("\t\t\tReturn value node type: %\n",
+                            to_string(statement.return_value->type));
+                    }
                 }
                 break;
         }

@@ -169,6 +169,26 @@ auto tokenize(String *input, ArenaAllocator *allocator) -> Array<Token> {
                 append_token_of_type(TokenType::TYPE_SEPARATOR);
             }
         }
+        else if(c == '"') {
+            // Expect a string literal
+            auto begin = i + 1;
+            while (i + 1 < input->length) {
+                i++;
+                if (char_at(input, i) == '"') {
+                    break;
+                }
+            }
+            auto string_len = i - begin;
+            append_token({
+                .type = TokenType::STRING_LITERAL,
+                .string_literal = {
+                    .content = String::from_data_and_length(
+                        input->data + begin,
+                        string_len
+                    )
+                },
+            });
+        }
         else if (c == static_cast<char>(TokenType::ADD)) {
             append_token_of_type(TokenType::ADD);
         }

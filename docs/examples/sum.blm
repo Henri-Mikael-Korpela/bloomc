@@ -1,9 +1,8 @@
 sum :: proc(a : Int, b : Int) Int ->
     a + b
 
-sum2 :: proc(c : Int, d : Int) Int ->
-    c + d
+sum2 :: proc(a : Int, b : Int) Int ->
+    a + b
 
 main :: proc() ->
-    pass
-
+    printf("Hello, world!\n")

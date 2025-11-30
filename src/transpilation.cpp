@@ -94,10 +94,7 @@ auto transpile_to_c(
                                 auto *arg = &statement.proc_call.arguments[i];
                                 if (arg->type == ASTNodeType::IDENTIFIER) {
                                     PUSH_STR(&arg->identifier);
-                                    if (i != args_len - 1) {
-                                        PUSH_STR(", ");
-                                    }
-                                    continue;
+                                    goto add_comma_inbetween;
                                 }
                                 else if (arg->type != ASTNodeType::STRING_LITERAL) {
                                     assert(false && "Only identifier and string literal arguments are supported in transpilation");
@@ -105,9 +102,11 @@ auto transpile_to_c(
                                 PUSH_STR('"');
                                 PUSH_STR(&arg->string_literal.value);
                                 PUSH_STR('"');
-                                if (i != args_len - 1) {
-                                    PUSH_STR(", ");
-                                }
+
+                                add_comma_inbetween:
+                                    if (i != args_len - 1) {
+                                        PUSH_STR(", ");
+                                    }
                             }
                             PUSH_STR(");\n");
                             break;

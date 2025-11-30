@@ -96,10 +96,10 @@ auto transpile_to_c(
                                     "Only string literal arguments are supported in transpilation");
                                 PUSH_STR('"');
                                 PUSH_STR(&arg->string_literal.value);
-                                if (i != args_len - 1) {
-                                    PUSH_STR("\", ");
-                                }
                                 PUSH_STR('"');
+                                if (i != args_len - 1) {
+                                    PUSH_STR(", ");
+                                }
                             }
                             PUSH_STR(");\n");
                             break;

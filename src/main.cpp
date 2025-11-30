@@ -141,7 +141,7 @@ int main(int argc, char* argv[]) {
                     }
                     print("\t\tStatement: %\n", to_string(statement.type));
                     if (statement.type == ASTNodeType::PROC_CALL) {
-                        print("\t\t\tProcedure call with % arguments\n",
+                        print("\t\t\tArgument count: %\n",
                             statement.proc_call.arguments.length);
                     }
                     else if (statement.type == ASTNodeType::RETURN) {

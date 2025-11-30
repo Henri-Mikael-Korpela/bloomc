@@ -57,12 +57,13 @@ extern auto parse(Array<Token> *tokens, ArenaAllocator *allocator) -> Array<ASTN
 constexpr auto to_string(ASTNodeType type) -> String {
     #define STR(x) String::from_null_terminated_str(x)
     switch (type) {
-        case ASTNodeType::BINARY_ADD: return STR("binary_add");
-        case ASTNodeType::PASS:       return STR("pass");
-        case ASTNodeType::PROC_CALL:  return STR("procedure call");
-        case ASTNodeType::PROC_DEF:   return STR("procedure definition");
-        case ASTNodeType::RETURN:     return STR("return");
-        default:                      return STR("undefined");
+        case ASTNodeType::BINARY_ADD:     return STR("binary_add");
+        case ASTNodeType::PASS:           return STR("pass");
+        case ASTNodeType::PROC_CALL:      return STR("procedure call");
+        case ASTNodeType::PROC_DEF:       return STR("procedure definition");
+        case ASTNodeType::RETURN:         return STR("return");
+        case ASTNodeType::STRING_LITERAL: return STR("string_literal");
+        default:                          return STR("undefined");
     }
     #undef STR
 }

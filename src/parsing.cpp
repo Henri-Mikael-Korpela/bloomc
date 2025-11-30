@@ -148,6 +148,48 @@ auto print_value(FILE *file, Context *context) -> void {
     );
 }
 
+/**
+ * Parses procedure call parameters and appends them to the given procedure call AST node.
+ * @return true on success, false on failure.
+ */
+auto parse_proc_parameters(
+    Iterator<Token> *tokens_iter,
+    ASTNode *proc_call_node,
+    Context *context,
+    DynamicArray<ParseError> *errors
+) -> bool {
+    while(true) {
+        auto next_token = iter_next(tokens_iter);
+        if (next_token->type == TokenType::PARENTHESIS_CLOSE) {
+            break;
+        }
+        else if (next_token->type == TokenType::COMMA) {
+            continue;
+        }
+        else if(next_token->type == TokenType::END) {
+            append(errors, ParseError::UNEXPECTED_TOKEN);
+            return false;
+        }
+        else {
+            // TODO: Hardcoded string literal argument parsing for now, fix later
+            if (next_token->type == TokenType::STRING_LITERAL) {
+                (void)iter_next_and_set(context->nodes_block_iter, ASTNode {
+                    .type = ASTNodeType::STRING_LITERAL,
+                    .parent = proc_call_node,
+                    .string_literal = {
+                        .value = next_token->string_literal.content,
+                    },
+                });
+            }
+            else {
+                append(errors, ParseError::UNEXPECTED_TOKEN);
+                return false;
+            }
+        }
+    }
+    return true;
+}
+
 auto parse_statement(
     Iterator<Token> *tokens_iter,
     Context *context,
@@ -200,7 +242,6 @@ auto parse_statement(
                 case TokenType::PARENTHESIS_OPEN: {
                     // Expect a procedure call
                     
-                    // Parse procedure arguments
                     auto *proc_call_node = iter_next_and_set(context->nodes_block_iter, ASTNode {
                         .type = ASTNodeType::PROC_CALL,
                         .parent = context->current_proc_node,
@@ -210,35 +251,13 @@ auto parse_statement(
                             .caller_identifier = next_token->identifier.content,
                         },
                     });
-
+                    
+                    // Parse procedure arguments
                     auto proc_args_begin_index =
                         context->nodes_block_iter->current_index;
 
-                    while(true) {
-                        auto next_token = iter_next(tokens_iter);
-                        if (next_token->type == TokenType::PARENTHESIS_CLOSE) {
-                            break;
-                        }
-                        else if(next_token->type == TokenType::END) {
-                            append(errors, ParseError::UNEXPECTED_TOKEN);
-                            return false;
-                        }
-                        else {
-                            // TODO: Hardcoded string literal argument parsing for now, fix later
-                            if (next_token->type == TokenType::STRING_LITERAL) {
-                                (void)iter_next_and_set(context->nodes_block_iter, ASTNode {
-                                    .type = ASTNodeType::STRING_LITERAL,
-                                    .parent = proc_call_node,
-                                    .string_literal = {
-                                        .value = next_token->string_literal.content,
-                                    },
-                                });
-                            }
-                            else {
-                                append(errors, ParseError::UNEXPECTED_TOKEN);
-                                return false;
-                            }
-                        }
+                    if (!parse_proc_parameters(tokens_iter, proc_call_node, context, errors)) {
+                        return false;
                     }
 
                     auto proc_arguments = to_array(context->nodes_block_iter);

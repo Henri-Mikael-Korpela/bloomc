@@ -152,7 +152,7 @@ auto print_value(FILE *file, Context *context) -> void {
  * Parses procedure call parameters and appends them to the given procedure call AST node.
  * @return true on success, false on failure.
  */
-auto parse_proc_parameters(
+auto parse_proc_arguments(
     Iterator<Token> *tokens_iter,
     ASTNode *proc_call_node,
     Context *context,
@@ -256,7 +256,7 @@ auto parse_statement(
                     auto proc_args_begin_index =
                         context->nodes_block_iter->current_index;
 
-                    if (!parse_proc_parameters(tokens_iter, proc_call_node, context, errors)) {
+                    if (!parse_proc_arguments(tokens_iter, proc_call_node, context, errors)) {
                         return false;
                     }
 

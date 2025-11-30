@@ -5,4 +5,5 @@ sum2 :: proc(a : Int, b : Int) Int ->
     a + b
 
 main :: proc() ->
-    printf("%s", "Hello, world!\n")
+    person_num := 5
+    printf("%s%i\n", "Person with #", person_num)

@@ -171,7 +171,15 @@ auto parse_proc_arguments(
             return false;
         }
         else {
-            // TODO: Hardcoded string literal argument parsing for now, fix later
+            // TODO: Hardcoded argument parsing for now, fix later
+            if (next_token->type == TokenType::IDENTIFIER) {
+                (void)iter_next_and_set(context->nodes_block_iter, ASTNode {
+                    .type = ASTNodeType::IDENTIFIER,
+                    .parent = proc_call_node,
+                    .identifier = next_token->identifier.content,
+                });
+            }
+            else
             if (next_token->type == TokenType::STRING_LITERAL) {
                 (void)iter_next_and_set(context->nodes_block_iter, ASTNode {
                     .type = ASTNodeType::STRING_LITERAL,
@@ -237,6 +245,36 @@ auto parse_statement(
                     auto new_context = *context;
                     new_context.current_identifier = next_token;
                     parse_statement(tokens_iter, &new_context, errors);
+                    return true;
+                }
+                case TokenType::VAR_DEF: {
+                    if (context->current_proc_node == nullptr) {
+                        append(errors, ParseError::UNEXPECTED_TOKEN);
+                        return false;
+                    }
+                    // TODO: Handle expressions in general later. Now, deal with
+                    // an integer literal as variable value only for simplicity
+                    auto *integer_literal_token = iter_next(tokens_iter);
+                    if (integer_literal_token->type != TokenType::INTEGER_LITERAL) {
+                        append(errors, ParseError::UNEXPECTED_TOKEN);
+                        return false;
+                    }
+                    (void)iter_next_and_set(context->nodes_block_iter, ASTNode {
+                        .type = ASTNodeType::VARIABLE_DEFINITION,
+                        .parent = context->current_proc_node,
+                        .variable_definition = {
+                            .name = next_token->identifier.content,
+                            .value = IntegerLiteralASTNode {
+                                .value = integer_literal_token->integer_literal.value,
+                            },
+                        },
+                    });
+
+                    // Expect newline after variable definition
+                    if (iter_next(tokens_iter)->type != TokenType::NEWLINE) {
+                        append(errors, ParseError::UNEXPECTED_TOKEN);
+                        return false;
+                    }
                     return true;
                 }
                 case TokenType::PARENTHESIS_OPEN: {
@@ -389,6 +427,10 @@ auto parse_statement(
             }
 
             proc_node->proc_def.body = proc_body_nodes;
+            print("Parsed procedure definition: % with body length %\n",
+                proc_name,
+                proc_node->proc_def.body.length
+            );
 
             return true;
         }

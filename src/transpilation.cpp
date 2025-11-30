@@ -92,8 +92,16 @@ auto transpile_to_c(
                             auto args_len = statement.proc_call.arguments.length;
                             for (size_t i = 0; i < args_len; i++) {
                                 auto *arg = &statement.proc_call.arguments[i];
-                                assert(arg->type == ASTNodeType::STRING_LITERAL &&
-                                    "Only string literal arguments are supported in transpilation");
+                                if (arg->type == ASTNodeType::IDENTIFIER) {
+                                    PUSH_STR(&arg->identifier);
+                                    if (i != args_len - 1) {
+                                        PUSH_STR(", ");
+                                    }
+                                    continue;
+                                }
+                                else if (arg->type != ASTNodeType::STRING_LITERAL) {
+                                    assert(false && "Only identifier and string literal arguments are supported in transpilation");
+                                }
                                 PUSH_STR('"');
                                 PUSH_STR(&arg->string_literal.value);
                                 PUSH_STR('"');
@@ -102,6 +110,23 @@ auto transpile_to_c(
                                 }
                             }
                             PUSH_STR(");\n");
+                            break;
+                        }
+                        case ASTNodeType::VARIABLE_DEFINITION: {
+                            PUSH_STR('\t');
+                            PUSH_STR("int ");
+                            PUSH_STR(&statement.variable_definition.name);
+                            PUSH_STR(" = ");
+                            char buffer[32] = {0};
+                            int written = snprintf(
+                                buffer,
+                                sizeof(buffer),
+                                "%lld",
+                                statement.variable_definition.value.value
+                            );
+                            assert(written > 0 && "Failed to convert integer literal to string");
+                            PUSH_STR(buffer);
+                            PUSH_STR(";\n");
                             break;
                         }
                         default:

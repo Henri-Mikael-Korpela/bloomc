@@ -7,15 +7,21 @@
 enum class ASTNodeType : uint8_t {
     UNKNOWN = 0,
     BINARY_ADD,
+    IDENTIFIER,
     PASS,
     PROC_CALL,
     PROC_DEF,
     RETURN,
     STRING_LITERAL,
+    VARIABLE_DEFINITION,
 };
 
 enum class BinaryOperatorType : uint8_t {
     ADD = '+',
+};
+
+struct IntegerLiteralASTNode {
+    int64_t value;
 };
 
 struct ProcParameterASTNode {
@@ -35,6 +41,7 @@ struct ASTNode {
             String identifier_left;
             String identifier_right;
         } binary_operation;
+        String identifier;
         struct {
             Array<ASTNode> arguments;
             String caller_identifier;
@@ -49,6 +56,10 @@ struct ASTNode {
         struct {
             String value;
         } string_literal;
+        struct {
+            String name;
+            IntegerLiteralASTNode value;
+        } variable_definition;
     };
 };
 
@@ -57,13 +68,14 @@ extern auto parse(Array<Token> *tokens, ArenaAllocator *allocator) -> Array<ASTN
 constexpr auto to_string(ASTNodeType type) -> String {
     #define STR(x) String::from_null_terminated_str(x)
     switch (type) {
-        case ASTNodeType::BINARY_ADD:     return STR("binary_add");
-        case ASTNodeType::PASS:           return STR("pass");
-        case ASTNodeType::PROC_CALL:      return STR("procedure call");
-        case ASTNodeType::PROC_DEF:       return STR("procedure definition");
-        case ASTNodeType::RETURN:         return STR("return");
-        case ASTNodeType::STRING_LITERAL: return STR("string_literal");
-        default:                          return STR("undefined");
+        case ASTNodeType::BINARY_ADD:          return STR("binary_add");
+        case ASTNodeType::PASS:                return STR("pass");
+        case ASTNodeType::PROC_CALL:           return STR("procedure call");
+        case ASTNodeType::PROC_DEF:            return STR("procedure definition");
+        case ASTNodeType::RETURN:              return STR("return");
+        case ASTNodeType::STRING_LITERAL:      return STR("string_literal");
+        case ASTNodeType::VARIABLE_DEFINITION: return STR("variable_definition");
+        default:                               return STR("undefined");
     }
     #undef STR
 }

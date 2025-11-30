@@ -41,12 +41,12 @@ auto tokenize(String *input, ArenaAllocator *allocator) -> Array<Token> {
 
     for (size_t i = 0; i < input->length; i++) {
         char c = char_at(input, i);
-        if (isalpha(c)) {
+        if (isalpha(c) || c == '_') {
             // Expect an identifier
             auto begin = i;
             while (i + 1 < input->length) {
                 // Keep going if the next character is an alphabet
-                if (isalnum(char_at(input, i + 1))) {
+                if (isalnum(char_at(input, i + 1)) || char_at(input, i + 1) == '_') {
                     i++;
                 } else {
                     break;

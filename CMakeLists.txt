@@ -8,6 +8,9 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 # Disable exceptions
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fno-exceptions")
 
+# Treat warnings as errors
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Werror")
+
 add_executable(bloomc
     src/allocation.cpp
     src/parsing.cpp

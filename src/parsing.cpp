@@ -557,7 +557,7 @@ auto parse(Array<Token> *tokens, ArenaAllocator *allocator) -> Array<ASTNode> {
         "Proc parameter count mismatch after re-allocation");
 
     // Update the proc parameters pointers in the AST nodes to point to the new tightly packed block
-    for (auto node : new_nodes_block) {
+    for (auto &node : new_nodes_block) {
         if (node.type == ASTNodeType::PROC_DEF) {
             node.proc_def.parameters.data =
                 ptr_sub(node.proc_def.parameters.data,

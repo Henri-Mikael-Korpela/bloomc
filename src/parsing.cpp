@@ -179,8 +179,7 @@ auto parse_proc_arguments(
                     .identifier = next_token->identifier.content,
                 });
             }
-            else
-            if (next_token->type == TokenType::STRING_LITERAL) {
+            else if (next_token->type == TokenType::STRING_LITERAL) {
                 (void)iter_next_and_set(context->nodes_block_iter, ASTNode {
                     .type = ASTNodeType::STRING_LITERAL,
                     .parent = proc_call_node,
@@ -427,10 +426,6 @@ auto parse_statement(
             }
 
             proc_node->proc_def.body = proc_body_nodes;
-            print("Parsed procedure definition: % with body length %\n",
-                proc_name,
-                proc_node->proc_def.body.length
-            );
 
             return true;
         }

@@ -36,6 +36,10 @@ const auto TOKEN_KEYWORD_PROC = "proc";
 
 struct Token {
     TokenType type;
+    struct Position {
+        uint64_t col;
+        uint64_t line;
+    } position;
     union {
         struct {
             String content;
@@ -54,7 +58,7 @@ struct Token {
         } string_literal;
     };
 };
-static_assert(sizeof(Token) == 24, "Token size is not 24 bytes");
+static_assert(sizeof(Token) == 40, "Token size is not 40 bytes");
 
 constexpr auto to_string(TokenType type) -> String {
     #define STR(x) String::from_null_terminated_str(x)

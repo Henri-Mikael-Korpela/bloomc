@@ -33,10 +33,7 @@ auto transpile_to_c(
     ArenaAllocator *allocator
 ) -> void {
     auto marker = allocator_marker_from_current_offset(allocator);
-    defer({
-        logf("DEFER Reclaimed\n");
-        reclaim_to_marker(allocator, &marker);
-    });
+    defer(reclaim_to_marker(allocator, &marker));
     
     auto str_buffer = allocate_dynamic_str(allocator);
 
@@ -120,7 +117,7 @@ auto transpile_to_c(
                             int written = snprintf(
                                 buffer,
                                 sizeof(buffer),
-                                "%lld",
+                                "%ju",
                                 statement.variable_definition.value.value
                             );
                             assert(written > 0 && "Failed to convert integer literal to string");

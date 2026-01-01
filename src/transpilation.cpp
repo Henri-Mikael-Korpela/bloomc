@@ -46,7 +46,7 @@ auto transpile_to_c(
             case ASTNodeType::PROC_DEF: {
                 char const *return_type_name = nullptr;
                 if (node.proc_def.return_type != nullptr) {
-                    if (compare_str(&node.proc_def.return_type->name, "Int")) {
+                    if (node.proc_def.return_type->name == "Int") {
                         return_type_name = "int";
                     }
                 }

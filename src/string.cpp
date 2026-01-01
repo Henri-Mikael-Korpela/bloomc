@@ -16,17 +16,17 @@ String String::from_null_terminated_str(char const* value) {
     return str;
 }
 
+auto String::operator==(char const *value) -> bool {
+    size_t b_length = strlen(value);
+    if (this->length != b_length) {
+        return false;
+    }
+    return strncmp(this->data, value, this->length) == 0;
+}
+
 auto char_at(String *str, size_t index) -> char {
     assert(index < str->length && "String index out of bounds");
     return str->data[index];
-}
-
-auto compare_str(String *a, char const *b) -> bool {
-    size_t b_length = strlen(b);
-    if (a->length != b_length) {
-        return false;
-    }
-    return strncmp(a->data, b, a->length) == 0;
 }
 
 auto contains_str(String *str, char c) -> bool {

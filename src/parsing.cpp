@@ -1,3 +1,4 @@
+#include <bloom/assert.h>
 #include <bloom/print.h>
 #include <bloom/ptr.h>
 #include <bloom/parsing.h>
@@ -51,7 +52,7 @@ struct Iterator {
 };
 
 template<typename ElementType>
-static auto to_array(Iterator<ElementType> *iter) -> Array<ElementType> {
+static inline auto to_array(Iterator<ElementType> *iter) -> Array<ElementType> {
     return Array<ElementType>(
         iter->elements.data,
         iter->current_index
@@ -59,17 +60,35 @@ static auto to_array(Iterator<ElementType> *iter) -> Array<ElementType> {
 }
 
 template<typename ElementType>
-static auto to_iterator(AllocatedArrayBlock<ElementType> *block) -> Iterator<ElementType> {
+static inline auto to_iterator(AllocatedArrayBlock<ElementType> *block) -> Iterator<ElementType> {
     return {
         .elements = to_array(block),
         .current_index = 0,
     };
 }
-static auto to_iterator(Array<Token> *tokens) -> Iterator<Token> {
+static inline auto to_iterator(Array<Token> *tokens) -> Iterator<Token> {
     return {
         .elements = *tokens,
         .current_index = 0,
     };
+}
+
+/**
+ * Advances the iterator and sets the next element to the given value, and returns it.
+ */
+template<typename ElementType>
+static auto iter_append(
+    Iterator<ElementType> *iter,
+    ElementType &&value
+) -> ElementType* {
+    auto next_elem = iter_next(iter);
+    *next_elem = value;
+    return next_elem;
+}
+
+template<typename ElementType>
+static auto iter_current(Iterator<ElementType> *iter) -> ElementType* {
+    return &iter->elements.data[iter->current_index];
 }
 
 /**
@@ -79,32 +98,35 @@ template<typename ElementType>
 static auto iter_next(Iterator<ElementType> *iter) -> ElementType* {
     assert (iter->elements.length > 0 &&
         "Cannot advance iterator because the iterator length is 0.");
-    assert(iter->current_index < iter->elements.length &&
-        "Iterator out of bounds");
+    assertf(
+        iter->current_index < iter->elements.length,
+        "Iterator out of bounds:\n"
+        "\tElement type size: %zu\n"
+        "\tCurrent index: %zu\n"
+        "\tMax length: %zu",
+        sizeof(ElementType), iter->current_index, iter->elements.length
+    );
     return &iter->elements.data[iter->current_index++];
-}
-
-/**
- * Advances the iterator and sets the next element to the given value, and returns it.
- */
-template<typename ElementType>
-static auto iter_next_and_set(
-    Iterator<ElementType> *iter,
-    ElementType &&value
-) -> ElementType* {
-    auto next_elem = iter_next(iter);
-    *next_elem = value;
-    return next_elem;
 }
 
 /**
  * Peeks at the current element without advancing the iterator.
  */
 template<typename ElementType>
-static auto iter_peek(Iterator<ElementType> *iter) -> ElementType* {
+static inline auto iter_peek(Iterator<ElementType> *iter) -> ElementType* {
     assert(iter->current_index < iter->elements.length &&
         "Iterator out of bounds");
     return &iter->elements.data[iter->current_index];
+}
+
+/**
+ * Peeks at the previous element without changing the iterator.
+ */
+template<typename ElementType>
+static inline auto iter_peek_prev(Iterator<ElementType> *iter) -> ElementType* {
+    assert(iter->current_index > 0 &&
+        "Iterator out of bounds");
+    return &iter->elements.data[iter->current_index - 1];
 }
 
 template<typename ElementType>
@@ -152,14 +174,18 @@ auto print_value(FILE *file, Context *context) -> void {
  * Parses procedure call parameters and appends them to the given procedure call AST node.
  * @return true on success, false on failure.
  */
-auto parse_proc_arguments(
+static auto parse_proc_arguments(
     Iterator<Token> *tokens_iter,
     ASTNode *proc_call_node,
     Context *context,
     DynamicArray<ParseError> *errors
 ) -> bool {
+    assert(proc_call_node->type == ASTNodeType::PROC_CALL &&
+        "Procedure call node should be of PROC_CALL type after parsing arguments");
+
+    Token *next_token;
     while(true) {
-        auto next_token = iter_next(tokens_iter);
+        next_token = iter_next(tokens_iter);
         if (next_token->type == TokenType::PARENTHESIS_CLOSE) {
             break;
         }
@@ -173,14 +199,14 @@ auto parse_proc_arguments(
         else {
             // TODO: Hardcoded argument parsing for now, fix later
             if (next_token->type == TokenType::IDENTIFIER) {
-                (void)iter_next_and_set(context->nodes_block_iter, ASTNode {
+                (void)iter_append(context->nodes_block_iter, ASTNode {
                     .type = ASTNodeType::IDENTIFIER,
                     .parent = proc_call_node,
                     .identifier = next_token->identifier.content,
                 });
             }
             else if (next_token->type == TokenType::STRING_LITERAL) {
-                (void)iter_next_and_set(context->nodes_block_iter, ASTNode {
+                (void)iter_append(context->nodes_block_iter, ASTNode {
                     .type = ASTNodeType::STRING_LITERAL,
                     .parent = proc_call_node,
                     .string_literal = {
@@ -194,19 +220,80 @@ auto parse_proc_arguments(
             }
         }
     }
+
+    assert(next_token != nullptr && next_token->type == TokenType::PARENTHESIS_CLOSE &&
+        "Expected closing parenthesis after procedure call arguments");
     return true;
 }
 
+/**
+ * Parses procedure parameters and appends them to the given procedure definition AST node.
+ * 
+ * The parsing begins with an opening parenthesis token and ends with a closing parenthesis token.
+ * 
+ * @return true on success, false on failure.
+ */
+static auto parse_proc_params(
+    Iterator<Token> *tokens_iter,
+    Iterator<ProcParameterASTNode> *proc_params_iter,
+    DynamicArray<ParseError> *errors
+) -> bool {
+    assert(proc_params_iter != nullptr &&
+        "Procedure parameters iterator should not be null in proc definition context");
+
+    Token *current_token = iter_next(tokens_iter);
+    if (current_token->type != TokenType::PARENTHESIS_OPEN) {
+        append(errors, ParseError::UNEXPECTED_TOKEN);
+        return false;
+    }
+    while(true) {
+        current_token = iter_next(tokens_iter);
+        switch (current_token->type) {
+            case TokenType::PARENTHESIS_CLOSE:
+                return true;
+            case TokenType::COMMA:
+                // Just skip commas
+                continue;
+            case TokenType::IDENTIFIER: {
+                (void)iter_append(proc_params_iter, ProcParameterASTNode {
+                    .name = current_token->identifier.content
+                });
+
+                if (iter_next(tokens_iter)->type != TokenType::TYPE_SEPARATOR) {
+                    append(errors, ParseError::UNEXPECTED_TOKEN);
+                    return false;
+                }
+
+                // TODO: Skip the type token for now but deal with it later
+                (void)iter_next(tokens_iter);
+                break;
+            }
+            default:
+                append(errors, ParseError::UNEXPECTED_TOKEN);
+                return false;
+        }
+    }
+
+    assert(current_token->type == TokenType::PARENTHESIS_CLOSE &&
+        "Expected closing parenthesis after procedure parameters");
+    return true;
+}
+
+/**
+ * @deprecated
+ */
 auto parse_statement(
     Iterator<Token> *tokens_iter,
     Context *context,
     DynamicArray<ParseError> *errors
 ) -> bool {
-    auto next_token = iter_next(tokens_iter);
-    assert(next_token != nullptr &&
-        "Unexpected end of tokens while parsing");
-    /*print("PARSING STATEMENT: %\n", to_string(next_token->type));
-    print("CONTEXT: %\n", context);*/
+    assert(iter_current(tokens_iter) != nullptr &&
+        "Current token should not be null in parse_statement");
+    assert(iter_current(tokens_iter)->type != TokenType::END &&
+        "Cannot parse statement: reached end of tokens");
+
+    auto *next_token = iter_next(tokens_iter);
+    assert(next_token != nullptr && "Unexpected end of tokens while parsing");
     switch(next_token->type) {
         case TokenType::IDENTIFIER: {
             switch (auto next_token2 = iter_next(tokens_iter); next_token2->type) {
@@ -226,7 +313,7 @@ auto parse_statement(
                     }
                     auto identifier_right = identifier_right_token->identifier.content;
 
-                    (void)iter_next_and_set(context->nodes_block_iter, ASTNode {
+                    (void)iter_append(context->nodes_block_iter, ASTNode {
                         .type = ASTNodeType::BINARY_ADD,
                         .parent = context->current_proc_node,
                         .binary_operation = {
@@ -246,53 +333,24 @@ auto parse_statement(
                     parse_statement(tokens_iter, &new_context, errors);
                     return true;
                 }
-                case TokenType::VAR_DEF: {
-                    if (context->current_proc_node == nullptr) {
-                        append(errors, ParseError::UNEXPECTED_TOKEN);
-                        return false;
-                    }
-                    // TODO: Handle expressions in general later. Now, deal with
-                    // an integer literal as variable value only for simplicity
-                    auto *integer_literal_token = iter_next(tokens_iter);
-                    if (integer_literal_token->type != TokenType::INTEGER_LITERAL) {
-                        append(errors, ParseError::UNEXPECTED_TOKEN);
-                        return false;
-                    }
-                    (void)iter_next_and_set(context->nodes_block_iter, ASTNode {
-                        .type = ASTNodeType::VARIABLE_DEFINITION,
-                        .parent = context->current_proc_node,
-                        .variable_definition = {
-                            .name = next_token->identifier.content,
-                            .value = IntegerLiteralASTNode {
-                                .value = integer_literal_token->integer_literal.value,
-                            },
-                        },
-                    });
-
-                    // Expect newline after variable definition
-                    if (iter_next(tokens_iter)->type != TokenType::NEWLINE) {
-                        append(errors, ParseError::UNEXPECTED_TOKEN);
-                        return false;
-                    }
-                    return true;
-                }
                 case TokenType::PARENTHESIS_OPEN: {
                     // Expect a procedure call
+                    assert(context->nodes_block_iter != nullptr &&
+                        "Nodes block iterator should not be null in parse statement context");
+                    assert(context->current_proc_node != nullptr &&
+                        "Current procedure node should not be null in parse statement context");
                     
-                    auto *proc_call_node = iter_next_and_set(context->nodes_block_iter, ASTNode {
+                    auto *proc_call_node = iter_append(context->nodes_block_iter, ASTNode {
                         .type = ASTNodeType::PROC_CALL,
                         .parent = context->current_proc_node,
                         .proc_call = {
-                            // .arguments = ... missing, it will be set later,
-                            // after parsing arguments
                             .caller_identifier = next_token->identifier.content,
+                            // The rest of the fields will be filled later
                         },
                     });
                     
                     // Parse procedure arguments
-                    auto proc_args_begin_index =
-                        context->nodes_block_iter->current_index;
-
+                    size_t proc_args_begin_index = context->nodes_block_iter->current_index;
                     if (!parse_proc_arguments(tokens_iter, proc_call_node, context, errors)) {
                         return false;
                     }
@@ -305,6 +363,51 @@ auto parse_statement(
                     );
 
                     proc_call_node->proc_call.arguments = proc_arguments;
+
+                    assert(iter_peek_prev(tokens_iter)->type == TokenType::PARENTHESIS_CLOSE &&
+                        "Expected closing parenthesis after procedure call arguments");
+                    
+                    // Expect an end token or a newline after procedure call and consume it
+                    auto *current_token = iter_current(tokens_iter);
+                    if (!(
+                        current_token->type == TokenType::END ||
+                        current_token->type == TokenType::NEWLINE
+                    )) {
+                        append(errors, ParseError::UNEXPECTED_TOKEN);
+                        return false;
+                    }
+                    return true;
+                }
+                case TokenType::VAR_DEF: {
+                    if (context->current_proc_node == nullptr) {
+                        append(errors, ParseError::UNEXPECTED_TOKEN);
+                        return false;
+                    }
+                    // TODO: Handle expressions in general later. Now, deal with
+                    // an integer literal as variable value only for simplicity
+                    {
+                        Token *integer_literal_token = iter_next(tokens_iter);
+                        if (integer_literal_token->type != TokenType::INTEGER_LITERAL) {
+                            append(errors, ParseError::UNEXPECTED_TOKEN);
+                            return false;
+                        }
+                        (void)iter_append(context->nodes_block_iter, ASTNode {
+                            .type = ASTNodeType::VARIABLE_DEFINITION,
+                            .parent = context->current_proc_node,
+                            .variable_definition = {
+                                .name = next_token->identifier.content,
+                                .value = IntegerLiteralASTNode {
+                                    .value = integer_literal_token->integer_literal.value,
+                                },
+                            },
+                        });
+    
+                        // Expect newline after variable definition
+                        if (iter_next(tokens_iter)->type != TokenType::NEWLINE) {
+                            append(errors, ParseError::UNEXPECTED_TOKEN);
+                            return false;
+                        }
+                    }
                     return true;
                 }
                 default:
@@ -319,15 +422,17 @@ auto parse_statement(
                 append(errors, ParseError::UNEXPECTED_TOKEN);
                 return false;
             }
-            assert(context->current_identifier->type == TokenType::IDENTIFIER &&
-                "Current identifier in context should be of IDENTIFIER token type");
+            auto constexpr current_identifier_type = TokenType::IDENTIFIER;
+            assertf(
+                context->current_identifier->type == current_identifier_type,
+                "Current identifier in context should be of %.*s token type",
+                static_cast<int>(to_string(current_identifier_type).length),
+                to_string(current_identifier_type).data
+            );
 
             // Expect to parse the procedure parameters
-            auto new_context = *context;
-            new_context.in_proc_definition = true;
-            size_t const last_proc_param_begin_index =
-                context->proc_params_iter->current_index;
-            if (!parse_statement(tokens_iter, &new_context, errors)) {
+            size_t last_proc_param_begin_index = context->proc_params_iter->current_index;
+            if (!parse_proc_params(tokens_iter, context->proc_params_iter, errors)) {
                 return false;
             }
 
@@ -335,7 +440,7 @@ auto parse_statement(
             TypeASTNode *return_type_node;
             switch (auto next_token = iter_next(tokens_iter); next_token->type) {
                 case TokenType::IDENTIFIER:
-                    return_type_node = iter_next_and_set(context->types_iter, TypeASTNode {
+                    return_type_node = iter_append(context->types_iter, TypeASTNode {
                         .name = next_token->identifier.content,
                     });
 
@@ -361,7 +466,7 @@ auto parse_statement(
                 context->proc_params_iter->current_index
             );
             auto proc_name = context->current_identifier->identifier.content;
-            auto *proc_node = iter_next_and_set(context->nodes_block_iter, ASTNode { 
+            auto *proc_node = iter_append(context->nodes_block_iter, ASTNode { 
                 .type = ASTNodeType::PROC_DEF,
                 .parent = nullptr,
                 .proc_def = {
@@ -393,9 +498,6 @@ auto parse_statement(
                 }
             }
 
-            // TODO Initialize proc body nodes after implicit return handling
-            // so that there would be no need to modify the proc body
-            // nodes length later manually
             auto proc_body_nodes = to_array(context->nodes_block_iter);
             proc_body_nodes = slice_by_offset(
                 &proc_body_nodes,
@@ -408,17 +510,18 @@ auto parse_statement(
             // and if so, set it as the return value of the procedure
             if (proc_body_nodes.length > 0) {
                 size_t last_node_index = proc_body_nodes.length - 1;
-                auto &last_node = proc_body_nodes.data[last_node_index];
-                if (last_node.type == ASTNodeType::BINARY_ADD) {
+                auto last_node = &proc_body_nodes.data[last_node_index];
+                // TODO: Support more expression types
+                if (last_node->type == ASTNodeType::BINARY_ADD) {
                     // "Append" a return node after the last node and set the last node's
                     // parent to be the return node in order to avoid listing the last
                     // expression node amongst procedure body statements
-                    auto *return_node = iter_next_and_set(context->nodes_block_iter, ASTNode {
+                    auto *return_node = iter_append(context->nodes_block_iter, ASTNode {
                         .type = ASTNodeType::RETURN,
                         .parent = proc_node,
-                        .return_value = &last_node,
+                        .return_value = last_node,
                     });
-                    last_node.parent = return_node;
+                    last_node->parent = return_node;
                     // FEELS LIKE A HACK Modify the procedure body nodes length
                     // so that the last node for return statement is included
                     proc_body_nodes.length += 1;
@@ -426,61 +529,19 @@ auto parse_statement(
             }
 
             proc_node->proc_def.body = proc_body_nodes;
-
             return true;
         }
         case TokenType::NEWLINE:
             // Skip newlines
+            printf("Skipping newline...\n");
             return true;
-        case TokenType::PARENTHESIS_OPEN: {
-            if (!context->in_proc_definition) {
-                append(errors, ParseError::UNEXPECTED_TOKEN);
-                return false;
-            }
-
-            // Parse procedure parameters
-            assert(context->proc_params_iter != nullptr &&
-                "Procedure parameters iterator should not be null in proc definition context");
-            Token *current_token;
-            while(true) {
-                current_token = iter_next(tokens_iter);
-                switch (current_token->type) {
-                    case TokenType::PARENTHESIS_CLOSE:
-                        return true;
-                    case TokenType::COMMA:
-                        // Just skip commas
-                        continue;
-                    case TokenType::IDENTIFIER: {
-                        (void)iter_next_and_set(context->proc_params_iter, ProcParameterASTNode {
-                            .name = current_token->identifier.content
-                        });
-
-                        if (iter_next(tokens_iter)->type != TokenType::TYPE_SEPARATOR) {
-                            append(errors, ParseError::UNEXPECTED_TOKEN);
-                            return false;
-                        }
-
-                        // TODO: Skip the type token for now but deal with it later
-                        (void)iter_next(tokens_iter);
-                        break;
-                    }
-                    default:
-                        append(errors, ParseError::UNEXPECTED_TOKEN);
-                        return false;
-                }
-            }
-
-            assert(current_token->type == TokenType::PARENTHESIS_CLOSE &&
-                "Expected closing parenthesis after procedure parameters");
-            return false;
-        }
         case TokenType::KEYWORD_PASS:
             if (context->current_proc_node == nullptr) {
                 append(errors, ParseError::UNEXPECTED_TOKEN);
                 return false;
             }
 
-            (void)iter_next_and_set(context->nodes_block_iter, ASTNode {
+            (void)iter_append(context->nodes_block_iter, ASTNode {
                 .type = ASTNodeType::PASS,
                 .parent = context->current_proc_node,
             });
@@ -494,7 +555,8 @@ auto parse_statement(
 
 auto parse(Array<Token> *tokens, ArenaAllocator *allocator) -> Array<ASTNode> {
     // Allocate all necessary blocks upfront
-    constexpr size_t MAX_ERROR_COUNT = 16;
+    // TODO Adjust the max error count so that it is exact
+    size_t constexpr MAX_ERROR_COUNT = 16; // Should enough for now
     auto errors_block = allocate_array<ParseError>(allocator, MAX_ERROR_COUNT);
 
     auto types_block = allocate_array<TypeASTNode>(allocator, tokens->length);
@@ -522,9 +584,13 @@ auto parse(Array<Token> *tokens, ArenaAllocator *allocator) -> Array<ASTNode> {
     auto errors = DynamicArray<ParseError>(&errors_block);
     auto tokens_iter = to_iterator(tokens);
 
-    // TODO: Refactor, simplify but keep this is as (for now) for debugging purposes
     while (true) {
-        /*printf("Parsing next statement...\n");*/
+        // TODO Remove this commented section later, for debugging purposes only
+        /* printf("Parsing next statement...\n");
+        print("\tCurrent tokens iterator index: %\n", tokens_iter.current_index);
+        print("\tCurrent token type: %\n",
+            to_string(iter_peek(&tokens_iter)->type)
+        ); */
         auto success = parse_statement(&tokens_iter, &context, &errors);
         if (!success) {
             break;

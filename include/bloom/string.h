@@ -25,11 +25,12 @@ struct String {
 
     static String from_data_and_length(char const *data, size_t length);
     static String from_null_terminated_str(char const *value);
+
+    auto operator==(char const *value) -> bool;
 };
 static_assert(sizeof(String) == 16, "String size is not 16 bytes");
 
 extern auto char_at(String *str, size_t index) -> char;
-extern auto compare_str(String *a, char const *b) -> bool;
 extern auto contains_str(String *str, char c) -> bool;
 
 // Add support for printing String values

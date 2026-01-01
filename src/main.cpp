@@ -74,29 +74,29 @@ int main(int argc, char* argv[]) {
 
     for (auto &token : tokens) {
         auto token_type = to_string(token.type);
-        print("Token %:% % | ", token.position.line, token.position.col, to_string(token.type));
+        print("Token %:% %", token.position.line, token.position.col, to_string(token.type));
         switch (token.type) {
             case TokenType::IDENTIFIER:
-                print("% (% chars)",
+                print(" | % (% chars)",
                     token.identifier.content,
                     token.identifier.content.length
                 );
                 break;
             case TokenType::INDENT:
-                print("level: %",
+                print(" | level: %",
                     token.indent.level
                 );
                 break;
             case TokenType::INTEGER_LITERAL:
-                print("value: %",
+                print(" | value: %",
                     token.integer_literal.value
                 );
                 break;
             case TokenType::KEYWORD_PROC:
-                print("keyword: %", TOKEN_KEYWORD_PROC);
+                print(" | keyword: %", TOKEN_KEYWORD_PROC);
                 break;
             case TokenType::STRING_LITERAL:
-                print("content: %",
+                print(" | content: %",
                     token.string_literal.content
                 );
                 break;
@@ -108,7 +108,7 @@ int main(int argc, char* argv[]) {
     // Parse the tokens into an AST
     auto ast_nodes = parse(&tokens, &main_allocator);
 
-    /*auto MISSING_TYPE = String::from_null_terminated_str("(none)");
+    auto MISSING_TYPE = String::from_null_terminated_str("(none)");
 
     for (auto &node : ast_nodes) {
         if (node.parent != nullptr) {
@@ -153,7 +153,7 @@ int main(int argc, char* argv[]) {
                 }
                 break;
         }
-    }*/
+    }
 
     // Transpile AST nodes into C source code
     String target_file_path = String::from_null_terminated_str("/home/henri/Personal/bloomc2/sum.c");

@@ -8,6 +8,7 @@ enum class ASTNodeType : uint8_t {
     UNKNOWN = 0,
     BINARY_ADD,
     IDENTIFIER,
+    INTEGER_LITERAL,
     PASS,
     PROC_CALL,
     PROC_DEF,
@@ -21,7 +22,10 @@ enum class BinaryOperatorType : uint8_t {
 };
 
 struct IntegerLiteralASTNode {
-    int64_t value;
+    union {
+        int64_t value;
+        uint64_t uvalue;
+    };
 };
 
 struct ProcParameterASTNode {
@@ -42,6 +46,9 @@ struct ASTNode {
             String identifier_right;
         } binary_operation;
         String identifier;
+        struct {
+            IntegerLiteralASTNode value;
+        } integer_literal;
         struct {
             Array<ASTNode> arguments;
             String caller_identifier;
@@ -69,6 +76,8 @@ constexpr auto to_string(ASTNodeType type) -> String {
     #define STR(x) String::from_null_terminated_str(x)
     switch (type) {
         case ASTNodeType::BINARY_ADD:          return STR("binary_add");
+        case ASTNodeType::IDENTIFIER:          return STR("identifier");
+        case ASTNodeType::INTEGER_LITERAL:     return STR("integer_literal");
         case ASTNodeType::PASS:                return STR("pass");
         case ASTNodeType::PROC_CALL:           return STR("procedure call");
         case ASTNodeType::PROC_DEF:            return STR("procedure definition");

@@ -1,4 +1,5 @@
 main :: proc() ->
-    x := 5
-    y := x + 5
-    z := x + y
+    x := 501
+    printf("My number: %i\n", x)
+    y := 202
+    printf("My other number: %i\n", y)

@@ -137,20 +137,11 @@ auto transpile_to_c(
         }
     }
 
-    //PUSH_STR("int main(){\n\tprintf(\"%i\\n\", sum(5, 10));\n\treturn 0;\n}");
-
     #undef PUSH_STR
 
     // Write the target file
     char *target_file_path_c_str = allocate_null_terminated_str_from_str(allocator, target_file_path);
 
     FILE *file = fopen(target_file_path_c_str, "w");
-    defer({
-        logf("DEFER Closing file\n");
-        fclose(file);
-    });
-
     fwrite(str_buffer.data, 1, str_buffer.length, file);
-
-    logf("File written\n");
 }

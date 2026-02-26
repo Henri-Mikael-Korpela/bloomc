@@ -1,5 +1,9 @@
 # Bloom Programming Language
 
+This repo contains the current implementation of the compiler for my own Bloom programming language.
+
+The project is heavily work-in-progress. It is intended to demonstrate I can program in C++ and do something meaningful with it. Also, I love designing a programming language.
+
 ## Prerequisites
 
 Before you begin, ensure you have the following installed:

@@ -76,9 +76,13 @@ auto transpile_to_c(
                         case ASTNodeType::BINARY_ADD: {
                             PUSH_STR('\t');
                             PUSH_STR("return ");
-                            PUSH_STR(&statement.binary_operation.identifier_left);
+                            auto &bl = statement.binary_operation.left;
+                            auto &br = statement.binary_operation.right;
+                            if (bl.is_identifier) { PUSH_STR(&bl.identifier); }
+                            else { char buf[32]={0}; snprintf(buf,sizeof(buf),"%jd",bl.integer_literal.value); PUSH_STR(buf); }
                             PUSH_STR(" + ");
-                            PUSH_STR(&statement.binary_operation.identifier_right);
+                            if (br.is_identifier) { PUSH_STR(&br.identifier); }
+                            else { char buf[32]={0}; snprintf(buf,sizeof(buf),"%jd",br.integer_literal.value); PUSH_STR(buf); }
                             PUSH_STR(";\n");
                             break;
                         }
@@ -111,33 +115,44 @@ auto transpile_to_c(
                         }
                         case ASTNodeType::VARIABLE_DEFINITION: {
                             PUSH_STR('\t');
+                            // Emit C type from deduced Bloom type
+                            const char *c_type = nullptr;
                             switch (statement.variable_definition.deduced_type) {
-                                case DeducedType::BOOLEAN:
-                                    PUSH_STR("bool ");
-                                    PUSH_STR(&statement.variable_definition.name);
-                                    PUSH_STR(" = ");
-                                    PUSH_STR(statement.variable_definition.boolean_value ? "true" : "false");
-                                    PUSH_STR(";\n");
-                                    break;
-                                case DeducedType::INTEGER: {
-                                    PUSH_STR("int ");
-                                    PUSH_STR(&statement.variable_definition.name);
-                                    PUSH_STR(" = ");
-                                    char buffer[32] = {0};
-                                    int written = snprintf(
-                                        buffer,
-                                        sizeof(buffer),
-                                        "%jd",
-                                        statement.variable_definition.value.value
-                                    );
+                                case DeducedType::BOOLEAN: c_type = "bool"; break;
+                                case DeducedType::INTEGER: c_type = "int";  break;
+                                default: assert(false && "Unsupported deduced type in transpilation");
+                            }
+                            PUSH_STR(c_type);
+                            PUSH_STR(' ');
+                            PUSH_STR(&statement.variable_definition.name);
+                            PUSH_STR(" = ");
+                            // Emit value from expression type
+                            switch (statement.variable_definition.expr_type) {
+                                case ASTNodeType::INTEGER_LITERAL: {
+                                    char buf[32] = {0};
+                                    int written = snprintf(buf, sizeof(buf), "%jd",
+                                        statement.variable_definition.integer_value.value);
                                     assert(written > 0 && "Failed to convert integer literal to string");
-                                    PUSH_STR(buffer);
-                                    PUSH_STR(";\n");
+                                    PUSH_STR(buf);
+                                    break;
+                                }
+                                case ASTNodeType::BOOLEAN_LITERAL:
+                                    PUSH_STR(statement.variable_definition.boolean_value ? "true" : "false");
+                                    break;
+                                case ASTNodeType::BINARY_ADD: {
+                                    auto &vl = statement.variable_definition.add_expr.left;
+                                    auto &vr = statement.variable_definition.add_expr.right;
+                                    if (vl.is_identifier) { PUSH_STR(&vl.identifier); }
+                                    else { char buf[32]={0}; snprintf(buf,sizeof(buf),"%jd",vl.integer_literal.value); PUSH_STR(buf); }
+                                    PUSH_STR(" + ");
+                                    if (vr.is_identifier) { PUSH_STR(&vr.identifier); }
+                                    else { char buf[32]={0}; snprintf(buf,sizeof(buf),"%jd",vr.integer_literal.value); PUSH_STR(buf); }
                                     break;
                                 }
                                 default:
-                                    assert(false && "Unsupported deduced type in transpilation");
+                                    assert(false && "Unsupported expression type in variable definition transpilation");
                             }
+                            PUSH_STR(";\n");
                             break;
                         }
                         default:

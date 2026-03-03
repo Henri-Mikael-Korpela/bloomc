@@ -45,6 +45,14 @@ struct IntegerLiteralASTNode {
     };
 };
 
+struct BinaryOperand {
+    bool is_identifier;
+    union {
+        String identifier;
+        IntegerLiteralASTNode integer_literal;
+    };
+};
+
 struct ProcParameterASTNode {
     String name;
 };
@@ -59,8 +67,8 @@ struct ASTNode {
     union {
         struct {
             BinaryOperatorType oprt;
-            String identifier_left;
-            String identifier_right;
+            BinaryOperand left;
+            BinaryOperand right;
         } binary_operation;
         String identifier;
         struct {
@@ -85,9 +93,16 @@ struct ASTNode {
         } string_literal;
         struct {
             String name;
-            IntegerLiteralASTNode value;
             DeducedType deduced_type;
-            bool boolean_value;
+            ASTNodeType expr_type;
+            union {
+                IntegerLiteralASTNode integer_value;
+                bool boolean_value;
+                struct {
+                    BinaryOperand left;
+                    BinaryOperand right;
+                } add_expr;
+            };
         } variable_definition;
     };
 };

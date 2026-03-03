@@ -1,5 +1,5 @@
 main :: proc() ->
-    x := 501
+    x := 501 + 200
     printf("My number: %i\n", x)
     y := 202
     printf("My other number: %i\n", y)

@@ -402,15 +402,58 @@ static auto parse_expression(
                 },
             });
         }
+        case TokenType::IDENTIFIER:
         case TokenType::INTEGER_LITERAL: {
+            BinaryOperand left_operand;
+            if (next_token->type == TokenType::IDENTIFIER) {
+                left_operand.is_identifier = true;
+                left_operand.identifier = next_token->identifier.content;
+            } else {
+                left_operand.is_identifier = false;
+                left_operand.integer_literal = IntegerLiteralASTNode { .value = next_token->integer_literal.value };
+            }
+
+            // Peek for a binary add operator
+            if (tokens_iter->current_index < tokens_iter->elements.length &&
+                iter_peek(tokens_iter)->type == TokenType::ADD)
+            {
+                (void)iter_next(tokens_iter); // consume '+'
+
+                Token *right_token = iter_next(tokens_iter);
+                BinaryOperand right_operand;
+                if (right_token->type == TokenType::IDENTIFIER) {
+                    right_operand.is_identifier = true;
+                    right_operand.identifier = right_token->identifier.content;
+                } else if (right_token->type == TokenType::INTEGER_LITERAL) {
+                    right_operand.is_identifier = false;
+                    right_operand.integer_literal = IntegerLiteralASTNode { .value = right_token->integer_literal.value };
+                } else {
+                    return err<ASTNode, ParseError>(PARSE_ERROR_CREATE(UNEXPECTED_TOKEN, right_token));
+                }
+
+                return ok<ASTNode, ParseError>(ASTNode {
+                    .type = ASTNodeType::BINARY_ADD,
+                    .parent = nullptr,
+                    .binary_operation = {
+                        .oprt = BinaryOperatorType::ADD,
+                        .left = left_operand,
+                        .right = right_operand,
+                    },
+                });
+            }
+
+            // No binary operator — return single-operand expression
+            if (left_operand.is_identifier) {
+                return ok<ASTNode, ParseError>(ASTNode {
+                    .type = ASTNodeType::IDENTIFIER,
+                    .parent = nullptr,
+                    .identifier = left_operand.identifier,
+                });
+            }
             return ok<ASTNode, ParseError>(ASTNode {
                 .type = ASTNodeType::INTEGER_LITERAL,
                 .parent = nullptr,
-                .integer_literal = {
-                    .value = IntegerLiteralASTNode {
-                        .value = next_token->integer_literal.value,
-                    },
-                },
+                .integer_literal = { .value = left_operand.integer_literal },
             });
         }
         case TokenType::KEYWORD_PROC: {
@@ -629,24 +672,35 @@ static auto parse_statement(
                 auto expr_node = expr_parse_result.ok;
 
                 DeducedType deduced_type = DeducedType::UNKNOWN;
-                bool boolean_value = false;
-                if (expr_node.type == ASTNodeType::INTEGER_LITERAL) {
+                if (expr_node.type == ASTNodeType::INTEGER_LITERAL ||
+                    expr_node.type == ASTNodeType::BINARY_ADD) {
                     deduced_type = DeducedType::INTEGER;
                 } else if (expr_node.type == ASTNodeType::BOOLEAN_LITERAL) {
                     deduced_type = DeducedType::BOOLEAN;
-                    boolean_value = expr_node.boolean_literal.value;
                 }
 
-                (void)iter_append(nodes_block_iter, ASTNode {
+                ASTNode var_def_node = {
                     .type = ASTNodeType::VARIABLE_DEFINITION,
                     .parent = parent_node,
-                    .variable_definition = {
-                        .name = next_token->identifier.content,
-                        .value = expr_node.integer_literal.value,
-                        .deduced_type = deduced_type,
-                        .boolean_value = boolean_value,
-                    },
-                });
+                };
+                var_def_node.variable_definition.name = next_token->identifier.content;
+                var_def_node.variable_definition.deduced_type = deduced_type;
+                var_def_node.variable_definition.expr_type = expr_node.type;
+                switch (expr_node.type) {
+                    case ASTNodeType::INTEGER_LITERAL:
+                        var_def_node.variable_definition.integer_value = expr_node.integer_literal.value;
+                        break;
+                    case ASTNodeType::BOOLEAN_LITERAL:
+                        var_def_node.variable_definition.boolean_value = expr_node.boolean_literal.value;
+                        break;
+                    case ASTNodeType::BINARY_ADD:
+                        var_def_node.variable_definition.add_expr.left  = expr_node.binary_operation.left;
+                        var_def_node.variable_definition.add_expr.right = expr_node.binary_operation.right;
+                        break;
+                    default:
+                        break;
+                }
+                (void)iter_append(nodes_block_iter, std::move(var_def_node));
                 
                 tokens_iter->current_index += expr_tokens_iter.current_index;
     

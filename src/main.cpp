@@ -116,12 +116,15 @@ int main(int argc, char* argv[]) {
         }
         print("AST Node type: %\n", to_string(node.type));
         switch (node.type) {
-            case ASTNodeType::BINARY_ADD:
+            case ASTNodeType::BINARY_ADD: {
+                auto &bl = node.binary_operation.left;
+                auto &br = node.binary_operation.right;
                 print("\tBinary operation: % + %\n",
-                    node.binary_operation.identifier_left,
-                    node.binary_operation.identifier_right
+                    bl.is_identifier ? bl.identifier : String::from_null_terminated_str("<literal>"),
+                    br.is_identifier ? br.identifier : String::from_null_terminated_str("<literal>")
                 );
                 break;
+            }
             case ASTNodeType::PROC_DEF:
                 print("\tProcedure name: % (% chars)\n",
                     node.proc_def.name,

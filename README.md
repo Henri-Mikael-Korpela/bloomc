@@ -16,7 +16,7 @@ main :: proc() ->
 
     row_reader := csv.get_row_reader(csv_file)
     for ->
-        row, err := cs.read_row(row_reader)
+        row, err := csv.read_row(row_reader)
         if case err.code == $ ->
             .EOF -> break
             .NONE ->

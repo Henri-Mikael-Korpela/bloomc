@@ -392,6 +392,16 @@ static auto parse_expression(
     assert(next_token != nullptr &&
         "Next token should not be null when parsing an expression");
     switch(next_token->type) {
+        case TokenType::KEYWORD_FALSE:
+        case TokenType::KEYWORD_TRUE: {
+            return ok<ASTNode, ParseError>(ASTNode {
+                .type = ASTNodeType::BOOLEAN_LITERAL,
+                .parent = nullptr,
+                .boolean_literal = {
+                    .value = (next_token->type == TokenType::KEYWORD_TRUE),
+                },
+            });
+        }
         case TokenType::INTEGER_LITERAL: {
             return ok<ASTNode, ParseError>(ASTNode {
                 .type = ASTNodeType::INTEGER_LITERAL,
@@ -619,8 +629,12 @@ static auto parse_statement(
                 auto expr_node = expr_parse_result.ok;
 
                 DeducedType deduced_type = DeducedType::UNKNOWN;
+                bool boolean_value = false;
                 if (expr_node.type == ASTNodeType::INTEGER_LITERAL) {
                     deduced_type = DeducedType::INTEGER;
+                } else if (expr_node.type == ASTNodeType::BOOLEAN_LITERAL) {
+                    deduced_type = DeducedType::BOOLEAN;
+                    boolean_value = expr_node.boolean_literal.value;
                 }
 
                 (void)iter_append(nodes_block_iter, ASTNode {
@@ -630,6 +644,7 @@ static auto parse_statement(
                         .name = next_token->identifier.content,
                         .value = expr_node.integer_literal.value,
                         .deduced_type = deduced_type,
+                        .boolean_value = boolean_value,
                     },
                 });
                 

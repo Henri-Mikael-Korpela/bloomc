@@ -3,3 +3,7 @@ main :: proc() ->
     printf("My number: %i\n", x)
     y := 202
     printf("My other number: %i\n", y)
+    b := false
+    printf("My boolean: %i\n", b)
+    c := true
+    printf("My other boolean: %i\n", c)

@@ -39,6 +39,7 @@ auto transpile_to_c(
 
     #define PUSH_STR(value) allocator->offset += push_str(&str_buffer, value)
 
+    PUSH_STR("#include <stdbool.h>\n");
     PUSH_STR("#include <stdio.h>\n\n");
 
     for (auto &node : *ast_nodes) {
@@ -110,25 +111,33 @@ auto transpile_to_c(
                         }
                         case ASTNodeType::VARIABLE_DEFINITION: {
                             PUSH_STR('\t');
-                            const char *c_type = nullptr;
-                            if (statement.variable_definition.deduced_type == DeducedType::INTEGER) {
-                                c_type = "int";
+                            switch (statement.variable_definition.deduced_type) {
+                                case DeducedType::BOOLEAN:
+                                    PUSH_STR("bool ");
+                                    PUSH_STR(&statement.variable_definition.name);
+                                    PUSH_STR(" = ");
+                                    PUSH_STR(statement.variable_definition.boolean_value ? "true" : "false");
+                                    PUSH_STR(";\n");
+                                    break;
+                                case DeducedType::INTEGER: {
+                                    PUSH_STR("int ");
+                                    PUSH_STR(&statement.variable_definition.name);
+                                    PUSH_STR(" = ");
+                                    char buffer[32] = {0};
+                                    int written = snprintf(
+                                        buffer,
+                                        sizeof(buffer),
+                                        "%jd",
+                                        statement.variable_definition.value.value
+                                    );
+                                    assert(written > 0 && "Failed to convert integer literal to string");
+                                    PUSH_STR(buffer);
+                                    PUSH_STR(";\n");
+                                    break;
+                                }
+                                default:
+                                    assert(false && "Unsupported deduced type in transpilation");
                             }
-                            assert(c_type != nullptr && "Unsupported deduced type in transpilation");
-                            PUSH_STR(c_type);
-                            PUSH_STR(' ');
-                            PUSH_STR(&statement.variable_definition.name);
-                            PUSH_STR(" = ");
-                            char buffer[32] = {0};
-                            int written = snprintf(
-                                buffer,
-                                sizeof(buffer),
-                                "%ju",
-                                statement.variable_definition.value.value
-                            );
-                            assert(written > 0 && "Failed to convert integer literal to string");
-                            PUSH_STR(buffer);
-                            PUSH_STR(";\n");
                             break;
                         }
                         default:

@@ -79,6 +79,16 @@ auto tokenize(String *input, ArenaAllocator *allocator) -> Array<Token> {
                     append_token_of_type(TokenType::KEYWORD_PROC);
                     continue;
                 }
+                if (strncmp(input->data + begin, TOKEN_KEYWORD_TRUE, identifier_len) == 0) {
+                    append_token_of_type(TokenType::KEYWORD_TRUE);
+                    continue;
+                }
+            }
+            if (identifier_len == 5) {
+                if (strncmp(input->data + begin, TOKEN_KEYWORD_FALSE, identifier_len) == 0) {
+                    append_token_of_type(TokenType::KEYWORD_FALSE);
+                    continue;
+                }
             }
 
             // If the text wasn't a keyword, treat it as a regular identifier

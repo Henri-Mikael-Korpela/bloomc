@@ -6,12 +6,14 @@
 
 enum class DeducedType : uint8_t {
     UNKNOWN = 0,
+    BOOLEAN,
     INTEGER,
 };
 
 constexpr auto to_string(DeducedType type) -> String {
     #define STR(x) String::from_null_terminated_str(x)
     switch (type) {
+        case DeducedType::BOOLEAN: return STR("boolean");
         case DeducedType::INTEGER: return STR("integer");
         default:                   return STR("unknown");
     }
@@ -21,6 +23,7 @@ constexpr auto to_string(DeducedType type) -> String {
 enum class ASTNodeType : uint8_t {
     UNKNOWN = 0,
     BINARY_ADD,
+    BOOLEAN_LITERAL,
     IDENTIFIER,
     INTEGER_LITERAL,
     PASS,
@@ -61,6 +64,9 @@ struct ASTNode {
         } binary_operation;
         String identifier;
         struct {
+            bool value;
+        } boolean_literal;
+        struct {
             IntegerLiteralASTNode value;
         } integer_literal;
         struct {
@@ -81,6 +87,7 @@ struct ASTNode {
             String name;
             IntegerLiteralASTNode value;
             DeducedType deduced_type;
+            bool boolean_value;
         } variable_definition;
     };
 };
@@ -91,6 +98,7 @@ constexpr auto to_string(ASTNodeType type) -> String {
     #define STR(x) String::from_null_terminated_str(x)
     switch (type) {
         case ASTNodeType::BINARY_ADD:          return STR("binary_add");
+        case ASTNodeType::BOOLEAN_LITERAL:     return STR("boolean_literal");
         case ASTNodeType::IDENTIFIER:          return STR("identifier");
         case ASTNodeType::INTEGER_LITERAL:     return STR("integer_literal");
         case ASTNodeType::PASS:                return STR("pass");

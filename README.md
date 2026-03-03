@@ -1,5 +1,33 @@
 # Bloom Programming Language
 
+Bloom is a statically-typed, compiled programming language designed for simplicity and performance. It is C-like, influenced by many languages like Odin and Rust, readable like Python and has a batteries included philosophy, aimed for making low-level programming for web more accessible.
+
+The language is currently under active development. Here's an example of what is to come:
+
+```odin
+csv from import "@bloom/csv"
+
+main :: proc() ->
+    csv_file, err := csv.open_file("data.csv")
+    if err.code != .NONE ->
+        eprintln("Error reading CSV file: {}", err.message)
+        return
+    defer csv.close_file(csv_file)
+
+    row_reader := csv.get_row_reader(csv_file)
+    for ->
+        row, err := cs.read_row(row_reader)
+        if case err.code == $ ->
+            .EOF -> break
+            .NONE ->
+                eprintln("Error reading row: {}", err.message)
+                continue
+
+        println("Row:")
+        for key, value in row ->
+            println("\t{}: {}", key, value)
+```
+
 ## Prerequisites
 
 Before you begin, ensure you have the following installed:

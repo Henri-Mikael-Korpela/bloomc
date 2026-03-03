@@ -1,6 +1,6 @@
 # Bloom Programming Language
 
-Bloom is a statically-typed, compiled programming language designed for simplicity and performance. It is C-like, influenced by many languages like Odin and Rust, readable like Python and has a batteries included philosophy, aimed for making low-level programming for web more accessible.
+Bloom is a statically-typed, compiled programming language designed for simplicity and performance. It is C-like, influenced by many languages like Go, JavaScript, Odin and Rust, readable like Python and has a batteries included philosophy, aimed for making low-level programming for web more accessible.
 
 The language is currently under active development. Here's an example of what is to come:
 
@@ -27,6 +27,8 @@ main :: proc() ->
         for key, value in row ->
             println("\t{}: {}", key, value)
 ```
+
+There is an a rough design document in [https://henrijahanna.fi/blog/bloom_overview.php](https://henrijahanna.fi/blog/bloom_overview.php), you may want to take a look at that.
 
 ## Prerequisites
 

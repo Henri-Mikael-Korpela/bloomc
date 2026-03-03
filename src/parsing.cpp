@@ -617,12 +617,19 @@ static auto parse_statement(
                     return false;
                 }
                 auto expr_node = expr_parse_result.ok;
+
+                DeducedType deduced_type = DeducedType::UNKNOWN;
+                if (expr_node.type == ASTNodeType::INTEGER_LITERAL) {
+                    deduced_type = DeducedType::INTEGER;
+                }
+
                 (void)iter_append(nodes_block_iter, ASTNode {
                     .type = ASTNodeType::VARIABLE_DEFINITION,
                     .parent = parent_node,
                     .variable_definition = {
                         .name = next_token->identifier.content,
                         .value = expr_node.integer_literal.value,
+                        .deduced_type = deduced_type,
                     },
                 });
                 

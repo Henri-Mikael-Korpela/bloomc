@@ -110,7 +110,13 @@ auto transpile_to_c(
                         }
                         case ASTNodeType::VARIABLE_DEFINITION: {
                             PUSH_STR('\t');
-                            PUSH_STR("int ");
+                            const char *c_type = nullptr;
+                            if (statement.variable_definition.deduced_type == DeducedType::INTEGER) {
+                                c_type = "int";
+                            }
+                            assert(c_type != nullptr && "Unsupported deduced type in transpilation");
+                            PUSH_STR(c_type);
+                            PUSH_STR(' ');
                             PUSH_STR(&statement.variable_definition.name);
                             PUSH_STR(" = ");
                             char buffer[32] = {0};

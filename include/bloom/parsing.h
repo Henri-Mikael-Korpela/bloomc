@@ -4,6 +4,20 @@
 #include <bloom/string.h>
 #include <bloom/tokenization.h>
 
+enum class DeducedType : uint8_t {
+    UNKNOWN = 0,
+    INTEGER,
+};
+
+constexpr auto to_string(DeducedType type) -> String {
+    #define STR(x) String::from_null_terminated_str(x)
+    switch (type) {
+        case DeducedType::INTEGER: return STR("integer");
+        default:                   return STR("unknown");
+    }
+    #undef STR
+}
+
 enum class ASTNodeType : uint8_t {
     UNKNOWN = 0,
     BINARY_ADD,
@@ -66,6 +80,7 @@ struct ASTNode {
         struct {
             String name;
             IntegerLiteralASTNode value;
+            DeducedType deduced_type;
         } variable_definition;
     };
 };

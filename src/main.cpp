@@ -14,20 +14,13 @@ constexpr size_t mb(size_t n) { return n * 1024 * 1024; }
 
 const size_t MAIN_MEMORY_SIZE = kb(16);
 
-int main(int argc, char* argv[]) {
-    if (argc < 3) {
-        eprint("Usage: % run <input_file_path>\n", argv[0]);
-        return 1;
-    }
+int run(char const *input_file_path_cstr) {
+    // TODO
+    return 0;
+}
 
-    auto current_path = std::filesystem::current_path();
-
-    if (strncmp(argv[1], "run", 3) != 0) {
-        eprint("Error: First argument must be 'run'\n");
-        return 1;
-    }
-
-    auto input_file_path = std::filesystem::path(argv[2]);
+int transpile(char const *input_file_path_cstr, char const *output_file_path_cstr) {
+    auto input_file_path = std::filesystem::path(input_file_path_cstr);
     print("Input file path: %\n", input_file_path.string().c_str());
 
     if (!std::filesystem::exists(input_file_path)) {
@@ -159,7 +152,7 @@ int main(int argc, char* argv[]) {
     }
 
     // Transpile AST nodes into C source code
-    String target_file_path = String::from_null_terminated_str("/home/henri/Personal/bloomc2/sum.c");
+    String target_file_path = String::from_null_terminated_str(output_file_path_cstr);
     transpile_to_c(&target_file_path, &ast_nodes, &main_allocator);
 
     print(
@@ -171,4 +164,26 @@ int main(int argc, char* argv[]) {
 
     delete_allocator(&main_allocator);
     return 0;
+}
+
+int main(int argc, char* argv[]) {
+    if (argc < 2) {
+        eprint("Usage: % run|transpile <args...>\n", argv[0]);
+        return 1;
+    }
+
+    if (strncmp(argv[1], "run", 3) == 0) {
+        return run(argv[2]);
+    }
+    else if (strncmp(argv[1], "transpile", 9) == 0) {
+        if (argc < 3) {
+            eprint("Usage: % transpile <input_file_path> <output_file_path>\n", argv[0]);
+            return 1;
+        }
+        return transpile(argv[2], argv[3]);
+    }
+    else {
+        eprint("Error: First argument must be 'run' or 'transpile'\n");
+        return 1;
+    }
 }

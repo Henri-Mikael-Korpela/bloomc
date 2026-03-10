@@ -1,0 +1,16 @@
+#!/bin/bash
+target_src_file=docs/examples/calc.blm
+target_dest_file=./sum
+
+transpilation_file_path="build/transpilations/$target_dest_file.c"
+gcc_cmd="gcc -o $target_dest_file $transpilation_file_path"
+
+cmd="\
+    cd build && \
+    cmake --build . && \
+    clear && ./bloomc transpile ../$target_src_file ../$transpilation_file_path && \
+    cd .. && \
+    printf '\n--- Output of generated C program ---\n' && \
+    $gcc_cmd && $target_dest_file
+"
+find -name '*.h' -or -name '*.cpp' | entr bash -c "sleep 0.25 && $cmd"

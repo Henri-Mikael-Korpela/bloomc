@@ -2,37 +2,8 @@
 #include <bloom/assert.h>
 #include <bloom/print.h>
 #include <bloom/ptr.h>
+#include <bloom/result.h>
 #include <bloom/parsing.h>
-
-template<typename T, typename E>
-struct Result {
-    bool is_ok;
-    union {
-        T ok;
-        E err;
-    };
-};
-
-template<typename T, typename E>
-static inline auto err(E error) -> Result<T, E> {
-    return Result<T, E> {
-        .is_ok = false,
-        .err = error,
-    };
-}
-
-template<typename T, typename E>
-static inline auto ok(T value) -> Result<T, E> {
-    return Result<T, E> {
-        .is_ok = true,
-        .ok = value,
-    };
-}
-
-template<typename T, typename E>
-static inline auto is_ok(Result<T, E> const &result) -> bool {
-    return result.is_ok;
-}
 
 enum class ParseErrorCode {
     UNEXPECTED_TOKEN,

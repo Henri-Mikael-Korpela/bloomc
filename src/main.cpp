@@ -67,7 +67,7 @@ auto run(char const *input_file_path_cstr) -> int {
 
     auto main_allocator = ArenaAllocator(MAIN_MEMORY_SIZE);
 
-    auto input_file_content = str_from_cstr(reinterpret_cast<char*>(mapped_memory));
+    auto input_file_content = cstr_to_str(reinterpret_cast<char*>(mapped_memory));
     Array<Token> tokens = tokenize(&input_file_content, &main_allocator);
     auto ast_nodes = parse(&tokens, &main_allocator);
 
@@ -144,7 +144,7 @@ auto transpile(char const *input_file_path_cstr, char const *output_file_path_cs
     print("File contents: %\n", reinterpret_cast<char*>(mapped_memory));
 
     // Tokenize the input
-    auto input_file_content = str_from_cstr(reinterpret_cast<char*>(mapped_memory));
+    auto input_file_content = cstr_to_str(reinterpret_cast<char*>(mapped_memory));
     Array<Token> tokens = tokenize(&input_file_content, &main_allocator);
     print("Tokenized % tokens\n", tokens.length);
 
@@ -184,7 +184,7 @@ auto transpile(char const *input_file_path_cstr, char const *output_file_path_cs
     // Parse the tokens into an AST
     auto ast_nodes = parse(&tokens, &main_allocator);
 
-    auto MISSING_TYPE = str_from_cstr("(none)");
+    auto MISSING_TYPE = cstr_to_str("(none)");
 
     for (auto &node : ast_nodes) {
         if (node.parent != nullptr) {
@@ -245,7 +245,7 @@ auto transpile(char const *input_file_path_cstr, char const *output_file_path_cs
     }
 
     // Transpile AST nodes into C source code
-    auto target_file_path = str_from_cstr(output_file_path_cstr);
+    auto target_file_path = cstr_to_str(output_file_path_cstr);
 
     // TODO Instead of setting the marker here and reclaiming the memory after generating the C code,
     // figure out a better lifetime management strategy.

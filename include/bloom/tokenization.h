@@ -64,7 +64,7 @@ struct Token {
 static_assert(sizeof(Token) == 40, "Token size is not 40 bytes");
 
 constexpr auto to_string(TokenType type) -> Str {
-    #define STR(x) str_from_cstr(x)
+    #define STR(x) cstr_to_str(x)
     switch (type) {
         case TokenType::ADD:               return STR("+");
         case TokenType::ARROW:             return STR("->");

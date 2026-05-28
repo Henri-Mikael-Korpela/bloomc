@@ -10,7 +10,7 @@ enum class DeducedType : uint8_t {
 };
 
 constexpr auto to_string(DeducedType type) -> Str {
-    #define STR(x) str_from_cstr(x)
+    #define STR(x) cstr_to_str(x)
     switch (type) {
         case DeducedType::BOOLEAN: return STR("boolean");
         case DeducedType::INTEGER: return STR("integer");
@@ -105,7 +105,7 @@ struct ASTNode {
 auto parse(Array<Token> *tokens, ArenaAllocator *allocator) -> Array<ASTNode>;
 
 constexpr auto to_string(ASTNodeType type) -> Str {
-    #define STR(x) str_from_cstr(x)
+    #define STR(x) cstr_to_str(x)
     switch (type) {
         case ASTNodeType::BINARY_ADD:          return STR("binary_add");
         case ASTNodeType::BOOLEAN_LITERAL:     return STR("boolean_literal");

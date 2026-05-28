@@ -35,6 +35,13 @@ struct Str {
 };
 static_assert(sizeof(Str) == 16, "String size is not 16 bytes");
 
+inline auto cstr_to_str(char const *value) -> Str {
+    return Str {
+        .data = value,
+        .length = strlen(value),
+    };
+}
+
 inline auto str_char_at(Str *str, size_t index) -> char {
     assert(index < str->length && "String index out of bounds");
     return str->data[index];
@@ -53,13 +60,6 @@ constexpr auto str_from_data_and_length(char const *data, size_t length) -> Str 
     return Str {
         .data = data,
         .length = length,
-    };
-}
-
-inline auto str_from_cstr(char const *value) -> Str {
-    return Str {
-        .data = value,
-        .length = strlen(value),
     };
 }
 
@@ -89,7 +89,7 @@ inline auto str_push(DynamicStr *str, Str value) -> size_t {
  * @return Length increase after pushing the value.
  */
 inline auto str_push(DynamicStr *str, char const *value) -> size_t {
-    return str_push(str, str_from_cstr(value));
+    return str_push(str, cstr_to_str(value));
 }
 
 /**

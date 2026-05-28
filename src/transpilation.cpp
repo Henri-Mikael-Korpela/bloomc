@@ -135,6 +135,30 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
                                     }
                                     break;
                                 }
+                                case ASTNodeType::PROC_CALL: {
+                                    auto &pc = statement.variable_definition.proc_call_expr;
+                                    PUSH_STR(pc.caller_identifier);
+                                    PUSH_STR('(');
+                                    for (size_t i = 0; i < pc.arguments.length; i++) {
+                                        if (i != 0) {
+                                            PUSH_STR(", ");
+                                        }
+                                        auto *arg = &pc.arguments[i];
+                                        if (arg->type == ASTNodeType::IDENTIFIER) {
+                                            PUSH_STR(arg->identifier);
+                                        }
+                                        else if (arg->type == ASTNodeType::INTEGER_LITERAL) {
+                                            PUSH_INT(arg->integer_literal.value.value);
+                                        }
+                                        else if (arg->type == ASTNodeType::STRING_LITERAL) {
+                                            PUSH_STR('"');
+                                            PUSH_STR(arg->string_literal.value);
+                                            PUSH_STR('"');
+                                        }
+                                    }
+                                    PUSH_STR(')');
+                                    break;
+                                }
                                 default:
                                     assert(false && "Unsupported expression type in variable definition transpilation");
                             }

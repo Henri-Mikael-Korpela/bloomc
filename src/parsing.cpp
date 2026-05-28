@@ -253,6 +253,15 @@ static auto parse_proc_call_arguments(
                 },
             });
         }
+        else if (next_token->type == TokenType::INTEGER_LITERAL) {
+            (void)iter_append(nodes_block_iter, ASTNode {
+                .type = ASTNodeType::INTEGER_LITERAL,
+                .parent = proc_call_node,
+                .integer_literal = {
+                    .value = IntegerLiteralASTNode { .value = next_token->integer_literal.value },
+                },
+            });
+        }
         else {
             append(errors, ParseError {
                 .code = ParseErrorCode::UNEXPECTED_TOKEN,
@@ -383,6 +392,34 @@ static auto parse_expression(
         }
         case TokenType::IDENTIFIER:
         case TokenType::INTEGER_LITERAL: {
+            if (next_token->type == TokenType::IDENTIFIER &&
+                tokens_iter->current_index < tokens_iter->elements.length &&
+                iter_peek(tokens_iter)->type == TokenType::PARENTHESIS_OPEN)
+            {
+                int64_t proc_call_end_token_index = iter_get_index_at_if<Token>(
+                    tokens_iter, [](auto *token) {
+                        return token->type == TokenType::PARENTHESIS_CLOSE;
+                    }
+                );
+                auto proc_call_arg_tokens_iter = iter_slice_by_offset(
+                    tokens_iter,
+                    tokens_iter->current_index + 1,
+                    proc_call_end_token_index
+                );
+                ASTNode proc_call_node = {
+                    .type = ASTNodeType::PROC_CALL,
+                    .parent = nullptr,
+                    .proc_call = {
+                        .caller_identifier = next_token->identifier.content,
+                    },
+                };
+                if (!parse_proc_call_arguments(&proc_call_arg_tokens_iter, &proc_call_node, nodes_block_iter, errors)) {
+                    return err<ASTNode, ParseError>(PARSE_ERROR_CREATE(UNEXPECTED_TOKEN, next_token));
+                }
+                tokens_iter->current_index = proc_call_end_token_index + 1;
+                return ok<ASTNode, ParseError>(proc_call_node);
+            }
+
             BinaryOperand left_operand;
             if (next_token->type == TokenType::IDENTIFIER) {
                 left_operand.is_identifier = true;
@@ -714,7 +751,8 @@ static auto parse_statement(
 
                 DeducedType deduced_type = DeducedType::UNKNOWN;
                 if (expr_node.type == ASTNodeType::INTEGER_LITERAL ||
-                    expr_node.type == ASTNodeType::BINARY_ADD) {
+                    expr_node.type == ASTNodeType::BINARY_ADD ||
+                    expr_node.type == ASTNodeType::PROC_CALL) {
                     deduced_type = DeducedType::INTEGER;
                 }
                 else if (expr_node.type == ASTNodeType::BOOLEAN_LITERAL) {
@@ -737,6 +775,10 @@ static auto parse_statement(
                         break;
                     case ASTNodeType::BINARY_ADD:
                         var_def_node.variable_definition.add_expr = expr_node.binary_operation.operands;
+                        break;
+                    case ASTNodeType::PROC_CALL:
+                        var_def_node.variable_definition.proc_call_expr.caller_identifier = expr_node.proc_call.caller_identifier;
+                        var_def_node.variable_definition.proc_call_expr.arguments = expr_node.proc_call.arguments;
                         break;
                     default:
                         break;

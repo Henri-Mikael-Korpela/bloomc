@@ -97,6 +97,10 @@ struct ASTNode {
                 IntegerLiteralASTNode integer_value;
                 bool boolean_value;
                 Array<BinaryOperand> add_expr;
+                struct {
+                    Str caller_identifier;
+                    Array<ASTNode> arguments;
+                } proc_call_expr;
             };
         } variable_definition;
     };

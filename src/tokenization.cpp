@@ -8,7 +8,8 @@
 static auto next_char_or_null_char(Str *str, size_t current_index) -> char {
     if (current_index + 1 < str->length) {
         return str_char_at(str, current_index + 1);
-    } else {
+    }
+    else {
         return '\0';
     }
 }
@@ -60,7 +61,8 @@ auto tokenize(Str *input, ArenaAllocator *allocator) -> Array<Token> {
                 // Keep going if the next character is an alphabet
                 if (isalnum(str_char_at(input, next_i)) || str_char_at(input, next_i) == '_') {
                     i++;
-                } else {
+                }
+                else {
                     break;
                 }
             }
@@ -153,7 +155,8 @@ auto tokenize(Str *input, ArenaAllocator *allocator) -> Array<Token> {
                 // Keep going if the next character is a digit
                 if (isdigit(str_char_at(input, i + 1))) {
                     i++;
-                } else {
+                }
+                else {
                     break;
                 }
             }

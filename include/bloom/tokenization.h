@@ -33,10 +33,10 @@ enum class TokenType : uint8_t {
     VAR_DEF,
 };
 
-const auto TOKEN_KEYWORD_FALSE = "false";
-const auto TOKEN_KEYWORD_PASS  = "pass";
-const auto TOKEN_KEYWORD_PROC  = "proc";
-const auto TOKEN_KEYWORD_TRUE  = "true";
+constexpr auto TOKEN_KEYWORD_FALSE = "false";
+constexpr auto TOKEN_KEYWORD_PASS  = "pass";
+constexpr auto TOKEN_KEYWORD_PROC  = "proc";
+constexpr auto TOKEN_KEYWORD_TRUE  = "true";
 
 struct Token {
     TokenType type;

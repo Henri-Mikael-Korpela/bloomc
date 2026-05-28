@@ -15,7 +15,7 @@
 constexpr auto kb(size_t n) -> size_t { return n * 1024; }
 constexpr auto mb(size_t n) -> size_t { return n * 1024 * 1024; }
 
-const size_t MAIN_MEMORY_SIZE = kb(16);
+constexpr size_t MAIN_MEMORY_SIZE = kb(16);
 
 /**
  * Allocates a null-terminated C string.
@@ -195,10 +195,21 @@ auto transpile(char const *input_file_path_cstr, char const *output_file_path_cs
             case ASTNodeType::BINARY_ADD: {
                 auto &bl = node.binary_operation.left;
                 auto &br = node.binary_operation.right;
-                print("\tBinary operation: % + %\n",
-                    bl.is_identifier ? bl.identifier : str_from_cstr("<literal>"),
-                    br.is_identifier ? br.identifier : str_from_cstr("<literal>")
-                );
+                Str bl_str;
+                if (bl.is_identifier) {
+                    bl_str = bl.identifier;
+                }
+                else {
+                    bl_str = str_from_cstr("<literal>");
+                }
+                Str br_str;
+                if (br.is_identifier) {
+                    br_str = br.identifier;
+                }
+                else {
+                    br_str = str_from_cstr("<literal>");
+                }
+                print("\tBinary operation: % + %\n", bl_str, br_str);
                 break;
             }
             case ASTNodeType::PROC_DEF:
@@ -211,9 +222,10 @@ auto transpile(char const *input_file_path_cstr, char const *output_file_path_cs
                     auto &param = node.proc_def.parameters[i];
                     print("\t\t%: % (% chars)\n", i, param.name, param.name.length);
                 }
-                Str return_type_name = node.proc_def.return_type
-                    ? node.proc_def.return_type->name
-                    : MISSING_TYPE;
+                Str return_type_name = MISSING_TYPE;
+                if (node.proc_def.return_type) {
+                    return_type_name = node.proc_def.return_type->name;
+                }
                 print("\tProcedure return type: %\n", return_type_name);
                 print("\tProcedure body (length %):\n", node.proc_def.body.length);
                 for (auto &statement : node.proc_def.body) {

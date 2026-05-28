@@ -194,7 +194,13 @@ struct Context {
 static auto print_value(FILE *file, Context *context) -> void {
     auto *current_identifier = static_cast<void*>(context->current_identifier);
     auto *current_proc_node = static_cast<void*>(context->current_proc_node);
-    char const *in_proc_definition = context->in_proc_definition ? "true" : "false";
+    char const *in_proc_definition = nullptr;
+    if (context->in_proc_definition) {
+        in_proc_definition = "true";
+    }
+    else {
+        in_proc_definition = "false";
+    }
     fprintf(
         _bloom_test_get_file(file),
         "{current_identifier=%p, current_proc_node=%p, in_proc_definition=%s}",
@@ -379,7 +385,8 @@ static auto parse_expression(
             if (next_token->type == TokenType::IDENTIFIER) {
                 left_operand.is_identifier = true;
                 left_operand.identifier = next_token->identifier.content;
-            } else {
+            }
+            else {
                 left_operand.is_identifier = false;
                 left_operand.integer_literal = IntegerLiteralASTNode { .value = next_token->integer_literal.value };
             }
@@ -395,10 +402,12 @@ static auto parse_expression(
                 if (right_token->type == TokenType::IDENTIFIER) {
                     right_operand.is_identifier = true;
                     right_operand.identifier = right_token->identifier.content;
-                } else if (right_token->type == TokenType::INTEGER_LITERAL) {
+                }
+                else if (right_token->type == TokenType::INTEGER_LITERAL) {
                     right_operand.is_identifier = false;
                     right_operand.integer_literal = IntegerLiteralASTNode { .value = right_token->integer_literal.value };
-                } else {
+                }
+                else {
                     return err<ASTNode, ParseError>(PARSE_ERROR_CREATE(UNEXPECTED_TOKEN, right_token));
                 }
 
@@ -612,10 +621,12 @@ static auto parse_statement(
                 if (right_token->type == TokenType::IDENTIFIER) {
                     right_operand.is_identifier = true;
                     right_operand.identifier = right_token->identifier.content;
-                } else if (right_token->type == TokenType::INTEGER_LITERAL) {
+                }
+                else if (right_token->type == TokenType::INTEGER_LITERAL) {
                     right_operand.is_identifier = false;
                     right_operand.integer_literal = IntegerLiteralASTNode { .value = right_token->integer_literal.value };
-                } else {
+                }
+                else {
                     return false;
                 }
                 iter_append(nodes_block_iter, ASTNode {
@@ -680,7 +691,8 @@ static auto parse_statement(
                 if (expr_node.type == ASTNodeType::INTEGER_LITERAL ||
                     expr_node.type == ASTNodeType::BINARY_ADD) {
                     deduced_type = DeducedType::INTEGER;
-                } else if (expr_node.type == ASTNodeType::BOOLEAN_LITERAL) {
+                }
+                else if (expr_node.type == ASTNodeType::BOOLEAN_LITERAL) {
                     deduced_type = DeducedType::BOOLEAN;
                 }
 

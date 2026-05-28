@@ -93,7 +93,7 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
                         case ASTNodeType::VARIABLE_DEFINITION: {
                             PUSH_STR('\t');
                             // Emit C type from deduced Bloom type
-                            const char *c_type = nullptr;
+                            char const *c_type = nullptr;
                             switch (statement.variable_definition.deduced_type) {
                                 case DeducedType::BOOLEAN: c_type = "bool"; break;
                                 case DeducedType::INTEGER: c_type = "int";  break;
@@ -114,7 +114,12 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
                                     break;
                                 }
                                 case ASTNodeType::BOOLEAN_LITERAL:
-                                    PUSH_STR(statement.variable_definition.boolean_value ? "true" : "false");
+                                    if (statement.variable_definition.boolean_value) {
+                                    PUSH_STR("true");
+                                }
+                                else {
+                                    PUSH_STR("false");
+                                }
                                     break;
                                 case ASTNodeType::BINARY_ADD: {
                                     auto &vl = statement.variable_definition.add_expr.left;

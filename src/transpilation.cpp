@@ -14,7 +14,9 @@ static auto allocate_dynamic_str(ArenaAllocator *allocator) -> DynamicStr {
 auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str {
     auto str_buffer = allocate_dynamic_str(allocator);
 
-    #define PUSH_STR(value) allocator->offset += str_push(&str_buffer, value)
+    #define PUSH_STR(value)  allocator->offset += str_push(&str_buffer, value)
+    #define PUSH_INT(value)  allocator->offset += str_push_int(&str_buffer, value)
+    #define PUSH_BOOL(value) allocator->offset += str_push_bool(&str_buffer, value)
 
     PUSH_STR("#include <stdbool.h>\n");
     PUSH_STR("#include <stdio.h>\n\n");
@@ -55,11 +57,19 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
                             PUSH_STR("return ");
                             auto &bl = statement.binary_operation.left;
                             auto &br = statement.binary_operation.right;
-                            if (bl.is_identifier) { PUSH_STR(&bl.identifier); }
-                            else { char buf[32]={0}; snprintf(buf,sizeof(buf),"%jd",bl.integer_literal.value); PUSH_STR(buf); }
+                            if (bl.is_identifier) {
+                                PUSH_STR(&bl.identifier);
+                            }
+                            else {
+                                PUSH_INT(bl.integer_literal.value);
+                            }
                             PUSH_STR(" + ");
-                            if (br.is_identifier) { PUSH_STR(&br.identifier); }
-                            else { char buf[32]={0}; snprintf(buf,sizeof(buf),"%jd",br.integer_literal.value); PUSH_STR(buf); }
+                            if (br.is_identifier) {
+                                PUSH_STR(&br.identifier);
+                            }
+                            else {
+                                PUSH_INT(br.integer_literal.value);
+                            }
                             PUSH_STR(";\n");
                             break;
                         }
@@ -105,30 +115,28 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
                             PUSH_STR(" = ");
                             // Emit value from expression type
                             switch (statement.variable_definition.expr_type) {
-                                case ASTNodeType::INTEGER_LITERAL: {
-                                    char buf[32] = {0};
-                                    int written = snprintf(buf, sizeof(buf), "%jd",
-                                        statement.variable_definition.integer_value.value);
-                                    assert(written > 0 && "Failed to convert integer literal to string");
-                                    PUSH_STR(buf);
+                                case ASTNodeType::INTEGER_LITERAL:
+                                    PUSH_INT(statement.variable_definition.integer_value.value);
                                     break;
-                                }
                                 case ASTNodeType::BOOLEAN_LITERAL:
-                                    if (statement.variable_definition.boolean_value) {
-                                    PUSH_STR("true");
-                                }
-                                else {
-                                    PUSH_STR("false");
-                                }
+                                    PUSH_BOOL(statement.variable_definition.boolean_value);
                                     break;
                                 case ASTNodeType::BINARY_ADD: {
                                     auto &vl = statement.variable_definition.add_expr.left;
                                     auto &vr = statement.variable_definition.add_expr.right;
-                                    if (vl.is_identifier) { PUSH_STR(&vl.identifier); }
-                                    else { char buf[32]={0}; snprintf(buf,sizeof(buf),"%jd",vl.integer_literal.value); PUSH_STR(buf); }
+                                    if (vl.is_identifier) {
+                                        PUSH_STR(&vl.identifier);
+                                    }
+                                    else {
+                                        PUSH_INT(vl.integer_literal.value);
+                                    }
                                     PUSH_STR(" + ");
-                                    if (vr.is_identifier) { PUSH_STR(&vr.identifier); }
-                                    else { char buf[32]={0}; snprintf(buf,sizeof(buf),"%jd",vr.integer_literal.value); PUSH_STR(buf); }
+                                    if (vr.is_identifier) {
+                                        PUSH_STR(&vr.identifier);
+                                    }
+                                    else {
+                                        PUSH_INT(vr.integer_literal.value);
+                                    }
                                     break;
                                 }
                                 default:
@@ -150,6 +158,8 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
     }
 
     #undef PUSH_STR
+    #undef PUSH_INT
+    #undef PUSH_BOOL
 
     return str_from_data_and_length(str_buffer.data, str_buffer.length);
 }

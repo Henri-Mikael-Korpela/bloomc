@@ -3,7 +3,6 @@
 #include <bloom/defer.h>
 #include <bloom/print.h>
 #include <bloom/tokenization.h>
-#include <cstring>
 
 static auto next_char_or_null_char(Str *str, size_t current_index) -> char {
     if (current_index + 1 < str->length) {
@@ -72,25 +71,22 @@ auto tokenize(Str *input, ArenaAllocator *allocator) -> Array<Token> {
             defer(current_position.col += identifier_len);
 
             // If the text is a keyword
-            if (identifier_len == 4) {
-                if (strncmp(input->data + begin, TOKEN_KEYWORD_PASS, identifier_len) == 0) {
-                    append_token_of_type(TokenType::KEYWORD_PASS);
-                    continue;
-                }
-                if (strncmp(input->data + begin, TOKEN_KEYWORD_PROC, identifier_len) == 0) {
-                    append_token_of_type(TokenType::KEYWORD_PROC);
-                    continue;
-                }
-                if (strncmp(input->data + begin, TOKEN_KEYWORD_TRUE, identifier_len) == 0) {
-                    append_token_of_type(TokenType::KEYWORD_TRUE);
-                    continue;
-                }
+            auto word = str_slice(input, begin, identifier_len);
+            if (word == TOKEN_KEYWORD_PASS) {
+                append_token_of_type(TokenType::KEYWORD_PASS);
+                continue;
             }
-            if (identifier_len == 5) {
-                if (strncmp(input->data + begin, TOKEN_KEYWORD_FALSE, identifier_len) == 0) {
-                    append_token_of_type(TokenType::KEYWORD_FALSE);
-                    continue;
-                }
+            if (word == TOKEN_KEYWORD_PROC) {
+                append_token_of_type(TokenType::KEYWORD_PROC);
+                continue;
+            }
+            if (word == TOKEN_KEYWORD_TRUE) {
+                append_token_of_type(TokenType::KEYWORD_TRUE);
+                continue;
+            }
+            if (word == TOKEN_KEYWORD_FALSE) {
+                append_token_of_type(TokenType::KEYWORD_FALSE);
+                continue;
             }
 
             // If the text wasn't a keyword, treat it as a regular identifier
@@ -98,10 +94,7 @@ auto tokenize(Str *input, ArenaAllocator *allocator) -> Array<Token> {
                 .type = TokenType::IDENTIFIER,
                 .position = current_position,
                 .identifier = {
-                    .content = str_from_data_and_length(
-                        input->data + begin,
-                        identifier_len
-                    )
+                    .content = str_slice(input, begin, identifier_len)
                 }
             });
         }
@@ -223,10 +216,7 @@ auto tokenize(Str *input, ArenaAllocator *allocator) -> Array<Token> {
             append_token({
                 .type = TokenType::STRING_LITERAL,
                 .string_literal = {
-                    .content = str_from_data_and_length(
-                        input->data + begin,
-                        string_len
-                    )
+                    .content = str_slice(input, begin, string_len)
                 },
             });
             current_position.col += (string_len + 2); // +2 for the quotes

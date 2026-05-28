@@ -1,5 +1,6 @@
 #pragma once
 #include <cstddef>
+#include <cstdint>
 #include <cstdio>
 #include <bloom/allocation.h>
 
@@ -30,6 +31,7 @@ auto str_char_at(Str *str, size_t index) -> char;
 auto str_contains(Str *str, char c) -> bool;
 auto str_from_data_and_length(char const *data, size_t length) -> Str;
 auto str_from_cstr(char const *value) -> Str;
+auto str_slice(Str *str, size_t begin, size_t length) -> Str;
 
 /**
  * Pushes a character value to the end of a dynamic string.
@@ -53,6 +55,16 @@ auto str_push(DynamicStr *str, Str &&value) -> size_t;
 inline auto str_push(DynamicStr *str, char const *value) -> size_t {
     return str_push(str, str_from_cstr(value));
 }
+/**
+ * Converts an integer to its decimal string representation and pushes it.
+ * @return Length increase after pushing the value.
+ */
+auto str_push_int(DynamicStr *str, intmax_t value) -> size_t;
+/**
+ * Pushes "true" or "false" depending on the boolean value.
+ * @return Length increase after pushing the value.
+ */
+auto str_push_bool(DynamicStr *str, bool value) -> size_t;
 
 // Add support for printing String values
 auto print_value(FILE *file, Str const &value) -> void;

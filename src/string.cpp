@@ -39,6 +39,11 @@ auto str_from_cstr(char const* value) -> Str {
     return str;
 }
 
+auto str_slice(Str *str, size_t begin, size_t length) -> Str {
+    assert(begin + length <= str->length && "Slice out of bounds");
+    return str_from_data_and_length(str->data + begin, length);
+}
+
 auto str_push(DynamicStr *str, char value) -> size_t {
     assert (str->length + 1 < str->max_length &&
         "Not enough space in DynamicString to push new value");
@@ -57,6 +62,20 @@ auto str_push(DynamicStr *str, Str *value) -> size_t {
 
 auto str_push(DynamicStr *str, Str &&value) -> size_t {
     return str_push(str, &value);
+}
+
+auto str_push_int(DynamicStr *str, intmax_t value) -> size_t {
+    char buf[32] = {0};
+    int written = snprintf(buf, sizeof(buf), "%jd", value);
+    assert(written > 0 && "Failed to convert integer to string");
+    return str_push(str, str_from_data_and_length(buf, static_cast<size_t>(written)));
+}
+
+auto str_push_bool(DynamicStr *str, bool value) -> size_t {
+    if (value) {
+        return str_push(str, "true");
+    }
+    return str_push(str, "false");
 }
 
 auto print_value(FILE *file, Str const &value) -> void {

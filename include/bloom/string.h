@@ -42,12 +42,7 @@ auto str_push(DynamicStr *str, char value) -> size_t;
  * Pushes a string value to the end of a dynamic string.
  * @return Length increase after pushing the value.
  */
-auto str_push(DynamicStr *str, Str *value) -> size_t;
-/**
- * Pushes a string value to the end of a dynamic string.
- * @return Length increase after pushing the value.
- */
-auto str_push(DynamicStr *str, Str &&value) -> size_t;
+auto str_push(DynamicStr *str, Str value) -> size_t;
 /**
  * Pushes a null-terminated C-string value to the end of a dynamic string.
  * @return Length increase after pushing the value.

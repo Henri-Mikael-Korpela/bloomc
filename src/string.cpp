@@ -51,17 +51,12 @@ auto str_push(DynamicStr *str, char value) -> size_t {
     str->length += 1;
     return 1;
 }
-auto str_push(DynamicStr *str, Str *value) -> size_t {
-    size_t const value_len = value->length;
-    assert (str->length + value_len < str->max_length &&
+auto str_push(DynamicStr *str, Str value) -> size_t {
+    assert(str->length + value.length < str->max_length &&
         "Not enough space in DynamicString to push new value");
-    memcpy(str->data + str->length, value->data, value_len * sizeof(char));
-    str->length += value_len;
-    return value_len;
-}
-
-auto str_push(DynamicStr *str, Str &&value) -> size_t {
-    return str_push(str, &value);
+    memcpy(str->data + str->length, value.data, value.length * sizeof(char));
+    str->length += value.length;
+    return value.length;
 }
 
 auto str_push_int(DynamicStr *str, intmax_t value) -> size_t {

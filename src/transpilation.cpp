@@ -36,7 +36,7 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
                 assert(return_type_name != nullptr && "Unsupported return type in transpilation");
                 PUSH_STR(return_type_name);
                 PUSH_STR(' ');
-                PUSH_STR(&node.proc_def.name);
+                PUSH_STR(node.proc_def.name);
                 PUSH_STR('(');
                 auto *params = &node.proc_def.parameters;
                 for (size_t i = 0; i < params->length; i++) {
@@ -46,7 +46,7 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
                     }
                     // For simplicity, assume all parameters are of type int
                     PUSH_STR("int ");
-                    PUSH_STR(&param->name);
+                    PUSH_STR(param->name);
                 }
                 PUSH_STR(')');
                 PUSH_STR("{\n");
@@ -58,14 +58,14 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
                             auto &bl = statement.binary_operation.left;
                             auto &br = statement.binary_operation.right;
                             if (bl.is_identifier) {
-                                PUSH_STR(&bl.identifier);
+                                PUSH_STR(bl.identifier);
                             }
                             else {
                                 PUSH_INT(bl.integer_literal.value);
                             }
                             PUSH_STR(" + ");
                             if (br.is_identifier) {
-                                PUSH_STR(&br.identifier);
+                                PUSH_STR(br.identifier);
                             }
                             else {
                                 PUSH_INT(br.integer_literal.value);
@@ -76,20 +76,20 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
                         case ASTNodeType::PROC_CALL: {
                             // For simplicity, assume procedure calls return void
                             PUSH_STR('\t');
-                            PUSH_STR(&statement.proc_call.caller_identifier);
+                            PUSH_STR(statement.proc_call.caller_identifier);
                             PUSH_STR('(');
                             auto args_len = statement.proc_call.arguments.length;
                             for (size_t i = 0; i < args_len; i++) {
                                 auto *arg = &statement.proc_call.arguments[i];
                                 if (arg->type == ASTNodeType::IDENTIFIER) {
-                                    PUSH_STR(&arg->identifier);
+                                    PUSH_STR(arg->identifier);
                                     goto add_comma_inbetween;
                                 }
                                 else if (arg->type != ASTNodeType::STRING_LITERAL) {
                                     assert(false && "Only identifier and string literal arguments are supported in transpilation");
                                 }
                                 PUSH_STR('"');
-                                PUSH_STR(&arg->string_literal.value);
+                                PUSH_STR(arg->string_literal.value);
                                 PUSH_STR('"');
 
                                 add_comma_inbetween:
@@ -111,7 +111,7 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
                             }
                             PUSH_STR(c_type);
                             PUSH_STR(' ');
-                            PUSH_STR(&statement.variable_definition.name);
+                            PUSH_STR(statement.variable_definition.name);
                             PUSH_STR(" = ");
                             // Emit value from expression type
                             switch (statement.variable_definition.expr_type) {
@@ -125,14 +125,14 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
                                     auto &vl = statement.variable_definition.add_expr.left;
                                     auto &vr = statement.variable_definition.add_expr.right;
                                     if (vl.is_identifier) {
-                                        PUSH_STR(&vl.identifier);
+                                        PUSH_STR(vl.identifier);
                                     }
                                     else {
                                         PUSH_INT(vl.integer_literal.value);
                                     }
                                     PUSH_STR(" + ");
                                     if (vr.is_identifier) {
-                                        PUSH_STR(&vr.identifier);
+                                        PUSH_STR(vr.identifier);
                                     }
                                     else {
                                         PUSH_INT(vr.integer_literal.value);

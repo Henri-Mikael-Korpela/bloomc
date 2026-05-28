@@ -56,6 +56,6 @@ inline auto str_push(DynamicStr *str, char const *value) -> size_t {
 }
 
 // Add support for printing String values
-void print_value(FILE *file, Str const &value);
+auto print_value(FILE *file, Str const &value) -> void;
 
 #endif // __BLOOM_H_STRING__

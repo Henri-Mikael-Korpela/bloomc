@@ -11,7 +11,7 @@ struct Array {
     Array() : data(nullptr), length(0) {}
     Array(ElementType *data, size_t length) : data(data), length(length) {}
 
-    inline ElementType& operator[](size_t index) {
+    inline auto operator[](size_t index) -> ElementType& {
         assert(index < length && "ArrayPtr index out of bounds");
         return data[index];
     }

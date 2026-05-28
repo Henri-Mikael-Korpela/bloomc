@@ -14,8 +14,8 @@ inline auto _bloom_test_get_file(FILE *file) -> FILE* {
 #endif // BLOOM_MODE_DEV
 }
 
-void print_value(FILE *file, char const *value);
-void print_value(FILE *file, unsigned long value);
+auto print_value(FILE *file, char const *value) -> void;
+auto print_value(FILE *file, unsigned long value) -> void;
 
 /**
  * Prints a string to given file. The file can be stdout, stderr or some other file.
@@ -24,7 +24,7 @@ void print_value(FILE *file, unsigned long value);
  * You can use the '%' character as a placeholder
  * without typing the type of the argument.
  */
-void print(FILE *file, char const *format);
+auto print(FILE *file, char const *format) -> void;
 /**
  * Prints a formatted string to given file. The file can be stdout, stderr or some other file.
  * 
@@ -33,7 +33,7 @@ void print(FILE *file, char const *format);
  * without typing the type of the argument.
  */
 template <typename PointerT, typename... Args>
-void print(FILE *file, char const *format, PointerT &&value, Args &&...args) {
+auto print(FILE *file, char const *format, PointerT &&value, Args &&...args) -> void {
     FILE *current_file = _bloom_test_get_file(file);
     // This involves recursion
     for (; *format; ++format) {
@@ -56,14 +56,14 @@ void print(FILE *file, char const *format, PointerT &&value, Args &&...args) {
  * without typing the type of the argument.
  */
 template <typename PointerT, typename... Args>
-constexpr void print(char const *format, PointerT &&value, Args &&...args) {
+constexpr auto print(char const *format, PointerT &&value, Args &&...args) -> void {
     print(_bloom_test_get_file(stdout), format, std::forward<PointerT>(value), std::forward<Args>(args)...);
 }
 
 /**
  * Prints a string to standard error output.
  */
-void eprint(char const *format);
+auto eprint(char const *format) -> void;
 /**
  * Prints a formatted string to standard error output.
  * 
@@ -72,7 +72,7 @@ void eprint(char const *format);
  * without typing the type of the argument.
  */
 template <typename PointerT, typename... Args>
-constexpr void eprint(char const *format, PointerT &&value, Args &&...args) {
+constexpr auto eprint(char const *format, PointerT &&value, Args &&...args) -> void {
     print(stderr, format, std::forward<PointerT>(value), std::forward<Args>(args)...);
 }
 

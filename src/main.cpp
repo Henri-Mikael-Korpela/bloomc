@@ -12,8 +12,8 @@
 #include <bloom/print.h>
 #include <bloom/transpilation.h>
 
-constexpr size_t kb(size_t n) { return n * 1024; }
-constexpr size_t mb(size_t n) { return n * 1024 * 1024; }
+constexpr auto kb(size_t n) -> size_t { return n * 1024; }
+constexpr auto mb(size_t n) -> size_t { return n * 1024 * 1024; }
 
 const size_t MAIN_MEMORY_SIZE = kb(16);
 
@@ -33,7 +33,7 @@ static auto allocate_null_terminated_str_from_str(ArenaAllocator *allocator, Str
     return c_str;
 }
 
-int run(char const *input_file_path_cstr) {
+auto run(char const *input_file_path_cstr) -> int {
     auto input_file_path = std::filesystem::path(input_file_path_cstr);
 
     if (!std::filesystem::exists(input_file_path)) {
@@ -102,7 +102,7 @@ int run(char const *input_file_path_cstr) {
     return exit_code;
 }
 
-int transpile(char const *input_file_path_cstr, char const *output_file_path_cstr) {
+auto transpile(char const *input_file_path_cstr, char const *output_file_path_cstr) -> int {
     auto input_file_path = std::filesystem::path(input_file_path_cstr);
     print("Input file path: %\n", input_file_path.string().c_str());
 
@@ -262,7 +262,7 @@ int transpile(char const *input_file_path_cstr, char const *output_file_path_cst
     return 0;
 }
 
-int main(int argc, char* argv[]) {
+auto main(int argc, char* argv[]) -> int {
     if (argc < 2) {
         eprint("Usage: % run|transpile <args...>\n", argv[0]);
         return 1;

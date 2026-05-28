@@ -2,6 +2,7 @@
 #include <cassert>
 #include <cstdio>
 #include <utility>
+#include <bloom/string.h>
 
 static FILE *_bloom_test_output = nullptr;
 
@@ -13,20 +14,35 @@ inline auto _bloom_test_get_file(FILE *file) -> FILE* {
 #endif // BLOOM_MODE_DEV
 }
 
-auto print_value(FILE *file, char const *value) -> void;
-auto print_value(FILE *file, unsigned long value) -> void;
+inline auto print_value(FILE *file, char const *value) -> void {
+    fprintf(_bloom_test_get_file(file), "%s", value);
+}
+
+inline auto print_value(FILE *file, unsigned long value) -> void {
+    fprintf(_bloom_test_get_file(file), "%zu", value);
+}
+
+inline auto print_value(FILE *file, Str const &value) -> void {
+    fprintf(_bloom_test_get_file(file), "%.*s", static_cast<int>(value.length), value.data);
+}
 
 /**
  * Prints a string to given file. The file can be stdout, stderr or some other file.
- * 
+ *
  * This function is a type safe alternative to C's printf.
  * You can use the '%' character as a placeholder
  * without typing the type of the argument.
  */
-auto print(FILE *file, char const *format) -> void;
+inline auto print(FILE *file, char const *format) -> void {
+    for (; *format; ++format) {
+        assert(*format != '%' && "Too few arguments for format string");
+        fputc(*format, _bloom_test_get_file(file));
+    }
+}
+
 /**
  * Prints a formatted string to given file. The file can be stdout, stderr or some other file.
- * 
+ *
  * This function is a type safe alternative to C's printf.
  * You can use the '%' character as a placeholder
  * without typing the type of the argument.
@@ -47,9 +63,10 @@ auto print(FILE *file, char const *format, PointerT &&value, Args &&...args) -> 
     }
     assert(false && "Too few arguments for format string");
 }
+
 /**
  * Prints a formatted string to a standard output.
- * 
+ *
  * This function is a type safe alternative to C's printf.
  * You can use the '%' character as a placeholder
  * without typing the type of the argument.
@@ -62,10 +79,16 @@ constexpr auto print(char const *format, PointerT &&value, Args &&...args) -> vo
 /**
  * Prints a string to standard error output.
  */
-auto eprint(char const *format) -> void;
+inline auto eprint(char const *format) -> void {
+    for (; *format; ++format) {
+        assert(*format != '%' && "Too few arguments for format string");
+        fputc(*format, stderr);
+    }
+}
+
 /**
  * Prints a formatted string to standard error output.
- * 
+ *
  * This function is a type safe alternative to C's fprintf with stderr.
  * You can use the '%' character as a placeholder
  * without typing the type of the argument.

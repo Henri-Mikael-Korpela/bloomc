@@ -13,7 +13,7 @@ struct Result {
 };
 
 template<typename T, typename E>
-inline auto err(E error) -> Result<T, E> {
+constexpr auto err(E error) -> Result<T, E> {
     return Result<T, E> {
         .is_ok = false,
         .err = error,
@@ -21,7 +21,7 @@ inline auto err(E error) -> Result<T, E> {
 }
 
 template<typename T, typename E>
-inline auto ok(T value) -> Result<T, E> {
+constexpr auto ok(T value) -> Result<T, E> {
     return Result<T, E> {
         .is_ok = true,
         .ok = value,
@@ -29,6 +29,6 @@ inline auto ok(T value) -> Result<T, E> {
 }
 
 template<typename T, typename E>
-inline auto is_ok(Result<T, E> const &result) -> bool {
+constexpr auto is_ok(Result<T, E> const &result) -> bool {
     return result.is_ok;
 }

@@ -15,8 +15,8 @@ struct AllocatedArrayBlock {
     size_t allocation_offset;
 
     // Add support for range-based for loops
-    ElementType* begin() { return data; }
-    ElementType* end() { return data + length; }
+    constexpr auto begin() -> ElementType* { return data; }
+    constexpr auto end()   -> ElementType* { return data + length; }
 };
 
 struct AllocatorMarker {
@@ -31,7 +31,7 @@ struct ArenaAllocator {
     ArenaAllocator(size_t size);
 };
 
-inline auto allocator_marker_from_current_offset(ArenaAllocator *allocator) -> AllocatorMarker {
+constexpr auto allocator_marker_from_current_offset(ArenaAllocator *allocator) -> AllocatorMarker {
     return AllocatorMarker { allocator->offset };
 }
 
@@ -59,7 +59,7 @@ auto allocate_array_from_copy(ArenaAllocator *allocator, Array<ElementType> *src
 }
 
 template<typename ElementType>
-inline auto allocation_size(AllocatedArrayBlock<ElementType> *block) -> size_t {
+constexpr auto allocation_size(AllocatedArrayBlock<ElementType> *block) -> size_t {
     return block->length * sizeof(ElementType);
 }
 
@@ -71,9 +71,11 @@ inline auto copy_array(AllocatedArrayBlock<ElementType> *dest_block, Array<Eleme
     memcpy(dest_block->data, src_array->data, src_array->length * sizeof(ElementType));
 }
 
-auto delete_allocator(ArenaAllocator *allocator) -> void;
+inline auto delete_allocator(ArenaAllocator *allocator) -> void {
+    free(allocator->data);
+}
 
-inline auto memory_left(ArenaAllocator *allocator) -> size_t {
+constexpr auto memory_left(ArenaAllocator *allocator) -> size_t {
     return allocator->length - allocator->offset;
 }
 
@@ -138,4 +140,6 @@ inline auto reclaim_to_marker(ArenaAllocator *allocator, AllocatorMarker *marker
     return reclaim_memory_by_markers(allocator, &old_marker, marker);
 }
 
-auto to_array(ArenaAllocator *allocator) -> Array<byte>;
+inline auto to_array(ArenaAllocator *allocator) -> Array<byte> {
+    return Array<byte>(allocator->data, allocator->length);
+}

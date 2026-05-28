@@ -16,8 +16,8 @@ struct Array {
     }
 
     // To support range-based for loops
-    inline auto begin() -> ElementType* { return data; }
-    inline auto end()   -> ElementType* { return data + length; }
+    constexpr auto begin() -> ElementType* { return data; }
+    constexpr auto end()   -> ElementType* { return data + length; }
 };
 
 /**

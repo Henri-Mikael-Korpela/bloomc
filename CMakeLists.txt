@@ -14,7 +14,6 @@ set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Werror")
 add_executable(bloomc
     src/allocation.cpp
     src/parsing.cpp
-    src/print.cpp
     src/string.cpp
     src/tokenization.cpp
     src/transpilation.cpp

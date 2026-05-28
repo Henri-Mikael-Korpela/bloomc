@@ -1,15 +1,10 @@
 #include <bloom/allocation.h>
 #include <bloom/print.h>
-#include <cstdarg>
 #include <cstring>
 
 ArenaAllocator::ArenaAllocator(size_t size) : offset(0), length(size) {
     data = static_cast<byte*>(calloc(size, 1));
     assert(data != nullptr && "Failed to allocate memory for ArenaAllocator");
-}
-
-auto delete_allocator(ArenaAllocator *allocator) -> void {
-    free(allocator->data);
 }
 
 auto debug_print_bytes(Array<DebugByte> bytes, DebugColor color) -> void {
@@ -48,8 +43,4 @@ auto reclaim_memory_by_markers(
     assert (allocator->offset >= allocation_size_to_reclaim &&
         "Allocator offset underflow on reclaim");
     allocator->offset -= allocation_size_to_reclaim;
-}
-
-auto to_array(ArenaAllocator *allocator) -> Array<byte> {
-    return Array<byte>(allocator->data, allocator->length);
 }

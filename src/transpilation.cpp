@@ -55,20 +55,18 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
                         case ASTNodeType::BINARY_ADD: {
                             PUSH_STR('\t');
                             PUSH_STR("return ");
-                            auto &bl = statement.binary_operation.left;
-                            auto &br = statement.binary_operation.right;
-                            if (bl.is_identifier) {
-                                PUSH_STR(bl.identifier);
-                            }
-                            else {
-                                PUSH_INT(bl.integer_literal.value);
-                            }
-                            PUSH_STR(" + ");
-                            if (br.is_identifier) {
-                                PUSH_STR(br.identifier);
-                            }
-                            else {
-                                PUSH_INT(br.integer_literal.value);
+                            auto &operands = statement.binary_operation.operands;
+                            for (size_t i = 0; i < operands.length; i++) {
+                                if (i != 0) {
+                                    PUSH_STR(" + ");
+                                }
+                                auto &op = operands[i];
+                                if (op.is_identifier) {
+                                    PUSH_STR(op.identifier);
+                                }
+                                else {
+                                    PUSH_INT(op.integer_literal.value);
+                                }
                             }
                             PUSH_STR(";\n");
                             break;
@@ -122,20 +120,18 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
                                     PUSH_BOOL(statement.variable_definition.boolean_value);
                                     break;
                                 case ASTNodeType::BINARY_ADD: {
-                                    auto &vl = statement.variable_definition.add_expr.left;
-                                    auto &vr = statement.variable_definition.add_expr.right;
-                                    if (vl.is_identifier) {
-                                        PUSH_STR(vl.identifier);
-                                    }
-                                    else {
-                                        PUSH_INT(vl.integer_literal.value);
-                                    }
-                                    PUSH_STR(" + ");
-                                    if (vr.is_identifier) {
-                                        PUSH_STR(vr.identifier);
-                                    }
-                                    else {
-                                        PUSH_INT(vr.integer_literal.value);
+                                    auto &operands = statement.variable_definition.add_expr;
+                                    for (size_t i = 0; i < operands.length; i++) {
+                                        if (i != 0) {
+                                            PUSH_STR(" + ");
+                                        }
+                                        auto &op = operands[i];
+                                        if (op.is_identifier) {
+                                            PUSH_STR(op.identifier);
+                                        }
+                                        else {
+                                            PUSH_INT(op.integer_literal.value);
+                                        }
                                     }
                                     break;
                                 }

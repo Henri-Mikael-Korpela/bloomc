@@ -193,23 +193,21 @@ auto transpile(char const *input_file_path_cstr, char const *output_file_path_cs
         print("AST Node type: %\n", to_string(node.type));
         switch (node.type) {
             case ASTNodeType::BINARY_ADD: {
-                auto &bl = node.binary_operation.left;
-                auto &br = node.binary_operation.right;
-                Str bl_str;
-                if (bl.is_identifier) {
-                    bl_str = bl.identifier;
+                auto &operands = node.binary_operation.operands;
+                print("\tBinary operation (% operands):", operands.length);
+                for (size_t i = 0; i < operands.length; i++) {
+                    if (i != 0) {
+                        printf(" +");
+                    }
+                    auto &op = operands[i];
+                    if (op.is_identifier) {
+                        print(" %", op.identifier);
+                    }
+                    else {
+                        printf(" <literal>");
+                    }
                 }
-                else {
-                    bl_str = str_from_cstr("<literal>");
-                }
-                Str br_str;
-                if (br.is_identifier) {
-                    br_str = br.identifier;
-                }
-                else {
-                    br_str = str_from_cstr("<literal>");
-                }
-                print("\tBinary operation: % + %\n", bl_str, br_str);
+                printf("\n");
                 break;
             }
             case ASTNodeType::PROC_DEF:

@@ -66,8 +66,7 @@ struct ASTNode {
     union {
         struct {
             BinaryOperatorType oprt;
-            BinaryOperand left;
-            BinaryOperand right;
+            Array<BinaryOperand> operands;
         } binary_operation;
         Str identifier;
         struct {
@@ -97,10 +96,7 @@ struct ASTNode {
             union {
                 IntegerLiteralASTNode integer_value;
                 bool boolean_value;
-                struct {
-                    BinaryOperand left;
-                    BinaryOperand right;
-                } add_expr;
+                Array<BinaryOperand> add_expr;
             };
         } variable_definition;
     };

@@ -350,6 +350,7 @@ static auto parse_statement(
     AllocatedArrayBlock<ProcParameterASTNode> *proc_params_block,
     Iterator<ProcParameterASTNode> *proc_params_iter,
     Iterator<TypeASTNode> *types_iter,
+    Iterator<BinaryOperand> *operands_iter,
     DynamicArray<ParseError> *errors
 ) -> bool;
 
@@ -363,6 +364,7 @@ static auto parse_expression(
     AllocatedArrayBlock<ProcParameterASTNode> *proc_params_block,
     Iterator<ProcParameterASTNode> *proc_params_iter,
     Iterator<TypeASTNode> *types_iter,
+    Iterator<BinaryOperand> *operands_iter,
     DynamicArray<ParseError> *errors
 ) -> Result<ASTNode, ParseError> {
     auto next_token = iter_next(tokens_iter);
@@ -391,24 +393,32 @@ static auto parse_expression(
                 left_operand.integer_literal = IntegerLiteralASTNode { .value = next_token->integer_literal.value };
             }
 
-            // Peek for a binary add operator
+            // Peek for a binary add operator; if found, collect all operands
             if (tokens_iter->current_index < tokens_iter->elements.length &&
                 iter_peek(tokens_iter)->type == TokenType::ADD)
             {
-                (void)iter_next(tokens_iter); // consume '+'
+                size_t operands_begin = operands_iter->current_index;
+                (void)iter_append(operands_iter, std::move(left_operand));
 
-                Token *right_token = iter_next(tokens_iter);
-                BinaryOperand right_operand;
-                if (right_token->type == TokenType::IDENTIFIER) {
-                    right_operand.is_identifier = true;
-                    right_operand.identifier = right_token->identifier.content;
-                }
-                else if (right_token->type == TokenType::INTEGER_LITERAL) {
-                    right_operand.is_identifier = false;
-                    right_operand.integer_literal = IntegerLiteralASTNode { .value = right_token->integer_literal.value };
-                }
-                else {
-                    return err<ASTNode, ParseError>(PARSE_ERROR_CREATE(UNEXPECTED_TOKEN, right_token));
+                while (tokens_iter->current_index < tokens_iter->elements.length &&
+                       iter_peek(tokens_iter)->type == TokenType::ADD)
+                {
+                    (void)iter_next(tokens_iter); // consume '+'
+
+                    Token *operand_token = iter_next(tokens_iter);
+                    BinaryOperand operand;
+                    if (operand_token->type == TokenType::IDENTIFIER) {
+                        operand.is_identifier = true;
+                        operand.identifier = operand_token->identifier.content;
+                    }
+                    else if (operand_token->type == TokenType::INTEGER_LITERAL) {
+                        operand.is_identifier = false;
+                        operand.integer_literal = IntegerLiteralASTNode { .value = operand_token->integer_literal.value };
+                    }
+                    else {
+                        return err<ASTNode, ParseError>(PARSE_ERROR_CREATE(UNEXPECTED_TOKEN, operand_token));
+                    }
+                    (void)iter_append(operands_iter, std::move(operand));
                 }
 
                 return ok<ASTNode, ParseError>(ASTNode {
@@ -416,8 +426,10 @@ static auto parse_expression(
                     .parent = nullptr,
                     .binary_operation = {
                         .oprt = BinaryOperatorType::ADD,
-                        .left = left_operand,
-                        .right = right_operand,
+                        .operands = Array<BinaryOperand>(
+                            operands_iter->elements.data + operands_begin,
+                            operands_iter->current_index - operands_begin
+                        ),
                     },
                 });
             }
@@ -486,7 +498,7 @@ static auto parse_expression(
                     ),
                     .return_type = return_type_node,
                     .body = Array<ASTNode>(
-                        context->nodes_block->data + nodes_block_iter->current_index,
+                        context->nodes_block->data + nodes_block_iter->current_index + 1,
                         0 // Will be updated later
                     ),
                 },
@@ -509,6 +521,7 @@ static auto parse_expression(
                     proc_params_block,
                     proc_params_iter,
                     types_iter,
+                    operands_iter,
                     errors
                 )) {
                     return err<ASTNode, ParseError>(
@@ -537,14 +550,14 @@ static auto parse_expression(
             proc_node->proc_def.body.length =
                 nodes_block_iter->current_index
                 - ptr_sub(
-                    nodes_block_iter->elements.data,
-                    proc_node->proc_def.body.data
+                    proc_node->proc_def.body.data,
+                    nodes_block_iter->elements.data
                 );
 
             assert(proc_node->proc_def.body.length > 0 &&
                 "Procedure body should contain at least one statement");
             assert(
-                nodes_block_iter->elements[proc_node->proc_def.body.length].type == ASTNodeType::UNKNOWN &&
+                nodes_block_iter->elements[nodes_block_iter->current_index].type == ASTNodeType::UNKNOWN &&
                 "Next node after procedure body should be of UNKNOWN type");
             return ok<ASTNode, ParseError>(*proc_node);
         }
@@ -561,6 +574,7 @@ static auto parse_statement(
     AllocatedArrayBlock<ProcParameterASTNode> *proc_params_block,
     Iterator<ProcParameterASTNode> *proc_params_iter,
     Iterator<TypeASTNode> *types_iter,
+    Iterator<BinaryOperand> *operands_iter,
     DynamicArray<ParseError> *errors
 ) -> bool {
     if (auto *next_token = iter_next(tokens_iter); next_token->type == TokenType::IDENTIFIER) {
@@ -611,31 +625,41 @@ static auto parse_statement(
                 break;
             }
             case TokenType::ADD: {
-                (void)iter_next(tokens_iter); // Consume ADD token
-                Token *right_token = iter_next(tokens_iter);
-                BinaryOperand left_operand = {
+                size_t operands_begin = operands_iter->current_index;
+                (void)iter_append(operands_iter, BinaryOperand {
                     .is_identifier = true,
                     .identifier = next_token->identifier.content,
-                };
-                BinaryOperand right_operand;
-                if (right_token->type == TokenType::IDENTIFIER) {
-                    right_operand.is_identifier = true;
-                    right_operand.identifier = right_token->identifier.content;
+                });
+
+                while (tokens_iter->current_index < tokens_iter->elements.length &&
+                       iter_peek(tokens_iter)->type == TokenType::ADD)
+                {
+                    (void)iter_next(tokens_iter); // consume '+'
+                    Token *operand_token = iter_next(tokens_iter);
+                    BinaryOperand operand;
+                    if (operand_token->type == TokenType::IDENTIFIER) {
+                        operand.is_identifier = true;
+                        operand.identifier = operand_token->identifier.content;
+                    }
+                    else if (operand_token->type == TokenType::INTEGER_LITERAL) {
+                        operand.is_identifier = false;
+                        operand.integer_literal = IntegerLiteralASTNode { .value = operand_token->integer_literal.value };
+                    }
+                    else {
+                        return false;
+                    }
+                    (void)iter_append(operands_iter, std::move(operand));
                 }
-                else if (right_token->type == TokenType::INTEGER_LITERAL) {
-                    right_operand.is_identifier = false;
-                    right_operand.integer_literal = IntegerLiteralASTNode { .value = right_token->integer_literal.value };
-                }
-                else {
-                    return false;
-                }
+
                 iter_append(nodes_block_iter, ASTNode {
                     .type = ASTNodeType::BINARY_ADD,
                     .parent = parent_node,
                     .binary_operation = {
                         .oprt = BinaryOperatorType::ADD,
-                        .left = left_operand,
-                        .right = right_operand,
+                        .operands = Array<BinaryOperand>(
+                            operands_iter->elements.data + operands_begin,
+                            operands_iter->current_index - operands_begin
+                        ),
                     },
                 });
                 assert(
@@ -679,6 +703,7 @@ static auto parse_statement(
                     proc_params_block,
                     proc_params_iter,
                     types_iter,
+                    operands_iter,
                     errors
                 );
                 if (!is_ok(expr_parse_result)) {
@@ -711,8 +736,7 @@ static auto parse_statement(
                         var_def_node.variable_definition.boolean_value = expr_node.boolean_literal.value;
                         break;
                     case ASTNodeType::BINARY_ADD:
-                        var_def_node.variable_definition.add_expr.left  = expr_node.binary_operation.left;
-                        var_def_node.variable_definition.add_expr.right = expr_node.binary_operation.right;
+                        var_def_node.variable_definition.add_expr = expr_node.binary_operation.operands;
                         break;
                     default:
                         break;
@@ -757,6 +781,10 @@ auto parse(Array<Token> *tokens, ArenaAllocator *allocator) -> Array<ASTNode> {
     assert (proc_params_iter.current_index == 0 &&
         "Procedure parameters iterator current index should be 0 at the start");
 
+    auto operands_block = allocate_array<BinaryOperand>(allocator, tokens->length);
+    auto operands_iter = to_iterator(&operands_block);
+    BinaryOperand *orig_operands_data = operands_block.data;
+
     // Parse the tokens into AST nodes
     auto context = Context{};
     assert(context.current_identifier == nullptr &&
@@ -794,6 +822,7 @@ auto parse(Array<Token> *tokens, ArenaAllocator *allocator) -> Array<ASTNode> {
                 &proc_params_block,
                 &proc_params_iter,
                 &types_iter,
+                &operands_iter,
                 &errors
             );
             if (!is_ok(expr_result)) {
@@ -823,6 +852,10 @@ auto parse(Array<Token> *tokens, ArenaAllocator *allocator) -> Array<ASTNode> {
         old_proc_params_arr = slice_by_offset(&old_proc_params_arr, 0, proc_params_iter.current_index);
         auto old_proc_params_block = allocate_array_from_copy<ProcParameterASTNode>(allocator, &old_proc_params_arr);
 
+        auto old_operands_arr = to_array(&operands_block);
+        old_operands_arr = slice_by_offset(&old_operands_arr, 0, operands_iter.current_index);
+        auto old_operands_block = allocate_array_from_copy<BinaryOperand>(allocator, &old_operands_arr);
+
         // Reset the allocator offset to the initial value and re-allocate
         // the nodes and proc params blocks to be tightly packed
         allocator->offset = initial_marker.offset;
@@ -837,12 +870,26 @@ auto parse(Array<Token> *tokens, ArenaAllocator *allocator) -> Array<ASTNode> {
         assert(new_proc_params_block.length == proc_params_iter.current_index &&
             "Proc parameter count mismatch after re-allocation");
 
+        auto new_operands_arr = to_array(&old_operands_block);
+        auto new_operands_block = allocate_array_from_copy<BinaryOperand>(allocator, &new_operands_arr);
+        assert(new_operands_block.length == operands_iter.current_index &&
+            "Operand count mismatch after re-allocation");
+
         // Update the proc parameters pointers in the AST nodes to point to the new tightly packed block
         for (auto &node : new_nodes_block) {
             if (node.type == ASTNodeType::PROC_DEF) {
                 node.proc_def.parameters.data =
                     ptr_sub(node.proc_def.parameters.data,
                         ptr_sub(node.proc_def.parameters.data, new_proc_params_block.data));
+            }
+            else if (node.type == ASTNodeType::BINARY_ADD) {
+                node.binary_operation.operands.data =
+                    new_operands_block.data + (node.binary_operation.operands.data - orig_operands_data);
+            }
+            else if (node.type == ASTNodeType::VARIABLE_DEFINITION &&
+                     node.variable_definition.expr_type == ASTNodeType::BINARY_ADD) {
+                node.variable_definition.add_expr.data =
+                    new_operands_block.data + (node.variable_definition.add_expr.data - orig_operands_data);
             }
         }
 

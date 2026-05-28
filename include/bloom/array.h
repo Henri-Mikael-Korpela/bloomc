@@ -7,8 +7,8 @@ struct Array {
     ElementType *data;
     size_t length;
 
-    Array() : data(nullptr), length(0) {}
-    Array(ElementType *data, size_t length) : data(data), length(length) {}
+    constexpr Array() : data(nullptr), length(0) {}
+    constexpr Array(ElementType *data, size_t length) : data(data), length(length) {}
 
     inline auto operator[](size_t index) -> ElementType& {
         assert(index < length && "ArrayPtr index out of bounds");

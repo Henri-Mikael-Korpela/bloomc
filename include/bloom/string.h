@@ -1,5 +1,4 @@
-#ifndef __BLOOM_H_STRING__
-#define __BLOOM_H_STRING__
+#pragma once
 #include <cstddef>
 #include <cstdio>
 #include <bloom/allocation.h>
@@ -57,5 +56,3 @@ inline auto str_push(DynamicStr *str, char const *value) -> size_t {
 
 // Add support for printing String values
 auto print_value(FILE *file, Str const &value) -> void;
-
-#endif // __BLOOM_H_STRING__

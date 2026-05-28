@@ -1,5 +1,4 @@
-#ifndef __BLOOM_H_TOKENIZATION__
-#define __BLOOM_H_TOKENIZATION__
+#pragma once
 #include <cstddef>
 #include <cstdint>
 #include <bloom/array.h>
@@ -98,5 +97,3 @@ constexpr auto to_string(TokenType type) -> Str {
  * The tokens are stored in an ArenaAllocator for efficient memory management.
  */
 auto tokenize(Str *input, ArenaAllocator *allocator) -> Array<Token>;
-
-#endif // __BLOOM_H_TOKENIZATION__

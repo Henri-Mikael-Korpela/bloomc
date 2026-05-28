@@ -1,5 +1,4 @@
-#ifndef __BLOOM_H_PARSING__
-#define __BLOOM_H_PARSING__
+#pragma once
 #include <bloom/array.h>
 #include <bloom/string.h>
 #include <bloom/tokenization.h>
@@ -126,5 +125,3 @@ constexpr auto to_string(ASTNodeType type) -> Str {
     }
     #undef STR
 }
-
-#endif // __BLOOM_H_PARSING__

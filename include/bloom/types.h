@@ -1,6 +1,3 @@
-#ifndef __BLOOM_H_TYPES__
-#define __BLOOM_H_TYPES__
+#pragma once
 
 typedef unsigned char byte;
-
-#endif // __BLOOM_H_TYPES__

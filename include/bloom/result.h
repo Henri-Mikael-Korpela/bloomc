@@ -1,8 +1,7 @@
 /**
  * Contains Rust-like Result type and related functions.
  */
-#ifndef __BLOOM_H_RESULT__
-#define __BLOOM_H_RESULT__
+#pragma once
 
 template<typename T, typename E>
 struct Result {
@@ -33,5 +32,3 @@ template<typename T, typename E>
 inline auto is_ok(Result<T, E> const &result) -> bool {
     return result.is_ok;
 }
-
-#endif // __BLOOM_H_RESULT__

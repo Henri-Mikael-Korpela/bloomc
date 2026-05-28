@@ -1,5 +1,4 @@
-#ifndef __BLOOM_H_ARRAY__
-#define __BLOOM_H_ARRAY__
+#pragma once
 #include <cassert>
 #include <cstddef>
 
@@ -37,5 +36,3 @@ auto slice_by_length(Array<ElementType> *array, size_t begin, size_t length) -> 
     assert(begin + length <= array->length && "Slice end out of bounds");
     return Array<ElementType>(array->data + begin, length);
 }
-
-#endif // __BLOOM_H_ARRAY__

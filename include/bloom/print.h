@@ -1,5 +1,4 @@
-#ifndef __BLOOM_H_PRINT__
-#define __BLOOM_H_PRINT__
+#pragma once
 #include <cassert>
 #include <cstdio>
 #include <utility>
@@ -75,5 +74,3 @@ template <typename PointerT, typename... Args>
 constexpr auto eprint(char const *format, PointerT &&value, Args &&...args) -> void {
     print(stderr, format, std::forward<PointerT>(value), std::forward<Args>(args)...);
 }
-
-#endif // __BLOOM_H_PRINT__

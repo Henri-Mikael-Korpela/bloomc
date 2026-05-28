@@ -1,5 +1,4 @@
-#ifndef __BLOOM_H_DEFER__
-#define __BLOOM_H_DEFER__
+#pragma once
 #include <functional>
 
 class Defer {
@@ -17,5 +16,3 @@ public:
  */
 #define defer(statement) \
     Defer _BLOOM_DEFER_CONCAT(_defer_, __COUNTER__)([&](){ statement; })
-
-#endif // __BLOOM_H_DEFER__

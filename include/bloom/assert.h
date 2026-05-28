@@ -1,5 +1,4 @@
-#ifndef __BLOOM_H_ASSERT__
-#define __BLOOM_H_ASSERT__
+#pragma once
 
 #if !defined(NDEBUG)
 #   define ASSERTIONS_ENABLED 1
@@ -18,5 +17,3 @@
             std::abort(); \
         } \
     } while (0)
-
-#endif // __BLOOM_H_ASSERT__

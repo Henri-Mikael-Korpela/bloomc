@@ -1,5 +1,4 @@
-#ifndef __BLOOM_H_ALLOCATION__
-#define __BLOOM_H_ALLOCATION__
+#pragma once
 #include <cassert>
 #include <cstdlib>
 #include <cstring>
@@ -140,5 +139,3 @@ inline auto reclaim_to_marker(ArenaAllocator *allocator, AllocatorMarker *marker
 }
 
 auto to_array(ArenaAllocator *allocator) -> Array<byte>;
-
-#endif // __BLOOM_H_ALLOCATION__

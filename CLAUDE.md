@@ -1,5 +1,6 @@
 # C++ Code Style
 
+
 ## Identifiers
 - For enumeration keys, use SCREAMING_SNAKE_CASE
 - For functions, use snake_case
@@ -20,6 +21,9 @@
 
 ## Casting
 - Do not use `dynamic_cast`
+
+## Header files
+- Use `#pragma once` instead of include guards
 
 ## C and C++ Standard Library
 - Do not use `iostream`. Prefer C `stdio` instead.

@@ -61,8 +61,26 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
                                     PUSH_STR(" + ");
                                 }
                                 auto &op = operands[i];
-                                if (op.is_identifier) {
+                                if (op.type == BinaryOperandType::IDENTIFIER) {
                                     PUSH_STR(op.identifier);
+                                }
+                                else if (op.type == BinaryOperandType::PROC_CALL) {
+                                    PUSH_STR(op.proc_call.caller_identifier);
+                                    PUSH_STR('(');
+                                    for (size_t j = 0; j < op.proc_call.arguments.length; j++) {
+                                        if (j != 0) { PUSH_STR(", "); }
+                                        auto *arg = &op.proc_call.arguments[j];
+                                        if (arg->type == ASTNodeType::IDENTIFIER) {
+                                            PUSH_STR(arg->identifier);
+                                        }
+                                        else if (arg->type == ASTNodeType::INTEGER_LITERAL) {
+                                            PUSH_INT(arg->integer_literal.value.value);
+                                        }
+                                        else if (arg->type == ASTNodeType::STRING_LITERAL) {
+                                            PUSH_STR('"'); PUSH_STR(arg->string_literal.value); PUSH_STR('"');
+                                        }
+                                    }
+                                    PUSH_STR(')');
                                 }
                                 else {
                                     PUSH_INT(op.integer_literal.value);
@@ -126,8 +144,26 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
                                             PUSH_STR(" + ");
                                         }
                                         auto &op = operands[i];
-                                        if (op.is_identifier) {
+                                        if (op.type == BinaryOperandType::IDENTIFIER) {
                                             PUSH_STR(op.identifier);
+                                        }
+                                        else if (op.type == BinaryOperandType::PROC_CALL) {
+                                            PUSH_STR(op.proc_call.caller_identifier);
+                                            PUSH_STR('(');
+                                            for (size_t j = 0; j < op.proc_call.arguments.length; j++) {
+                                                if (j != 0) { PUSH_STR(", "); }
+                                                auto *arg = &op.proc_call.arguments[j];
+                                                if (arg->type == ASTNodeType::IDENTIFIER) {
+                                                    PUSH_STR(arg->identifier);
+                                                }
+                                                else if (arg->type == ASTNodeType::INTEGER_LITERAL) {
+                                                    PUSH_INT(arg->integer_literal.value.value);
+                                                }
+                                                else if (arg->type == ASTNodeType::STRING_LITERAL) {
+                                                    PUSH_STR('"'); PUSH_STR(arg->string_literal.value); PUSH_STR('"');
+                                                }
+                                            }
+                                            PUSH_STR(')');
                                         }
                                         else {
                                             PUSH_INT(op.integer_literal.value);

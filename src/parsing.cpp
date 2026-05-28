@@ -392,43 +392,60 @@ static auto parse_expression(
         }
         case TokenType::IDENTIFIER:
         case TokenType::INTEGER_LITERAL: {
-            if (next_token->type == TokenType::IDENTIFIER &&
-                tokens_iter->current_index < tokens_iter->elements.length &&
-                iter_peek(tokens_iter)->type == TokenType::PARENTHESIS_OPEN)
-            {
-                int64_t proc_call_end_token_index = iter_get_index_at_if<Token>(
-                    tokens_iter, [](auto *token) {
-                        return token->type == TokenType::PARENTHESIS_CLOSE;
+            // Returns a BinaryOperand for the given token, consuming any proc call tokens
+            // from tokens_iter. Never default-constructs BinaryOperand to avoid union issues.
+            auto parse_operand = [&](Token *token) -> Result<BinaryOperand, ParseError> {
+                if (token->type == TokenType::IDENTIFIER &&
+                    tokens_iter->current_index < tokens_iter->elements.length &&
+                    iter_peek(tokens_iter)->type == TokenType::PARENTHESIS_OPEN)
+                {
+                    int64_t close_paren_index = iter_get_index_at_if<Token>(
+                        tokens_iter, [](auto *t) {
+                            return t->type == TokenType::PARENTHESIS_CLOSE;
+                        }
+                    );
+                    auto arg_tokens_iter = iter_slice_by_offset(
+                        tokens_iter,
+                        tokens_iter->current_index + 1,
+                        close_paren_index
+                    );
+                    ASTNode temp_node = {
+                        .type = ASTNodeType::PROC_CALL,
+                        .parent = nullptr,
+                        .proc_call = { .caller_identifier = token->identifier.content },
+                    };
+                    if (!parse_proc_call_arguments(&arg_tokens_iter, &temp_node, nodes_block_iter, errors)) {
+                        return err<BinaryOperand, ParseError>(PARSE_ERROR_CREATE(UNEXPECTED_TOKEN, token));
                     }
-                );
-                auto proc_call_arg_tokens_iter = iter_slice_by_offset(
-                    tokens_iter,
-                    tokens_iter->current_index + 1,
-                    proc_call_end_token_index
-                );
-                ASTNode proc_call_node = {
-                    .type = ASTNodeType::PROC_CALL,
-                    .parent = nullptr,
-                    .proc_call = {
-                        .caller_identifier = next_token->identifier.content,
-                    },
-                };
-                if (!parse_proc_call_arguments(&proc_call_arg_tokens_iter, &proc_call_node, nodes_block_iter, errors)) {
-                    return err<ASTNode, ParseError>(PARSE_ERROR_CREATE(UNEXPECTED_TOKEN, next_token));
+                    tokens_iter->current_index = close_paren_index + 1;
+                    return ok<BinaryOperand, ParseError>(BinaryOperand {
+                        .type = BinaryOperandType::PROC_CALL,
+                        .proc_call = {
+                            .caller_identifier = temp_node.proc_call.caller_identifier,
+                            .arguments = temp_node.proc_call.arguments,
+                        },
+                    });
                 }
-                tokens_iter->current_index = proc_call_end_token_index + 1;
-                return ok<ASTNode, ParseError>(proc_call_node);
-            }
+                if (token->type == TokenType::IDENTIFIER) {
+                    return ok<BinaryOperand, ParseError>(BinaryOperand {
+                        .type = BinaryOperandType::IDENTIFIER,
+                        .identifier = token->identifier.content,
+                    });
+                }
+                if (token->type == TokenType::INTEGER_LITERAL) {
+                    return ok<BinaryOperand, ParseError>(BinaryOperand {
+                        .type = BinaryOperandType::INTEGER_LITERAL,
+                        .integer_literal = IntegerLiteralASTNode { .value = token->integer_literal.value },
+                    });
+                }
+                return err<BinaryOperand, ParseError>(PARSE_ERROR_CREATE(UNEXPECTED_TOKEN, token));
+            };
 
-            BinaryOperand left_operand;
-            if (next_token->type == TokenType::IDENTIFIER) {
-                left_operand.is_identifier = true;
-                left_operand.identifier = next_token->identifier.content;
+            auto left_result = parse_operand(next_token);
+            if (!is_ok(left_result)) {
+                return err<ASTNode, ParseError>(left_result.err);
             }
-            else {
-                left_operand.is_identifier = false;
-                left_operand.integer_literal = IntegerLiteralASTNode { .value = next_token->integer_literal.value };
-            }
+            auto left_operand = left_result.ok;
 
             // Peek for a binary add operator; if found, collect all operands
             if (tokens_iter->current_index < tokens_iter->elements.length &&
@@ -441,21 +458,12 @@ static auto parse_expression(
                        iter_peek(tokens_iter)->type == TokenType::ADD)
                 {
                     (void)iter_next(tokens_iter); // consume '+'
-
                     Token *operand_token = iter_next(tokens_iter);
-                    BinaryOperand operand;
-                    if (operand_token->type == TokenType::IDENTIFIER) {
-                        operand.is_identifier = true;
-                        operand.identifier = operand_token->identifier.content;
+                    auto operand_result = parse_operand(operand_token);
+                    if (!is_ok(operand_result)) {
+                        return err<ASTNode, ParseError>(operand_result.err);
                     }
-                    else if (operand_token->type == TokenType::INTEGER_LITERAL) {
-                        operand.is_identifier = false;
-                        operand.integer_literal = IntegerLiteralASTNode { .value = operand_token->integer_literal.value };
-                    }
-                    else {
-                        return err<ASTNode, ParseError>(PARSE_ERROR_CREATE(UNEXPECTED_TOKEN, operand_token));
-                    }
-                    (void)iter_append(operands_iter, std::move(operand));
+                    (void)iter_append(operands_iter, std::move(operand_result.ok));
                 }
 
                 return ok<ASTNode, ParseError>(ASTNode {
@@ -472,7 +480,17 @@ static auto parse_expression(
             }
 
             // No binary operator — return single-operand expression
-            if (left_operand.is_identifier) {
+            if (left_operand.type == BinaryOperandType::PROC_CALL) {
+                return ok<ASTNode, ParseError>(ASTNode {
+                    .type = ASTNodeType::PROC_CALL,
+                    .parent = nullptr,
+                    .proc_call = {
+                        .arguments = left_operand.proc_call.arguments,
+                        .caller_identifier = left_operand.proc_call.caller_identifier,
+                    },
+                });
+            }
+            if (left_operand.type == BinaryOperandType::IDENTIFIER) {
                 return ok<ASTNode, ParseError>(ASTNode {
                     .type = ASTNodeType::IDENTIFIER,
                     .parent = nullptr,
@@ -664,7 +682,7 @@ static auto parse_statement(
             case TokenType::ADD: {
                 size_t operands_begin = operands_iter->current_index;
                 (void)iter_append(operands_iter, BinaryOperand {
-                    .is_identifier = true,
+                    .type = BinaryOperandType::IDENTIFIER,
                     .identifier = next_token->identifier.content,
                 });
 
@@ -673,19 +691,21 @@ static auto parse_statement(
                 {
                     (void)iter_next(tokens_iter); // consume '+'
                     Token *operand_token = iter_next(tokens_iter);
-                    BinaryOperand operand;
                     if (operand_token->type == TokenType::IDENTIFIER) {
-                        operand.is_identifier = true;
-                        operand.identifier = operand_token->identifier.content;
+                        (void)iter_append(operands_iter, BinaryOperand {
+                            .type = BinaryOperandType::IDENTIFIER,
+                            .identifier = operand_token->identifier.content,
+                        });
                     }
                     else if (operand_token->type == TokenType::INTEGER_LITERAL) {
-                        operand.is_identifier = false;
-                        operand.integer_literal = IntegerLiteralASTNode { .value = operand_token->integer_literal.value };
+                        (void)iter_append(operands_iter, BinaryOperand {
+                            .type = BinaryOperandType::INTEGER_LITERAL,
+                            .integer_literal = IntegerLiteralASTNode { .value = operand_token->integer_literal.value },
+                        });
                     }
                     else {
                         return false;
                     }
-                    (void)iter_append(operands_iter, std::move(operand));
                 }
 
                 iter_append(nodes_block_iter, ASTNode {

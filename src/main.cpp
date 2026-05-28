@@ -15,7 +15,7 @@
 constexpr auto kb(size_t n) -> size_t { return n * 1024; }
 constexpr auto mb(size_t n) -> size_t { return n * 1024 * 1024; }
 
-constexpr size_t MAIN_MEMORY_SIZE = kb(16);
+constexpr size_t MAIN_MEMORY_SIZE = kb(32);
 
 /**
  * Allocates a null-terminated C string.
@@ -200,8 +200,11 @@ auto transpile(char const *input_file_path_cstr, char const *output_file_path_cs
                         printf(" +");
                     }
                     auto &op = operands[i];
-                    if (op.is_identifier) {
+                    if (op.type == BinaryOperandType::IDENTIFIER) {
                         print(" %", op.identifier);
+                    }
+                    else if (op.type == BinaryOperandType::PROC_CALL) {
+                        print(" %(...)", op.proc_call.caller_identifier);
                     }
                     else {
                         printf(" <literal>");

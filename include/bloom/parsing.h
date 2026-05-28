@@ -44,11 +44,23 @@ struct IntegerLiteralASTNode {
     };
 };
 
+struct ASTNode;
+
+enum class BinaryOperandType : uint8_t {
+    IDENTIFIER,
+    INTEGER_LITERAL,
+    PROC_CALL,
+};
+
 struct BinaryOperand {
-    bool is_identifier;
+    BinaryOperandType type;
     union {
         Str identifier;
         IntegerLiteralASTNode integer_literal;
+        struct {
+            Str caller_identifier;
+            Array<ASTNode> arguments;
+        } proc_call;
     };
 };
 

@@ -431,6 +431,7 @@ static auto parse_expression(
             // Expect procedure definition
 
             // Parse procedure parameters
+            size_t params_start_index = proc_params_iter->current_index;
             if (!parse_proc_params(tokens_iter, proc_params_iter, errors)) {
                 return err<ASTNode, ParseError>(PARSE_ERROR_CREATE(UNEXPECTED_TOKEN, next_token));
             }
@@ -471,8 +472,8 @@ static auto parse_expression(
                 .proc_def = {
                     .name = context->current_identifier->identifier.content,
                     .parameters = Array<ProcParameterASTNode>(
-                        proc_params_block->data,
-                        proc_params_iter->current_index
+                        proc_params_block->data + params_start_index,
+                        proc_params_iter->current_index - params_start_index
                     ),
                     .return_type = return_type_node,
                     .body = Array<ASTNode>(
@@ -600,9 +601,42 @@ static auto parse_statement(
                 (void)iter_next(tokens_iter);
                 break;
             }
+            case TokenType::ADD: {
+                (void)iter_next(tokens_iter); // Consume ADD token
+                Token *right_token = iter_next(tokens_iter);
+                BinaryOperand left_operand = {
+                    .is_identifier = true,
+                    .identifier = next_token->identifier.content,
+                };
+                BinaryOperand right_operand;
+                if (right_token->type == TokenType::IDENTIFIER) {
+                    right_operand.is_identifier = true;
+                    right_operand.identifier = right_token->identifier.content;
+                } else if (right_token->type == TokenType::INTEGER_LITERAL) {
+                    right_operand.is_identifier = false;
+                    right_operand.integer_literal = IntegerLiteralASTNode { .value = right_token->integer_literal.value };
+                } else {
+                    return false;
+                }
+                iter_append(nodes_block_iter, ASTNode {
+                    .type = ASTNodeType::BINARY_ADD,
+                    .parent = parent_node,
+                    .binary_operation = {
+                        .oprt = BinaryOperatorType::ADD,
+                        .left = left_operand,
+                        .right = right_operand,
+                    },
+                });
+                assert(
+                    iter_current(tokens_iter)->type == TokenType::NEWLINE ||
+                    iter_current(tokens_iter)->type == TokenType::END &&
+                    "Expected newline or end token after binary expression statement");
+                (void)iter_next(tokens_iter);
+                break;
+            }
             case TokenType::VAR_DEF: {
                 (void)iter_next(tokens_iter); // Consume VAR_DEF token
-    
+
                 // Expect a variable definition
     
                 // Find the end of the statement to create a sub-iterator for the expression

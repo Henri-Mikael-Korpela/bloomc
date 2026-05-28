@@ -1,4 +1,7 @@
+#include <cstdlib>
+#include <cstring>
 #include <filesystem>
+#include <string>
 
 #include <fcntl.h>
 #include <sys/mman.h>
@@ -31,21 +34,72 @@ static auto allocate_null_terminated_str_from_str(ArenaAllocator *allocator, Str
 }
 
 int run(char const *input_file_path_cstr) {
-    // Transpile the input source file to a temporary C file
-    std::filesystem::create_directories("build/tmp");
-    char temp_file_template[] = "build/tmp/transpiled_XXXXXX.c";
-    // Assume mkstemp64 is not needed, that file size will not exceed 2GB
-    int fd = mkstemps(temp_file_template, 2);
+    auto input_file_path = std::filesystem::path(input_file_path_cstr);
 
-    if (fd == -1) {
+    if (!std::filesystem::exists(input_file_path)) {
+        eprint("Error: Input file does not exist\n");
+        return 1;
+    }
+
+    input_file_path = std::filesystem::absolute(input_file_path);
+
+    int src_fd = open(input_file_path.c_str(), O_RDONLY);
+    if (src_fd == -1) {
+        eprint("Error opening the input source file\n");
+        return 1;
+    }
+
+    struct stat file_stat;
+    if (fstat(src_fd, &file_stat) == -1) {
+        eprint("Error getting the input source file status\n");
+        close(src_fd);
+        return 1;
+    }
+
+    byte *mapped_memory = static_cast<byte*>(mmap(nullptr, file_stat.st_size, PROT_READ, MAP_PRIVATE, src_fd, 0));
+    defer(munmap(mapped_memory, file_stat.st_size));
+    close(src_fd);
+
+    if (mapped_memory == MAP_FAILED) {
+        eprint("Error mapping the input source file\n");
+        return 1;
+    }
+
+    auto main_allocator = ArenaAllocator(MAIN_MEMORY_SIZE);
+
+    auto input_file_content = str_from_cstr(reinterpret_cast<char*>(mapped_memory));
+    Array<Token> tokens = tokenize(&input_file_content, &main_allocator);
+    auto ast_nodes = parse(&tokens, &main_allocator);
+
+    std::filesystem::create_directories("build/tmp");
+    char temp_c_file[] = "build/tmp/transpiled_XXXXXX.c";
+    int temp_fd = mkstemps(temp_c_file, 2);
+
+    if (temp_fd == -1) {
         eprint("Error creating temporary file\n");
         return 1;
     }
 
-    // TODO Add writing of transpiled C code to the temporary file here
+    auto c_code = transpile_to_c(&ast_nodes, &main_allocator);
+    write(temp_fd, c_code.data, c_code.length);
+    close(temp_fd);
 
-    close(fd);
-    return 0;
+    std::string temp_binary(temp_c_file, strlen(temp_c_file) - 2);
+    std::string gcc_cmd = "gcc -o " + temp_binary + " " + temp_c_file;
+
+    if (system(gcc_cmd.c_str()) != 0) {
+        eprint("Error compiling generated C code\n");
+        std::filesystem::remove(temp_c_file);
+        return 1;
+    }
+
+    int exit_code = system(temp_binary.c_str());
+
+    std::filesystem::remove(temp_c_file);
+    std::filesystem::remove(temp_binary);
+
+    delete_allocator(&main_allocator);
+    return exit_code;
 }
 
 int transpile(char const *input_file_path_cstr, char const *output_file_path_cstr) {

@@ -3,7 +3,7 @@
 #include <bloom/print.h>
 #include <bloom/transpilation.h>
 
-static auto allocate_dynamic_str(ArenaAllocator *allocator) -> DynamicString {
+static auto allocate_dynamic_str(ArenaAllocator *allocator) -> DynamicStr {
     return {
         .data = reinterpret_cast<char*>(allocator->data + allocator->offset),
         .length = 0,
@@ -11,33 +11,10 @@ static auto allocate_dynamic_str(ArenaAllocator *allocator) -> DynamicString {
     };
 }
 
-/**
- * Allocates a null-terminated C string.
- */
-static auto allocate_null_terminated_str_from_str(ArenaAllocator *allocator, String *str) -> char* {
-    // +1 for null-terminator
-    size_t required_size = (str->length + 1) * sizeof(char);
-    assert(allocator->offset + required_size <= allocator->length &&
-        "Failed to allocate C string from ArenaAllocator");
-    char *c_str = reinterpret_cast<char*>(allocator->data + allocator->offset);
-    allocator->offset += required_size;
-    memcpy(c_str, str->data, str->length * sizeof(char));
-    // Null-terminate the string
-    c_str[str->length] = '\0';
-    return c_str;
-}
-
-auto transpile_to_c(
-    String *target_file_path,
-    Array<ASTNode> *ast_nodes,
-    ArenaAllocator *allocator
-) -> void {
-    auto marker = allocator_marker_from_current_offset(allocator);
-    defer(reclaim_to_marker(allocator, &marker));
-    
+auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str {
     auto str_buffer = allocate_dynamic_str(allocator);
 
-    #define PUSH_STR(value) allocator->offset += push_str(&str_buffer, value)
+    #define PUSH_STR(value) allocator->offset += str_push(&str_buffer, value)
 
     PUSH_STR("#include <stdbool.h>\n");
     PUSH_STR("#include <stdio.h>\n\n");
@@ -169,9 +146,5 @@ auto transpile_to_c(
 
     #undef PUSH_STR
 
-    // Write the target file
-    char *target_file_path_c_str = allocate_null_terminated_str_from_str(allocator, target_file_path);
-
-    FILE *file = fopen(target_file_path_c_str, "w");
-    fwrite(str_buffer.data, 1, str_buffer.length, file);
+    return str_from_data_and_length(str_buffer.data, str_buffer.length);
 }

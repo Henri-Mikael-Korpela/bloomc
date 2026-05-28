@@ -5,9 +5,9 @@
 #include <bloom/tokenization.h>
 #include <cstring>
 
-static auto next_char_or_null_char(String *str, size_t current_index) -> char {
+static auto next_char_or_null_char(Str *str, size_t current_index) -> char {
     if (current_index + 1 < str->length) {
-        return char_at(str, current_index + 1);
+        return str_char_at(str, current_index + 1);
     } else {
         return '\0';
     }
@@ -22,7 +22,7 @@ static inline auto to_array(AllocatedArrayBlock<Token> *tokens_block) -> Array<T
  *
  * The tokens are stored in an ArenaAllocator for efficient memory management.
  */
-auto tokenize(String *input, ArenaAllocator *allocator) -> Array<Token> {
+auto tokenize(Str *input, ArenaAllocator *allocator) -> Array<Token> {
     // Allocate initially based on the input string length and
     // shrink the allocation later once the final token count is known
     auto tokens_block = allocate_array<Token>(allocator, input->length);
@@ -51,14 +51,14 @@ auto tokenize(String *input, ArenaAllocator *allocator) -> Array<Token> {
     };
 
     for (size_t i = 0; i < input->length; i++) {
-        char c = char_at(input, i);
+        char c = str_char_at(input, i);
         if (isalpha(c) || c == '_') {
             // Expect an identifier
             auto begin = i;
             while (i + 1 < input->length) {
                 size_t next_i = i + 1;
                 // Keep going if the next character is an alphabet
-                if (isalnum(char_at(input, next_i)) || char_at(input, next_i) == '_') {
+                if (isalnum(str_char_at(input, next_i)) || str_char_at(input, next_i) == '_') {
                     i++;
                 } else {
                     break;
@@ -96,7 +96,7 @@ auto tokenize(String *input, ArenaAllocator *allocator) -> Array<Token> {
                 .type = TokenType::IDENTIFIER,
                 .position = current_position,
                 .identifier = {
-                    .content = String::from_data_and_length(
+                    .content = str_from_data_and_length(
                         input->data + begin,
                         identifier_len
                     )
@@ -151,7 +151,7 @@ auto tokenize(String *input, ArenaAllocator *allocator) -> Array<Token> {
             auto begin = i;
             while (i + 1 < input->length) {
                 // Keep going if the next character is a digit
-                if (isdigit(char_at(input, i + 1))) {
+                if (isdigit(str_char_at(input, i + 1))) {
                     i++;
                 } else {
                     break;
@@ -212,7 +212,7 @@ auto tokenize(String *input, ArenaAllocator *allocator) -> Array<Token> {
             auto begin = i + 1;
             while (i + 1 < input->length) {
                 i++;
-                if (char_at(input, i) == '"') {
+                if (str_char_at(input, i) == '"') {
                     break;
                 }
             }
@@ -220,7 +220,7 @@ auto tokenize(String *input, ArenaAllocator *allocator) -> Array<Token> {
             append_token({
                 .type = TokenType::STRING_LITERAL,
                 .string_literal = {
-                    .content = String::from_data_and_length(
+                    .content = str_from_data_and_length(
                         input->data + begin,
                         string_len
                     )

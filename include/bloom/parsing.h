@@ -10,8 +10,8 @@ enum class DeducedType : uint8_t {
     INTEGER,
 };
 
-constexpr auto to_string(DeducedType type) -> String {
-    #define STR(x) String::from_null_terminated_str(x)
+constexpr auto to_string(DeducedType type) -> Str {
+    #define STR(x) str_from_cstr(x)
     switch (type) {
         case DeducedType::BOOLEAN: return STR("boolean");
         case DeducedType::INTEGER: return STR("integer");
@@ -48,17 +48,17 @@ struct IntegerLiteralASTNode {
 struct BinaryOperand {
     bool is_identifier;
     union {
-        String identifier;
+        Str identifier;
         IntegerLiteralASTNode integer_literal;
     };
 };
 
 struct ProcParameterASTNode {
-    String name;
+    Str name;
 };
 
 struct TypeASTNode {
-    String name;
+    Str name;
 };
 
 struct ASTNode {
@@ -70,7 +70,7 @@ struct ASTNode {
             BinaryOperand left;
             BinaryOperand right;
         } binary_operation;
-        String identifier;
+        Str identifier;
         struct {
             bool value;
         } boolean_literal;
@@ -79,20 +79,20 @@ struct ASTNode {
         } integer_literal;
         struct {
             Array<ASTNode> arguments;
-            String caller_identifier;
+            Str caller_identifier;
         } proc_call;
         struct {
-            String name;
+            Str name;
             Array<ProcParameterASTNode> parameters;
             TypeASTNode *return_type;
             Array<ASTNode> body;
         } proc_def;
         ASTNode *return_value;
         struct {
-            String value;
+            Str value;
         } string_literal;
         struct {
-            String name;
+            Str name;
             DeducedType deduced_type;
             ASTNodeType expr_type;
             union {
@@ -109,8 +109,8 @@ struct ASTNode {
 
 extern auto parse(Array<Token> *tokens, ArenaAllocator *allocator) -> Array<ASTNode>;
 
-constexpr auto to_string(ASTNodeType type) -> String {
-    #define STR(x) String::from_null_terminated_str(x)
+constexpr auto to_string(ASTNodeType type) -> Str {
+    #define STR(x) str_from_cstr(x)
     switch (type) {
         case ASTNodeType::BINARY_ADD:          return STR("binary_add");
         case ASTNodeType::BOOLEAN_LITERAL:     return STR("boolean_literal");

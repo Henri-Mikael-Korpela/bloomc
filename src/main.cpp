@@ -14,8 +14,36 @@ constexpr size_t mb(size_t n) { return n * 1024 * 1024; }
 
 const size_t MAIN_MEMORY_SIZE = kb(16);
 
+/**
+ * Allocates a null-terminated C string.
+ */
+static auto allocate_null_terminated_str_from_str(ArenaAllocator *allocator, Str *str) -> char* {
+    // +1 for null-terminator
+    size_t required_size = (str->length + 1) * sizeof(char);
+    assert(allocator->offset + required_size <= allocator->length &&
+        "Failed to allocate C string from ArenaAllocator");
+    char *c_str = reinterpret_cast<char*>(allocator->data + allocator->offset);
+    allocator->offset += required_size;
+    memcpy(c_str, str->data, str->length * sizeof(char));
+    // Null-terminate the string
+    c_str[str->length] = '\0';
+    return c_str;
+}
+
 int run(char const *input_file_path_cstr) {
-    // TODO
+    // Transpile the input source file to a temporary C file
+    char temp_file_template[] = "build/tmp/transpiled_XXXXXX.c";
+    // Assume mkstemp64 is not needed, that file size will not exceed 2GB
+    int fd = mkstemp(temp_file_template);
+
+    if (fd == -1) {
+        eprint("Error creating temporary file\n");
+        return 1;
+    }
+
+    // TODO Add writing of transpiled C code to the temporary file here
+
+    close(fd);
     return 0;
 }
 
@@ -61,7 +89,7 @@ int transpile(char const *input_file_path_cstr, char const *output_file_path_cst
     print("File contents: %\n", reinterpret_cast<char*>(mapped_memory));
 
     // Tokenize the input
-    auto input_file_content = String::from_null_terminated_str(reinterpret_cast<char*>(mapped_memory));
+    auto input_file_content = str_from_cstr(reinterpret_cast<char*>(mapped_memory));
     Array<Token> tokens = tokenize(&input_file_content, &main_allocator);
     print("Tokenized % tokens\n", tokens.length);
 
@@ -101,7 +129,7 @@ int transpile(char const *input_file_path_cstr, char const *output_file_path_cst
     // Parse the tokens into an AST
     auto ast_nodes = parse(&tokens, &main_allocator);
 
-    auto MISSING_TYPE = String::from_null_terminated_str("(none)");
+    auto MISSING_TYPE = str_from_cstr("(none)");
 
     for (auto &node : ast_nodes) {
         if (node.parent != nullptr) {
@@ -113,8 +141,8 @@ int transpile(char const *input_file_path_cstr, char const *output_file_path_cst
                 auto &bl = node.binary_operation.left;
                 auto &br = node.binary_operation.right;
                 print("\tBinary operation: % + %\n",
-                    bl.is_identifier ? bl.identifier : String::from_null_terminated_str("<literal>"),
-                    br.is_identifier ? br.identifier : String::from_null_terminated_str("<literal>")
+                    bl.is_identifier ? bl.identifier : str_from_cstr("<literal>"),
+                    br.is_identifier ? br.identifier : str_from_cstr("<literal>")
                 );
                 break;
             }
@@ -128,7 +156,7 @@ int transpile(char const *input_file_path_cstr, char const *output_file_path_cst
                     auto &param = node.proc_def.parameters[i];
                     print("\t\t%: % (% chars)\n", i, param.name, param.name.length);
                 }
-                String return_type_name = node.proc_def.return_type
+                Str return_type_name = node.proc_def.return_type
                     ? node.proc_def.return_type->name
                     : MISSING_TYPE;
                 print("\tProcedure return type: %\n", return_type_name);
@@ -152,8 +180,21 @@ int transpile(char const *input_file_path_cstr, char const *output_file_path_cst
     }
 
     // Transpile AST nodes into C source code
-    String target_file_path = String::from_null_terminated_str(output_file_path_cstr);
-    transpile_to_c(&target_file_path, &ast_nodes, &main_allocator);
+    auto target_file_path = str_from_cstr(output_file_path_cstr);
+
+    // TODO Instead of setting the marker here and reclaiming the memory after generating the C code,
+    // figure out a better lifetime management strategy.
+    auto marker = allocator_marker_from_current_offset(&main_allocator);
+
+    auto str_buffer = transpile_to_c(&ast_nodes, &main_allocator);
+
+    char *target_file_path_c_str = allocate_null_terminated_str_from_str(&main_allocator, &target_file_path);
+
+    FILE *file = fopen(target_file_path_c_str, "w");
+    fwrite(str_buffer.data, 1, str_buffer.length, file);
+    fclose(file);
+
+    reclaim_to_marker(&main_allocator, &marker);
 
     print(
         "Main memory total: %, left: %, used: %\n",

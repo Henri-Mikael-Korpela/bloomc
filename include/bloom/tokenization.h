@@ -46,7 +46,7 @@ struct Token {
     } position;
     union {
         struct {
-            String content;
+            Str content;
         } identifier;
         struct {
             size_t level;
@@ -58,14 +58,14 @@ struct Token {
             };
         } integer_literal;
         struct {
-            String content;
+            Str content;
         } string_literal;
     };
 };
 static_assert(sizeof(Token) == 40, "Token size is not 40 bytes");
 
-constexpr auto to_string(TokenType type) -> String {
-    #define STR(x) String::from_null_terminated_str(x)
+constexpr auto to_string(TokenType type) -> Str {
+    #define STR(x) str_from_cstr(x)
     switch (type) {
         case TokenType::ADD:               return STR("+");
         case TokenType::ARROW:             return STR("->");
@@ -97,6 +97,6 @@ constexpr auto to_string(TokenType type) -> String {
  *
  * The tokens are stored in an ArenaAllocator for efficient memory management.
  */
-auto tokenize(String *input, ArenaAllocator *allocator) -> Array<Token>;
+auto tokenize(Str *input, ArenaAllocator *allocator) -> Array<Token>;
 
 #endif // __BLOOM_H_TOKENIZATION__

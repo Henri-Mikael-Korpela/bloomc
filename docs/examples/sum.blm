@@ -1,11 +1,16 @@
-sum :: proc(a : Int, b : Int) Int ->
+sum :: proc(a: Int, b: Int) Int ->
     a + b
 
-sum2 :: proc(a : Int, b : Int) Int ->
+sum2 :: proc(a: Int, b: Int) Int ->
     a + b
 
 main :: proc() ->
-    x := 501
+    x := 501 + 2 + 11
     printf("My number: %i\n", x)
-    y := 202
-    printf("My other number: %i\n", y)
+    y := sum(5, 10) + sum(2, 3) + 2
+    if y == 22 ->
+        printf("My other number: %i\n", y)
+    else if y == 23 ->
+        printf("Path #2\n")
+    else ->
+        printf("Path #3\n")

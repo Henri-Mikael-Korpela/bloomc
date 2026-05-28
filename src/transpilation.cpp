@@ -205,57 +205,91 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
                             break;
                         }
                         case ASTNodeType::IF_ELSE: {
-                            auto &ie = statement.if_else;
-                            PUSH_STR('\t');
-                            PUSH_STR("if (");
-                            if (ie.condition_left.is_identifier) {
-                                PUSH_STR(ie.condition_left.identifier);
-                            }
-                            else {
-                                PUSH_INT(ie.condition_left.integer_literal.value);
-                            }
-                            PUSH_STR(" == ");
-                            if (ie.condition_right.is_identifier) {
-                                PUSH_STR(ie.condition_right.identifier);
-                            }
-                            else {
-                                PUSH_INT(ie.condition_right.integer_literal.value);
-                            }
-                            PUSH_STR(") {\n");
+                            auto emit_proc_call = [&](ASTNode *stmt) {
+                                PUSH_STR("\t\t");
+                                PUSH_STR(stmt->proc_call.caller_identifier);
+                                PUSH_STR('(');
+                                for (size_t i = 0; i < stmt->proc_call.arguments.length; i++) {
+                                    if (i != 0) { PUSH_STR(", "); }
+                                    auto *arg = &stmt->proc_call.arguments[i];
+                                    if (arg->type == ASTNodeType::IDENTIFIER) {
+                                        PUSH_STR(arg->identifier);
+                                    }
+                                    else if (arg->type == ASTNodeType::INTEGER_LITERAL) {
+                                        PUSH_INT(arg->integer_literal.value.value);
+                                    }
+                                    else if (arg->type == ASTNodeType::STRING_LITERAL) {
+                                        PUSH_STR('"'); PUSH_STR(arg->string_literal.value); PUSH_STR('"');
+                                    }
+                                }
+                                PUSH_STR(");\n");
+                            };
 
-                            auto emit_body = [&](Array<ASTNode> *body) {
+                            auto emit_body = [&](Array<ASTNode> *body, ASTNode *owner) {
                                 for (auto &stmt : *body) {
-                                    if (stmt.type != ASTNodeType::PROC_CALL) {
+                                    if (stmt.parent != owner || stmt.type != ASTNodeType::PROC_CALL) {
                                         continue;
                                     }
-                                    PUSH_STR("\t\t");
-                                    PUSH_STR(stmt.proc_call.caller_identifier);
-                                    PUSH_STR('(');
-                                    for (size_t i = 0; i < stmt.proc_call.arguments.length; i++) {
-                                        if (i != 0) { PUSH_STR(", "); }
-                                        auto *arg = &stmt.proc_call.arguments[i];
-                                        if (arg->type == ASTNodeType::IDENTIFIER) {
-                                            PUSH_STR(arg->identifier);
-                                        }
-                                        else if (arg->type == ASTNodeType::INTEGER_LITERAL) {
-                                            PUSH_INT(arg->integer_literal.value.value);
-                                        }
-                                        else if (arg->type == ASTNodeType::STRING_LITERAL) {
-                                            PUSH_STR('"'); PUSH_STR(arg->string_literal.value); PUSH_STR('"');
-                                        }
-                                    }
-                                    PUSH_STR(");\n");
+                                    emit_proc_call(&stmt);
                                 }
                             };
 
-                            emit_body(&ie.then_body);
+                            auto emit_condition = [&](ASTNode *if_node) {
+                                auto &cond = if_node->if_else;
+                                PUSH_STR("if (");
+                                if (cond.condition_left.is_identifier) {
+                                    PUSH_STR(cond.condition_left.identifier);
+                                }
+                                else {
+                                    PUSH_INT(cond.condition_left.integer_literal.value);
+                                }
+                                PUSH_STR(" == ");
+                                if (cond.condition_right.is_identifier) {
+                                    PUSH_STR(cond.condition_right.identifier);
+                                }
+                                else {
+                                    PUSH_INT(cond.condition_right.integer_literal.value);
+                                }
+                                PUSH_STR(") {\n");
+                            };
+
                             PUSH_STR('\t');
-                            if (ie.else_body.data != nullptr) {
-                                PUSH_STR("} else {\n");
-                                emit_body(&ie.else_body);
-                                PUSH_STR('\t');
+                            emit_condition(&statement);
+
+                            ASTNode *current_if = &statement;
+                            while (true) {
+                                auto &cur = current_if->if_else;
+                                emit_body(&cur.then_body, current_if);
+
+                                if (cur.else_body.data == nullptr) {
+                                    PUSH_STR('\t');
+                                    PUSH_STR("}\n");
+                                    break;
+                                }
+
+                                ASTNode *next_if = nullptr;
+                                for (auto &s : cur.else_body) {
+                                    if (s.parent == current_if && s.type == ASTNodeType::IF_ELSE) {
+                                        next_if = &s;
+                                        break;
+                                    }
+                                }
+
+                                if (next_if != nullptr) {
+                                    PUSH_STR('\t');
+                                    PUSH_STR("} else ");
+                                    emit_condition(next_if);
+                                    current_if = next_if;
+                                }
+                                else {
+                                    PUSH_STR('\t');
+                                    PUSH_STR("} else {\n");
+                                    emit_body(&cur.else_body, current_if);
+                                    PUSH_STR('\t');
+                                    PUSH_STR("}\n");
+                                    break;
+                                }
                             }
-                            PUSH_STR("}\n");
                             break;
                         }
                         default:

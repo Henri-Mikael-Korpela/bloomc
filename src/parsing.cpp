@@ -889,21 +889,36 @@ static auto parse_statement(
         if (has_else) {
             iter_next(tokens_iter); // INDENT before else
             iter_next(tokens_iter); // KEYWORD_ELSE
-            iter_next(tokens_iter); // ARROW
-            iter_next(tokens_iter); // NEWLINE
+
+            bool const has_else_if = (
+                tokens_iter->current_index < tokens_iter->elements.length &&
+                iter_peek(tokens_iter)->type == TokenType::KEYWORD_IF
+            );
 
             size_t else_body_start = nodes_block_iter->current_index;
             if_else_node->if_else.else_body.data = nodes_block_iter->elements.data + else_body_start;
 
-            while (tokens_iter->current_index < tokens_iter->elements.length &&
-                   iter_peek(tokens_iter)->type == TokenType::INDENT &&
-                   iter_peek(tokens_iter)->indent.level > 1)
-            {
-                iter_next(tokens_iter); // consume INDENT
+            if (has_else_if) {
                 if (!parse_statement(tokens_iter, context, nodes_block_iter, if_else_node,
                                      proc_params_block, proc_params_iter, types_iter,
                                      operands_iter, errors)) {
                     return false;
+                }
+            }
+            else {
+                iter_next(tokens_iter); // ARROW
+                iter_next(tokens_iter); // NEWLINE
+
+                while (tokens_iter->current_index < tokens_iter->elements.length &&
+                       iter_peek(tokens_iter)->type == TokenType::INDENT &&
+                       iter_peek(tokens_iter)->indent.level > 1)
+                {
+                    iter_next(tokens_iter); // consume INDENT
+                    if (!parse_statement(tokens_iter, context, nodes_block_iter, if_else_node,
+                                         proc_params_block, proc_params_iter, types_iter,
+                                         operands_iter, errors)) {
+                        return false;
+                    }
                 }
             }
 

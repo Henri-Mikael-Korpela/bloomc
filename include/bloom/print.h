@@ -14,8 +14,8 @@ inline auto _bloom_test_get_file(FILE *file) -> FILE* {
 #endif // BLOOM_MODE_DEV
 }
 
-extern void print_value(FILE *file, char const *value);
-extern void print_value(FILE *file, unsigned long value);
+void print_value(FILE *file, char const *value);
+void print_value(FILE *file, unsigned long value);
 
 /**
  * Prints a string to given file. The file can be stdout, stderr or some other file.
@@ -24,7 +24,7 @@ extern void print_value(FILE *file, unsigned long value);
  * You can use the '%' character as a placeholder
  * without typing the type of the argument.
  */
-extern void print(FILE *file, char const *format);
+void print(FILE *file, char const *format);
 /**
  * Prints a formatted string to given file. The file can be stdout, stderr or some other file.
  * 
@@ -63,7 +63,7 @@ constexpr void print(char const *format, PointerT &&value, Args &&...args) {
 /**
  * Prints a string to standard error output.
  */
-extern void eprint(char const *format);
+void eprint(char const *format);
 /**
  * Prints a formatted string to standard error output.
  * 

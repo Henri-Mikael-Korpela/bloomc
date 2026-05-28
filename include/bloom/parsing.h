@@ -107,7 +107,7 @@ struct ASTNode {
     };
 };
 
-extern auto parse(Array<Token> *tokens, ArenaAllocator *allocator) -> Array<ASTNode>;
+auto parse(Array<Token> *tokens, ArenaAllocator *allocator) -> Array<ASTNode>;
 
 constexpr auto to_string(ASTNodeType type) -> Str {
     #define STR(x) str_from_cstr(x)

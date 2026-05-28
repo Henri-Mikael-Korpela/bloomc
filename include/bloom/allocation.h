@@ -72,7 +72,7 @@ inline auto copy_array(AllocatedArrayBlock<ElementType> *dest_block, Array<Eleme
     memcpy(dest_block->data, src_array->data, src_array->length * sizeof(ElementType));
 }
 
-extern auto delete_allocator(ArenaAllocator *allocator) -> void;
+auto delete_allocator(ArenaAllocator *allocator) -> void;
 
 inline auto memory_left(ArenaAllocator *allocator) -> size_t {
     return allocator->length - allocator->offset;
@@ -107,7 +107,7 @@ enum DebugColor {
     DEBUG_COLOR_YELLOW = 33,
 };
 
-extern auto debug_print_bytes(Array<DebugByte> bytes, DebugColor color) -> void;
+auto debug_print_bytes(Array<DebugByte> bytes, DebugColor color) -> void;
 
 template<typename ElementType>
 inline auto get_debug_printable_bytes(AllocatedArrayBlock<ElementType> *block) -> Array<DebugByte> {
@@ -128,7 +128,7 @@ inline auto get_debug_printable_bytes(Array<byte> *array) -> Array<DebugByte> {
  * Reclaims memory in the allocator between two markers by zeroing it out.
  * The old marker offset must be greater than or equal to the new marker offset.
  */
-extern auto reclaim_memory_by_markers(
+auto reclaim_memory_by_markers(
     ArenaAllocator *allocator,
     AllocatorMarker *old_marker,
     AllocatorMarker *new_marker
@@ -139,6 +139,6 @@ inline auto reclaim_to_marker(ArenaAllocator *allocator, AllocatorMarker *marker
     return reclaim_memory_by_markers(allocator, &old_marker, marker);
 }
 
-extern auto to_array(ArenaAllocator *allocator) -> Array<byte>;
+auto to_array(ArenaAllocator *allocator) -> Array<byte>;
 
 #endif // __BLOOM_H_ALLOCATION__

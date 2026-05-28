@@ -32,9 +32,10 @@ static auto allocate_null_terminated_str_from_str(ArenaAllocator *allocator, Str
 
 int run(char const *input_file_path_cstr) {
     // Transpile the input source file to a temporary C file
+    std::filesystem::create_directories("build/tmp");
     char temp_file_template[] = "build/tmp/transpiled_XXXXXX.c";
     // Assume mkstemp64 is not needed, that file size will not exceed 2GB
-    int fd = mkstemp(temp_file_template);
+    int fd = mkstemps(temp_file_template, 2);
 
     if (fd == -1) {
         eprint("Error creating temporary file\n");

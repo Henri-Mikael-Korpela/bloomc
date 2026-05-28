@@ -44,23 +44,15 @@ Also, all documentation and testing has been done on Ubuntu Linux.
 In order to run the compiler, you must build the Bloom compiler first. Use the following commands from the repository root:
 
 ```bash
-# Create a build directory
-mkdir build
-cd build
-
-# Configure the project
-cmake ..
-
-# Build the project
-cmake --build .
+cmake -B build && cmake --build build
 ```
 
 This will generate the `bloomc` executable in the `build` directory.
 
-While you are still inside the build directory, you can run the compiler using a source code file on Linux like this:
+You can run the compiler using a source code file on Linux like this:
 
 ```bash
-./bloomc run <input_file_path>
+./build/bloomc run <input_file_path>
 ```
 
 There's an example Bloom source code in `docs/examples/sum.blm`, which you can run as follows in the repository root:

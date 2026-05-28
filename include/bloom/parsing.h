@@ -23,6 +23,7 @@ enum class ASTNodeType : uint8_t {
     UNKNOWN = 0,
     BINARY_ADD,
     BOOLEAN_LITERAL,
+    IF_ELSE,
     IDENTIFIER,
     INTEGER_LITERAL,
     PASS,
@@ -41,6 +42,14 @@ struct IntegerLiteralASTNode {
     union {
         int64_t value;
         uint64_t uvalue;
+    };
+};
+
+struct ConditionOperand {
+    bool is_identifier;
+    union {
+        Str identifier;
+        IntegerLiteralASTNode integer_literal;
     };
 };
 
@@ -88,6 +97,12 @@ struct ASTNode {
             IntegerLiteralASTNode value;
         } integer_literal;
         struct {
+            ConditionOperand condition_left;
+            ConditionOperand condition_right;
+            Array<ASTNode> then_body;
+            Array<ASTNode> else_body;
+        } if_else;
+        struct {
             Array<ASTNode> arguments;
             Str caller_identifier;
         } proc_call;
@@ -125,6 +140,7 @@ constexpr auto to_string(ASTNodeType type) -> Str {
     switch (type) {
         case ASTNodeType::BINARY_ADD:          return STR("binary_add");
         case ASTNodeType::BOOLEAN_LITERAL:     return STR("boolean_literal");
+        case ASTNodeType::IF_ELSE:             return STR("if_else");
         case ASTNodeType::IDENTIFIER:          return STR("identifier");
         case ASTNodeType::INTEGER_LITERAL:     return STR("integer_literal");
         case ASTNodeType::PASS:                return STR("pass");

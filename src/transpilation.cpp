@@ -51,6 +51,9 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
                 PUSH_STR(')');
                 PUSH_STR("{\n");
                 for (auto &statement : node.proc_def.body) {
+                    if (statement.parent != &node) {
+                        continue;
+                    }
                     switch (statement.type) {
                         case ASTNodeType::BINARY_ADD: {
                             PUSH_STR('\t');
@@ -199,6 +202,60 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
                                     assert(false && "Unsupported expression type in variable definition transpilation");
                             }
                             PUSH_STR(";\n");
+                            break;
+                        }
+                        case ASTNodeType::IF_ELSE: {
+                            auto &ie = statement.if_else;
+                            PUSH_STR('\t');
+                            PUSH_STR("if (");
+                            if (ie.condition_left.is_identifier) {
+                                PUSH_STR(ie.condition_left.identifier);
+                            }
+                            else {
+                                PUSH_INT(ie.condition_left.integer_literal.value);
+                            }
+                            PUSH_STR(" == ");
+                            if (ie.condition_right.is_identifier) {
+                                PUSH_STR(ie.condition_right.identifier);
+                            }
+                            else {
+                                PUSH_INT(ie.condition_right.integer_literal.value);
+                            }
+                            PUSH_STR(") {\n");
+
+                            auto emit_body = [&](Array<ASTNode> *body) {
+                                for (auto &stmt : *body) {
+                                    if (stmt.type != ASTNodeType::PROC_CALL) {
+                                        continue;
+                                    }
+                                    PUSH_STR("\t\t");
+                                    PUSH_STR(stmt.proc_call.caller_identifier);
+                                    PUSH_STR('(');
+                                    for (size_t i = 0; i < stmt.proc_call.arguments.length; i++) {
+                                        if (i != 0) { PUSH_STR(", "); }
+                                        auto *arg = &stmt.proc_call.arguments[i];
+                                        if (arg->type == ASTNodeType::IDENTIFIER) {
+                                            PUSH_STR(arg->identifier);
+                                        }
+                                        else if (arg->type == ASTNodeType::INTEGER_LITERAL) {
+                                            PUSH_INT(arg->integer_literal.value.value);
+                                        }
+                                        else if (arg->type == ASTNodeType::STRING_LITERAL) {
+                                            PUSH_STR('"'); PUSH_STR(arg->string_literal.value); PUSH_STR('"');
+                                        }
+                                    }
+                                    PUSH_STR(");\n");
+                                }
+                            };
+
+                            emit_body(&ie.then_body);
+                            PUSH_STR('\t');
+                            if (ie.else_body.data != nullptr) {
+                                PUSH_STR("} else {\n");
+                                emit_body(&ie.else_body);
+                                PUSH_STR('\t');
+                            }
+                            PUSH_STR("}\n");
                             break;
                         }
                         default:

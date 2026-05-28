@@ -72,6 +72,18 @@ auto tokenize(Str *input, ArenaAllocator *allocator) -> Array<Token> {
 
             // If the text is a keyword
             auto word = str_slice(input, begin, identifier_len);
+            if (word == TOKEN_KEYWORD_ELSE) {
+                append_token_of_type(TokenType::KEYWORD_ELSE);
+                continue;
+            }
+            if (word == TOKEN_KEYWORD_FALSE) {
+                append_token_of_type(TokenType::KEYWORD_FALSE);
+                continue;
+            }
+            if (word == TOKEN_KEYWORD_IF) {
+                append_token_of_type(TokenType::KEYWORD_IF);
+                continue;
+            }
             if (word == TOKEN_KEYWORD_PASS) {
                 append_token_of_type(TokenType::KEYWORD_PASS);
                 continue;
@@ -82,10 +94,6 @@ auto tokenize(Str *input, ArenaAllocator *allocator) -> Array<Token> {
             }
             if (word == TOKEN_KEYWORD_TRUE) {
                 append_token_of_type(TokenType::KEYWORD_TRUE);
-                continue;
-            }
-            if (word == TOKEN_KEYWORD_FALSE) {
-                append_token_of_type(TokenType::KEYWORD_FALSE);
                 continue;
             }
 
@@ -121,10 +129,10 @@ auto tokenize(Str *input, ArenaAllocator *allocator) -> Array<Token> {
                 if (first_indentation_space_count == 0) {
                     first_indentation_space_count = indentation;
                 }
-                size_t level = first_indentation_space_count / indentation;
+                size_t level = indentation / first_indentation_space_count;
 
                 // Ensure the indentation is not inconsistent. If it is, create an error
-                if ((first_indentation_space_count % indentation) != 0) {
+                if ((indentation % first_indentation_space_count) != 0) {
                     eprint("Inconsistent indentation\n");
                     exit(1);
                 }
@@ -220,6 +228,13 @@ auto tokenize(Str *input, ArenaAllocator *allocator) -> Array<Token> {
                 },
             });
             current_position.col += (string_len + 2); // +2 for the quotes
+        }
+        else if (c == '=') {
+            if (char next_char = next_char_or_null_char(input, i); next_char == '=') {
+                i++;
+                append_token_of_type(TokenType::EQUAL_EQUAL);
+                current_position.col += 2;
+            }
         }
         else if (c == static_cast<char>(TokenType::ADD)) {
             append_token_of_type(TokenType::ADD);

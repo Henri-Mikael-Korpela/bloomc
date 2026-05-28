@@ -561,7 +561,7 @@ static auto parse_expression(
 
             // Parse procedure body
             // - Expect each line to be indented and contain a single statement
-            while(true) {
+            while(tokens_iter->current_index < tokens_iter->elements.length) {
                 // If the line doesn't begin with an indent token, the procedure body has ended
                 if (iter_peek(tokens_iter)->type != TokenType::INDENT) {
                     break;
@@ -583,8 +583,10 @@ static auto parse_expression(
                         PARSE_ERROR_CREATE(UNEXPECTED_TOKEN, iter_peek_prev(tokens_iter))
                     );
                 }
-                
-                print("Finished parsing procedure body statement, current token: %\n", to_string(iter_current(tokens_iter)->type));
+
+                if (tokens_iter->current_index < tokens_iter->elements.length) {
+                    print("Finished parsing procedure body statement, current token: %\n", to_string(iter_current(tokens_iter)->type));
+                }
                 // Now, at the end of a statement, the previous token
                 // should be either a newline or an end token
                 #if ASSERTIONS_ENABLED
@@ -632,7 +634,8 @@ static auto parse_statement(
     Iterator<BinaryOperand> *operands_iter,
     DynamicArray<ParseError> *errors
 ) -> bool {
-    if (auto *next_token = iter_next(tokens_iter); next_token->type == TokenType::IDENTIFIER) {
+    auto *next_token = iter_next(tokens_iter);
+    if (next_token->type == TokenType::IDENTIFIER) {
         switch (auto peeked_token = iter_peek(tokens_iter); peeked_token->type) {
             case TokenType::PARENTHESIS_OPEN: {
                 // Expect a procedure call
@@ -817,6 +820,97 @@ static auto parse_statement(
             }
         }
     }
+    else if (next_token->type == TokenType::KEYWORD_IF) {
+        auto parse_cond_operand = [&](Token *token, ConditionOperand *out) -> bool {
+            if (token->type == TokenType::IDENTIFIER) {
+                out->is_identifier = true;
+                out->identifier = token->identifier.content;
+                return true;
+            }
+            if (token->type == TokenType::INTEGER_LITERAL) {
+                out->is_identifier = false;
+                out->integer_literal = IntegerLiteralASTNode { .value = token->integer_literal.value };
+                return true;
+            }
+            append(errors, PARSE_ERROR_CREATE(UNEXPECTED_TOKEN, token));
+            return false;
+        };
+
+        ConditionOperand cond_left;
+        if (!parse_cond_operand(iter_next(tokens_iter), &cond_left)) {
+            return false;
+        }
+        if (iter_next(tokens_iter)->type != TokenType::EQUAL_EQUAL) {
+            append(errors, PARSE_ERROR_CREATE(UNEXPECTED_TOKEN, iter_peek_prev(tokens_iter)));
+            return false;
+        }
+        ConditionOperand cond_right;
+        if (!parse_cond_operand(iter_next(tokens_iter), &cond_right)) {
+            return false;
+        }
+        iter_next(tokens_iter); // ARROW
+        iter_next(tokens_iter); // NEWLINE
+
+        auto *if_else_node = iter_append(nodes_block_iter, ASTNode {
+            .type = ASTNodeType::IF_ELSE,
+            .parent = parent_node,
+            .if_else = {
+                .condition_left = cond_left,
+                .condition_right = cond_right,
+                .then_body = Array<ASTNode>(
+                    nodes_block_iter->elements.data + nodes_block_iter->current_index + 1,
+                    0
+                ),
+                .else_body = Array<ASTNode>(nullptr, 0),
+            },
+        });
+
+        while (tokens_iter->current_index < tokens_iter->elements.length &&
+               iter_peek(tokens_iter)->type == TokenType::INDENT &&
+               iter_peek(tokens_iter)->indent.level > 1)
+        {
+            iter_next(tokens_iter); // consume INDENT
+            if (!parse_statement(tokens_iter, context, nodes_block_iter, if_else_node,
+                                 proc_params_block, proc_params_iter, types_iter,
+                                 operands_iter, errors)) {
+                return false;
+            }
+        }
+
+        if_else_node->if_else.then_body.length =
+            nodes_block_iter->current_index
+            - ptr_sub(if_else_node->if_else.then_body.data, nodes_block_iter->elements.data);
+
+        bool const has_else = (
+            tokens_iter->current_index + 1 < tokens_iter->elements.length &&
+            iter_peek(tokens_iter)->type == TokenType::INDENT &&
+            tokens_iter->elements.data[tokens_iter->current_index + 1].type == TokenType::KEYWORD_ELSE
+        );
+        if (has_else) {
+            iter_next(tokens_iter); // INDENT before else
+            iter_next(tokens_iter); // KEYWORD_ELSE
+            iter_next(tokens_iter); // ARROW
+            iter_next(tokens_iter); // NEWLINE
+
+            size_t else_body_start = nodes_block_iter->current_index;
+            if_else_node->if_else.else_body.data = nodes_block_iter->elements.data + else_body_start;
+
+            while (tokens_iter->current_index < tokens_iter->elements.length &&
+                   iter_peek(tokens_iter)->type == TokenType::INDENT &&
+                   iter_peek(tokens_iter)->indent.level > 1)
+            {
+                iter_next(tokens_iter); // consume INDENT
+                if (!parse_statement(tokens_iter, context, nodes_block_iter, if_else_node,
+                                     proc_params_block, proc_params_iter, types_iter,
+                                     operands_iter, errors)) {
+                    return false;
+                }
+            }
+
+            if_else_node->if_else.else_body.length =
+                nodes_block_iter->current_index - else_body_start;
+        }
+    }
     return true;
 }
 
@@ -856,10 +950,8 @@ auto parse(Array<Token> *tokens, ArenaAllocator *allocator) -> Array<ASTNode> {
 
     // Parse tokens
     auto tokens_iter = to_iterator(tokens);
-    while (true) {
+    while (tokens_iter.current_index < tokens_iter.elements.length) {
         auto *current_token = iter_next(&tokens_iter);
-        assert(current_token != nullptr &&
-            "Current token should not be null during parsing");
 
         if (current_token->type == TokenType::END) {
             break;

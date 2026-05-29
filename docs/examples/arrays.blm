@@ -3,5 +3,9 @@ main :: proc() ->
     b := a[1] + 1 + a[0]
     printf("A: %i, %i, %i\n", a[0], b, a[2])
 
-    c := [const]Int { 1, 2, 2..<4 = 3, 4..<8 = 4 }
+    c := [const]Int {
+        1, 2,
+        2..<4 = 3,
+        4..<8 = 4
+    }
     printf("C: %i, %i, %i\n", c[2], c[3], c[4])

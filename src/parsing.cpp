@@ -440,7 +440,9 @@ static auto parse_expression(
                 if (elem_token->type == TokenType::BRACE_CLOSE) {
                     break;
                 }
-                if (elem_token->type == TokenType::COMMA) {
+                if (elem_token->type == TokenType::COMMA ||
+                    elem_token->type == TokenType::NEWLINE ||
+                    elem_token->type == TokenType::INDENT) {
                     continue;
                 }
                 if (elem_token->type != TokenType::INTEGER_LITERAL) {
@@ -895,11 +897,23 @@ static auto parse_statement(
             case TokenType::VAR_DEF: {
                 (void)iter_next(tokens_iter); // Consume VAR_DEF token
 
-                // Find the end of the statement to create a sub-iterator for the expression
-                // (do not consume tokens in the main iterator yet)
+                // Find the end of the expression, respecting { } so that multiline
+                // array initializations are treated as a single expression.
+                int brace_depth = 0;
                 int64_t expr_end_token_index = iter_get_index_at_if<Token>(
-                    tokens_iter, [](auto *token) {
-                        return token->type == TokenType::NEWLINE || token->type == TokenType::END;
+                    tokens_iter, [&brace_depth](auto *token) {
+                        if (token->type == TokenType::BRACE_OPEN) {
+                            brace_depth++;
+                            return false;
+                        }
+                        if (token->type == TokenType::BRACE_CLOSE && brace_depth > 0) {
+                            brace_depth--;
+                            return false;
+                        }
+                        return brace_depth == 0 && (
+                            token->type == TokenType::NEWLINE ||
+                            token->type == TokenType::END
+                        );
                     }
                 );
                 if (expr_end_token_index == -1) {

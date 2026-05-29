@@ -247,7 +247,7 @@ auto tokenize(Str *input, ArenaAllocator *allocator) -> Array<Token> {
                 str_char_at(input, i + 2) == '<')
             {
                 i += 2;
-                append_token_of_type(TokenType::DOTDOT_LESS);
+                append_token_of_type(TokenType::RANGE_EXCLUSIVE);
                 current_position.col += 3;
             }
         }

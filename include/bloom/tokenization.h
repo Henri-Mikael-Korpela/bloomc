@@ -21,7 +21,7 @@ enum class TokenType : uint8_t {
 
     ARROW,
     CONST_DEF,
-    DOTDOT_LESS,
+    RANGE_EXCLUSIVE,
     END,
     EQUAL_EQUAL,
     EQUALS,
@@ -85,7 +85,6 @@ constexpr auto to_string(TokenType type) -> Str {
         case TokenType::BRACKET_OPEN:      return STR("[");
         case TokenType::COMMA:             return STR(",");
         case TokenType::CONST_DEF:         return STR("const_def");
-        case TokenType::DOTDOT_LESS:       return STR("..<");
         case TokenType::END:               return STR("end");
         case TokenType::EQUAL_EQUAL:       return STR("==");
         case TokenType::EQUALS:            return STR("=");
@@ -102,6 +101,7 @@ constexpr auto to_string(TokenType type) -> Str {
         case TokenType::NEWLINE:           return STR("newline");
         case TokenType::PARENTHESIS_CLOSE: return STR(")");
         case TokenType::PARENTHESIS_OPEN:  return STR("(");
+        case TokenType::RANGE_EXCLUSIVE:   return STR("..<");
         case TokenType::STRING_LITERAL:    return STR("string_literal");
         case TokenType::TYPE_SEPARATOR:    return STR(":");
         case TokenType::VAR_DEF:           return STR("var_def");

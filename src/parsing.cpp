@@ -450,7 +450,7 @@ static auto parse_expression(
                 }
 
                 if (tokens_iter->current_index < tokens_iter->elements.length &&
-                    iter_peek(tokens_iter)->type == TokenType::DOTDOT_LESS)
+                    iter_peek(tokens_iter)->type == TokenType::RANGE_EXCLUSIVE)
                 {
                     // Range element: start..<end = value
                     in_range_mode = true;

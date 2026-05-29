@@ -19,3 +19,13 @@ else
 if
 proc
 ```
+
+## Arrays
+
+Compile-time arrays are initialized as follows
+
+```
+a := [const]Int{ 2, 5, 9 }
+```
+
+where const indicates the size of the array is determined at compile-time, Int represents the element type and values of that type are given inside brackets.

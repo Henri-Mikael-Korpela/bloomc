@@ -5,6 +5,7 @@
 
 enum class DeducedType : uint8_t {
     UNKNOWN = 0,
+    ARRAY_INT,
     BOOLEAN,
     INTEGER,
 };
@@ -12,8 +13,9 @@ enum class DeducedType : uint8_t {
 constexpr auto to_string(DeducedType type) -> Str {
     #define STR(x) cstr_to_str(x)
     switch (type) {
-        case DeducedType::BOOLEAN: return STR("boolean");
-        case DeducedType::INTEGER: return STR("integer");
+        case DeducedType::ARRAY_INT: return STR("array_int");
+        case DeducedType::BOOLEAN:   return STR("boolean");
+        case DeducedType::INTEGER:   return STR("integer");
         default:                   return STR("unknown");
     }
     #undef STR
@@ -21,6 +23,8 @@ constexpr auto to_string(DeducedType type) -> Str {
 
 enum class ASTNodeType : uint8_t {
     UNKNOWN = 0,
+    ARRAY_ACCESS,
+    ARRAY_INIT,
     BINARY_ADD,
     BOOLEAN_LITERAL,
     IF_ELSE,
@@ -86,6 +90,14 @@ struct ASTNode {
     ASTNode *parent;
     union {
         struct {
+            Str variable_name;
+            int64_t index;
+        } array_access;
+        struct {
+            Str element_type;
+            Array<int64_t> elements;
+        } array_init;
+        struct {
             BinaryOperatorType oprt;
             Array<BinaryOperand> operands;
         } binary_operation;
@@ -128,6 +140,10 @@ struct ASTNode {
                     Str caller_identifier;
                     Array<ASTNode> arguments;
                 } proc_call_expr;
+                struct {
+                    Str element_type;
+                    Array<int64_t> elements;
+                } array_init_expr;
             };
         } variable_definition;
     };
@@ -138,6 +154,8 @@ auto parse(Array<Token> *tokens, ArenaAllocator *allocator) -> Array<ASTNode>;
 constexpr auto to_string(ASTNodeType type) -> Str {
     #define STR(x) cstr_to_str(x)
     switch (type) {
+        case ASTNodeType::ARRAY_ACCESS:        return STR("array_access");
+        case ASTNodeType::ARRAY_INIT:          return STR("array_init");
         case ASTNodeType::BINARY_ADD:          return STR("binary_add");
         case ASTNodeType::BOOLEAN_LITERAL:     return STR("boolean_literal");
         case ASTNodeType::IF_ELSE:             return STR("if_else");

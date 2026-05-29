@@ -104,8 +104,15 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
                                     PUSH_STR(arg->identifier);
                                     goto add_comma_inbetween;
                                 }
+                                else if (arg->type == ASTNodeType::ARRAY_ACCESS) {
+                                    PUSH_STR(arg->array_access.variable_name);
+                                    PUSH_STR('[');
+                                    PUSH_INT(arg->array_access.index);
+                                    PUSH_STR(']');
+                                    goto add_comma_inbetween;
+                                }
                                 else if (arg->type != ASTNodeType::STRING_LITERAL) {
-                                    assert(false && "Only identifier and string literal arguments are supported in transpilation");
+                                    assert(false && "Only identifier, array access, and string literal arguments are supported in transpilation");
                                 }
                                 PUSH_STR('"');
                                 PUSH_STR(arg->string_literal.value);
@@ -121,6 +128,18 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
                         }
                         case ASTNodeType::VARIABLE_DEFINITION: {
                             PUSH_STR('\t');
+                            if (statement.variable_definition.deduced_type == DeducedType::ARRAY_INT) {
+                                PUSH_STR("int ");
+                                PUSH_STR(statement.variable_definition.name);
+                                PUSH_STR("[] = {");
+                                auto &elems = statement.variable_definition.array_init_expr.elements;
+                                for (size_t i = 0; i < elems.length; i++) {
+                                    if (i != 0) { PUSH_STR(", "); }
+                                    PUSH_INT(elems[i]);
+                                }
+                                PUSH_STR("};\n");
+                                break;
+                            }
                             // Emit C type from deduced Bloom type
                             char const *c_type = nullptr;
                             switch (statement.variable_definition.deduced_type) {

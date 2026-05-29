@@ -1,0 +1,3 @@
+main :: proc() ->
+    a := [const]Int{ 2, 5, 9 }
+    printf("A: %i, %i, %i\n", a[0], a[1], a[2])

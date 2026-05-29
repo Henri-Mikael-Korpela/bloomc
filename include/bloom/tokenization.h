@@ -7,16 +7,18 @@
 
 enum class TokenType : uint8_t {
     UNKNOWN = 0,
-    
+
     // Printable characters, ASCII code in ascending order
     NEWLINE           = '\n',
     PARENTHESIS_OPEN  = '(',
     PARENTHESIS_CLOSE = ')',
     ADD               = '+',
     COMMA             = ',',
+    BRACKET_OPEN      = '[',
+    BRACKET_CLOSE     = ']',
     BRACE_OPEN        = '{',
     BRACE_CLOSE       = '}',
-    
+
     ARROW,
     CONST_DEF,
     END,
@@ -24,6 +26,7 @@ enum class TokenType : uint8_t {
     IDENTIFIER,
     INDENT,
     INTEGER_LITERAL,
+    KEYWORD_CONST,
     KEYWORD_ELSE,
     KEYWORD_FALSE,
     KEYWORD_IF,
@@ -35,6 +38,7 @@ enum class TokenType : uint8_t {
     VAR_DEF,
 };
 
+constexpr auto TOKEN_KEYWORD_CONST = "const";
 constexpr auto TOKEN_KEYWORD_ELSE  = "else";
 constexpr auto TOKEN_KEYWORD_FALSE = "false";
 constexpr auto TOKEN_KEYWORD_IF    = "if";
@@ -75,6 +79,8 @@ constexpr auto to_string(TokenType type) -> Str {
         case TokenType::ARROW:             return STR("->");
         case TokenType::BRACE_CLOSE:       return STR("}");
         case TokenType::BRACE_OPEN:        return STR("{");
+        case TokenType::BRACKET_CLOSE:     return STR("]");
+        case TokenType::BRACKET_OPEN:      return STR("[");
         case TokenType::COMMA:             return STR(",");
         case TokenType::CONST_DEF:         return STR("const_def");
         case TokenType::END:               return STR("end");
@@ -82,6 +88,7 @@ constexpr auto to_string(TokenType type) -> Str {
         case TokenType::IDENTIFIER:        return STR("identifier");
         case TokenType::INDENT:            return STR("indent");
         case TokenType::INTEGER_LITERAL:   return STR("integer_literal");
+        case TokenType::KEYWORD_CONST:     return STR(TOKEN_KEYWORD_CONST);
         case TokenType::KEYWORD_ELSE:      return STR(TOKEN_KEYWORD_ELSE);
         case TokenType::KEYWORD_FALSE:     return STR(TOKEN_KEYWORD_FALSE);
         case TokenType::KEYWORD_IF:        return STR(TOKEN_KEYWORD_IF);

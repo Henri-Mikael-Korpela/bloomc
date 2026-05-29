@@ -236,13 +236,45 @@ static auto parse_proc_call_arguments(
         if (next_token->type == TokenType::COMMA) {
             continue;
         }
-        // TODO: Hardcoded argument parsing for now, fix later
         else if (next_token->type == TokenType::IDENTIFIER) {
-            (void)iter_append(nodes_block_iter, ASTNode {
-                .type = ASTNodeType::IDENTIFIER,
-                .parent = proc_call_node,
-                .identifier = next_token->identifier.content,
-            });
+            if (tokens_iter->current_index < tokens_iter->elements.length &&
+                iter_peek(tokens_iter)->type == TokenType::BRACKET_OPEN)
+            {
+                (void)iter_next(tokens_iter); // consume [
+                auto *index_token = iter_next(tokens_iter);
+                if (index_token->type != TokenType::INTEGER_LITERAL) {
+                    append(errors, ParseError {
+                        .code = ParseErrorCode::UNEXPECTED_TOKEN,
+                        .position = index_token->position,
+                        .src_code_line = __LINE__,
+                    });
+                    return false;
+                }
+                auto *close_token = iter_next(tokens_iter);
+                if (close_token->type != TokenType::BRACKET_CLOSE) {
+                    append(errors, ParseError {
+                        .code = ParseErrorCode::UNEXPECTED_TOKEN,
+                        .position = close_token->position,
+                        .src_code_line = __LINE__,
+                    });
+                    return false;
+                }
+                (void)iter_append(nodes_block_iter, ASTNode {
+                    .type = ASTNodeType::ARRAY_ACCESS,
+                    .parent = proc_call_node,
+                    .array_access = {
+                        .variable_name = next_token->identifier.content,
+                        .index = index_token->integer_literal.value,
+                    },
+                });
+            }
+            else {
+                (void)iter_append(nodes_block_iter, ASTNode {
+                    .type = ASTNodeType::IDENTIFIER,
+                    .parent = proc_call_node,
+                    .identifier = next_token->identifier.content,
+                });
+            }
         }
         else if (next_token->type == TokenType::STRING_LITERAL) {
             (void)iter_append(nodes_block_iter, ASTNode {
@@ -360,6 +392,7 @@ static auto parse_statement(
     Iterator<ProcParameterASTNode> *proc_params_iter,
     Iterator<TypeASTNode> *types_iter,
     Iterator<BinaryOperand> *operands_iter,
+    Iterator<int64_t> *array_elements_iter,
     DynamicArray<ParseError> *errors
 ) -> bool;
 
@@ -374,12 +407,59 @@ static auto parse_expression(
     Iterator<ProcParameterASTNode> *proc_params_iter,
     Iterator<TypeASTNode> *types_iter,
     Iterator<BinaryOperand> *operands_iter,
+    Iterator<int64_t> *array_elements_iter,
     DynamicArray<ParseError> *errors
 ) -> Result<ASTNode, ParseError> {
     auto next_token = iter_next(tokens_iter);
     assert(next_token != nullptr &&
         "Next token should not be null when parsing an expression");
     switch(next_token->type) {
+        case TokenType::BRACKET_OPEN: {
+            // Parse [const]ElementType{ val, val, ... }
+            auto *const_token = iter_next(tokens_iter);
+            if (const_token->type != TokenType::KEYWORD_CONST) {
+                return err<ASTNode, ParseError>(PARSE_ERROR_CREATE(UNEXPECTED_TOKEN, const_token));
+            }
+            auto *bracket_close = iter_next(tokens_iter);
+            if (bracket_close->type != TokenType::BRACKET_CLOSE) {
+                return err<ASTNode, ParseError>(PARSE_ERROR_CREATE(UNEXPECTED_TOKEN, bracket_close));
+            }
+            auto *elem_type_token = iter_next(tokens_iter);
+            if (elem_type_token->type != TokenType::IDENTIFIER) {
+                return err<ASTNode, ParseError>(PARSE_ERROR_CREATE(UNEXPECTED_TOKEN, elem_type_token));
+            }
+            Str element_type = elem_type_token->identifier.content;
+            auto *brace_open = iter_next(tokens_iter);
+            if (brace_open->type != TokenType::BRACE_OPEN) {
+                return err<ASTNode, ParseError>(PARSE_ERROR_CREATE(UNEXPECTED_TOKEN, brace_open));
+            }
+            size_t elements_begin = array_elements_iter->current_index;
+            while (true) {
+                auto *elem_token = iter_next(tokens_iter);
+                if (elem_token->type == TokenType::BRACE_CLOSE) {
+                    break;
+                }
+                if (elem_token->type == TokenType::COMMA) {
+                    continue;
+                }
+                if (elem_token->type != TokenType::INTEGER_LITERAL) {
+                    return err<ASTNode, ParseError>(PARSE_ERROR_CREATE(UNEXPECTED_TOKEN, elem_token));
+                }
+                int64_t element_value = elem_token->integer_literal.value;
+                (void)iter_append(array_elements_iter, std::move(element_value));
+            }
+            return ok<ASTNode, ParseError>(ASTNode {
+                .type = ASTNodeType::ARRAY_INIT,
+                .parent = nullptr,
+                .array_init = {
+                    .element_type = element_type,
+                    .elements = Array<int64_t>(
+                        array_elements_iter->elements.data + elements_begin,
+                        array_elements_iter->current_index - elements_begin
+                    ),
+                },
+            });
+        }
         case TokenType::KEYWORD_FALSE:
         case TokenType::KEYWORD_TRUE: {
             return ok<ASTNode, ParseError>(ASTNode {
@@ -577,6 +657,7 @@ static auto parse_expression(
                     proc_params_iter,
                     types_iter,
                     operands_iter,
+                    array_elements_iter,
                     errors
                 )) {
                     return err<ASTNode, ParseError>(
@@ -632,6 +713,7 @@ static auto parse_statement(
     Iterator<ProcParameterASTNode> *proc_params_iter,
     Iterator<TypeASTNode> *types_iter,
     Iterator<BinaryOperand> *operands_iter,
+    Iterator<int64_t> *array_elements_iter,
     DynamicArray<ParseError> *errors
 ) -> bool {
     auto *next_token = iter_next(tokens_iter);
@@ -764,6 +846,7 @@ static auto parse_statement(
                     proc_params_iter,
                     types_iter,
                     operands_iter,
+                    array_elements_iter,
                     errors
                 );
                 if (!is_ok(expr_parse_result)) {
@@ -780,6 +863,9 @@ static auto parse_statement(
                 }
                 else if (expr_node.type == ASTNodeType::BOOLEAN_LITERAL) {
                     deduced_type = DeducedType::BOOLEAN;
+                }
+                else if (expr_node.type == ASTNodeType::ARRAY_INIT) {
+                    deduced_type = DeducedType::ARRAY_INT;
                 }
 
                 ASTNode var_def_node = {
@@ -802,6 +888,10 @@ static auto parse_statement(
                     case ASTNodeType::PROC_CALL:
                         var_def_node.variable_definition.proc_call_expr.caller_identifier = expr_node.proc_call.caller_identifier;
                         var_def_node.variable_definition.proc_call_expr.arguments = expr_node.proc_call.arguments;
+                        break;
+                    case ASTNodeType::ARRAY_INIT:
+                        var_def_node.variable_definition.array_init_expr.element_type = expr_node.array_init.element_type;
+                        var_def_node.variable_definition.array_init_expr.elements = expr_node.array_init.elements;
                         break;
                     default:
                         break;
@@ -872,7 +962,7 @@ static auto parse_statement(
             iter_next(tokens_iter); // consume INDENT
             if (!parse_statement(tokens_iter, context, nodes_block_iter, if_else_node,
                                  proc_params_block, proc_params_iter, types_iter,
-                                 operands_iter, errors)) {
+                                 operands_iter, array_elements_iter, errors)) {
                 return false;
             }
         }
@@ -901,7 +991,7 @@ static auto parse_statement(
             if (has_else_if) {
                 if (!parse_statement(tokens_iter, context, nodes_block_iter, if_else_node,
                                      proc_params_block, proc_params_iter, types_iter,
-                                     operands_iter, errors)) {
+                                     operands_iter, array_elements_iter, errors)) {
                     return false;
                 }
             }
@@ -916,7 +1006,7 @@ static auto parse_statement(
                     iter_next(tokens_iter); // consume INDENT
                     if (!parse_statement(tokens_iter, context, nodes_block_iter, if_else_node,
                                          proc_params_block, proc_params_iter, types_iter,
-                                         operands_iter, errors)) {
+                                         operands_iter, array_elements_iter, errors)) {
                         return false;
                     }
                 }
@@ -956,6 +1046,10 @@ auto parse(Array<Token> *tokens, ArenaAllocator *allocator) -> Array<ASTNode> {
     auto operands_iter = to_iterator(&operands_block);
     BinaryOperand *orig_operands_data = operands_block.data;
 
+    auto array_elements_block = allocate_array<int64_t>(allocator, tokens->length);
+    auto array_elements_iter = to_iterator(&array_elements_block);
+    int64_t *orig_array_elements_data = array_elements_block.data;
+
     // Parse the tokens into AST nodes
     auto context = Context{};
     assert(context.current_identifier == nullptr &&
@@ -992,6 +1086,7 @@ auto parse(Array<Token> *tokens, ArenaAllocator *allocator) -> Array<ASTNode> {
                 &proc_params_iter,
                 &types_iter,
                 &operands_iter,
+                &array_elements_iter,
                 &errors
             );
             if (!is_ok(expr_result)) {
@@ -1025,6 +1120,10 @@ auto parse(Array<Token> *tokens, ArenaAllocator *allocator) -> Array<ASTNode> {
         old_operands_arr = slice_by_offset(&old_operands_arr, 0, operands_iter.current_index);
         auto old_operands_block = allocate_array_from_copy<BinaryOperand>(allocator, &old_operands_arr);
 
+        auto old_array_elements_arr = to_array(&array_elements_block);
+        old_array_elements_arr = slice_by_offset(&old_array_elements_arr, 0, array_elements_iter.current_index);
+        auto old_array_elements_block = allocate_array_from_copy<int64_t>(allocator, &old_array_elements_arr);
+
         // Reset the allocator offset to the initial value and re-allocate
         // the nodes and proc params blocks to be tightly packed
         allocator->offset = initial_marker.offset;
@@ -1044,6 +1143,11 @@ auto parse(Array<Token> *tokens, ArenaAllocator *allocator) -> Array<ASTNode> {
         assert(new_operands_block.length == operands_iter.current_index &&
             "Operand count mismatch after re-allocation");
 
+        auto new_array_elements_arr = to_array(&old_array_elements_block);
+        auto new_array_elements_block = allocate_array_from_copy<int64_t>(allocator, &new_array_elements_arr);
+        assert(new_array_elements_block.length == array_elements_iter.current_index &&
+            "Array element count mismatch after re-allocation");
+
         // Update the proc parameters pointers in the AST nodes to point to the new tightly packed block
         for (auto &node : new_nodes_block) {
             if (node.type == ASTNodeType::PROC_DEF) {
@@ -1059,6 +1163,12 @@ auto parse(Array<Token> *tokens, ArenaAllocator *allocator) -> Array<ASTNode> {
                      node.variable_definition.expr_type == ASTNodeType::BINARY_ADD) {
                 node.variable_definition.add_expr.data =
                     new_operands_block.data + (node.variable_definition.add_expr.data - orig_operands_data);
+            }
+            else if (node.type == ASTNodeType::VARIABLE_DEFINITION &&
+                     node.variable_definition.expr_type == ASTNodeType::ARRAY_INIT) {
+                node.variable_definition.array_init_expr.elements.data =
+                    new_array_elements_block.data +
+                    (node.variable_definition.array_init_expr.elements.data - orig_array_elements_data);
             }
         }
 

@@ -28,7 +28,7 @@ auto tokenize(Str *input, ArenaAllocator *allocator) -> Array<Token> {
     auto tokens_block = allocate_array<Token>(allocator, input->length);
     auto result = to_array(&tokens_block);
 
-    size_t const COL_BEGIN = 1;
+    constexpr size_t COL_BEGIN = 1;
 
     Token::Position current_position = {
         .col = COL_BEGIN,
@@ -72,6 +72,10 @@ auto tokenize(Str *input, ArenaAllocator *allocator) -> Array<Token> {
 
             // If the text is a keyword
             auto word = str_slice(input, begin, identifier_len);
+            if (word == TOKEN_KEYWORD_CONST) {
+                append_token_of_type(TokenType::KEYWORD_CONST);
+                continue;
+            }
             if (word == TOKEN_KEYWORD_ELSE) {
                 append_token_of_type(TokenType::KEYWORD_ELSE);
                 continue;
@@ -176,6 +180,14 @@ auto tokenize(Str *input, ArenaAllocator *allocator) -> Array<Token> {
                 append_token_of_type(TokenType::ARROW);
                 current_position.col += 2;
             }
+        }
+        else if (c == static_cast<char>(TokenType::BRACKET_OPEN)) {
+            append_token_of_type(TokenType::BRACKET_OPEN);
+            current_position.col += 1;
+        }
+        else if (c == static_cast<char>(TokenType::BRACKET_CLOSE)) {
+            append_token_of_type(TokenType::BRACKET_CLOSE);
+            current_position.col += 1;
         }
         else if (c == static_cast<char>(TokenType::BRACE_CLOSE)) {
             append_token_of_type(TokenType::BRACE_CLOSE);

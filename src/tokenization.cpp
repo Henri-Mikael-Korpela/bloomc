@@ -241,11 +241,25 @@ auto tokenize(Str *input, ArenaAllocator *allocator) -> Array<Token> {
             });
             current_position.col += (string_len + 2); // +2 for the quotes
         }
+        else if (c == '.') {
+            if (i + 2 < input->length &&
+                str_char_at(input, i + 1) == '.' &&
+                str_char_at(input, i + 2) == '<')
+            {
+                i += 2;
+                append_token_of_type(TokenType::DOTDOT_LESS);
+                current_position.col += 3;
+            }
+        }
         else if (c == '=') {
             if (char next_char = next_char_or_null_char(input, i); next_char == '=') {
                 i++;
                 append_token_of_type(TokenType::EQUAL_EQUAL);
                 current_position.col += 2;
+            }
+            else {
+                append_token_of_type(TokenType::EQUALS);
+                current_position.col += 1;
             }
         }
         else if (c == static_cast<char>(TokenType::ADD)) {

@@ -434,6 +434,7 @@ static auto parse_expression(
                 return err<ASTNode, ParseError>(PARSE_ERROR_CREATE(UNEXPECTED_TOKEN, brace_open));
             }
             size_t elements_begin = array_elements_iter->current_index;
+            bool in_range_mode = false;
             while (true) {
                 auto *elem_token = iter_next(tokens_iter);
                 if (elem_token->type == TokenType::BRACE_CLOSE) {
@@ -445,8 +446,52 @@ static auto parse_expression(
                 if (elem_token->type != TokenType::INTEGER_LITERAL) {
                     return err<ASTNode, ParseError>(PARSE_ERROR_CREATE(UNEXPECTED_TOKEN, elem_token));
                 }
-                int64_t element_value = elem_token->integer_literal.value;
-                (void)iter_append(array_elements_iter, std::move(element_value));
+
+                if (tokens_iter->current_index < tokens_iter->elements.length &&
+                    iter_peek(tokens_iter)->type == TokenType::DOTDOT_LESS)
+                {
+                    // Range element: start..<end = value
+                    in_range_mode = true;
+                    int64_t range_start = elem_token->integer_literal.value;
+                    size_t current_count = array_elements_iter->current_index - elements_begin;
+                    if (range_start != static_cast<int64_t>(current_count)) {
+                        return err<ASTNode, ParseError>(PARSE_ERROR_CREATE(UNEXPECTED_TOKEN, elem_token));
+                    }
+                    (void)iter_next(tokens_iter); // consume ..<
+
+                    auto *end_token = iter_next(tokens_iter);
+                    if (end_token->type != TokenType::INTEGER_LITERAL) {
+                        return err<ASTNode, ParseError>(PARSE_ERROR_CREATE(UNEXPECTED_TOKEN, end_token));
+                    }
+                    int64_t range_end = end_token->integer_literal.value;
+                    if (range_end <= range_start) {
+                        return err<ASTNode, ParseError>(PARSE_ERROR_CREATE(UNEXPECTED_TOKEN, end_token));
+                    }
+
+                    auto *equals_token = iter_next(tokens_iter);
+                    if (equals_token->type != TokenType::EQUALS) {
+                        return err<ASTNode, ParseError>(PARSE_ERROR_CREATE(UNEXPECTED_TOKEN, equals_token));
+                    }
+
+                    auto *value_token = iter_next(tokens_iter);
+                    if (value_token->type != TokenType::INTEGER_LITERAL) {
+                        return err<ASTNode, ParseError>(PARSE_ERROR_CREATE(UNEXPECTED_TOKEN, value_token));
+                    }
+                    int64_t range_value = value_token->integer_literal.value;
+
+                    for (int64_t idx = range_start; idx < range_end; idx++) {
+                        int64_t val = range_value;
+                        (void)iter_append(array_elements_iter, std::move(val));
+                    }
+                }
+                else {
+                    // Positional element — not allowed after range
+                    if (in_range_mode) {
+                        return err<ASTNode, ParseError>(PARSE_ERROR_CREATE(UNEXPECTED_TOKEN, elem_token));
+                    }
+                    int64_t element_value = elem_token->integer_literal.value;
+                    (void)iter_append(array_elements_iter, std::move(element_value));
+                }
             }
             return ok<ASTNode, ParseError>(ASTNode {
                 .type = ASTNodeType::ARRAY_INIT,
@@ -673,6 +718,11 @@ static auto parse_expression(
             // Parse procedure body
             // - Expect each line to be indented and contain a single statement
             while(tokens_iter->current_index < tokens_iter->elements.length) {
+                // Skip blank lines
+                if (iter_peek(tokens_iter)->type == TokenType::NEWLINE) {
+                    (void)iter_next(tokens_iter);
+                    continue;
+                }
                 // If the line doesn't begin with an indent token, the procedure body has ended
                 if (iter_peek(tokens_iter)->type != TokenType::INDENT) {
                     break;

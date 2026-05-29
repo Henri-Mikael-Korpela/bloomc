@@ -10,6 +10,7 @@ enum class ASTNodeType : uint8_t {
     ARRAY_INIT,
     BINARY_ADD,
     BOOLEAN_LITERAL,
+    BUILTIN_LENGTH,
     IF_ELSE,
     IDENTIFIER,
     INTEGER_LITERAL,
@@ -132,6 +133,7 @@ constexpr auto to_string(ASTNodeType type) -> Str {
         case ASTNodeType::ARRAY_INIT:          return STR("array_init");
         case ASTNodeType::BINARY_ADD:          return STR("binary_add");
         case ASTNodeType::BOOLEAN_LITERAL:     return STR("boolean_literal");
+        case ASTNodeType::BUILTIN_LENGTH:      return STR("builtin_length");
         case ASTNodeType::IF_ELSE:             return STR("if_else");
         case ASTNodeType::IDENTIFIER:          return STR("identifier");
         case ASTNodeType::INTEGER_LITERAL:     return STR("integer_literal");

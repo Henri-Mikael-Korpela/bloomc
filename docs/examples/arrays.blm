@@ -9,3 +9,4 @@ main :: proc() ->
         4..<8 = 4
     }
     printf("C: %i, %i, %i\n", c[2], c[3], c[4])
+    printf("C length: %i\n", length(c))

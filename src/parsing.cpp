@@ -238,6 +238,34 @@ static auto parse_proc_call_arguments(
         }
         else if (next_token->type == TokenType::IDENTIFIER) {
             if (tokens_iter->current_index < tokens_iter->elements.length &&
+                iter_peek(tokens_iter)->type == TokenType::PARENTHESIS_OPEN)
+            {
+                (void)iter_next(tokens_iter); // consume (
+                auto *inner_id_token = iter_next(tokens_iter);
+                if (inner_id_token->type != TokenType::IDENTIFIER) {
+                    append(errors, ParseError {
+                        .code = ParseErrorCode::UNEXPECTED_TOKEN,
+                        .position = inner_id_token->position,
+                        .src_code_line = __LINE__,
+                    });
+                    return false;
+                }
+                auto *close_paren = iter_next(tokens_iter);
+                if (close_paren->type != TokenType::PARENTHESIS_CLOSE) {
+                    append(errors, ParseError {
+                        .code = ParseErrorCode::UNEXPECTED_TOKEN,
+                        .position = close_paren->position,
+                        .src_code_line = __LINE__,
+                    });
+                    return false;
+                }
+                (void)iter_append(nodes_block_iter, ASTNode {
+                    .type = ASTNodeType::BUILTIN_LENGTH,
+                    .parent = proc_call_node,
+                    .identifier = inner_id_token->identifier.content,
+                });
+            }
+            else if (tokens_iter->current_index < tokens_iter->elements.length &&
                 iter_peek(tokens_iter)->type == TokenType::BRACKET_OPEN)
             {
                 (void)iter_next(tokens_iter); // consume [
@@ -805,9 +833,20 @@ static auto parse_statement(
             case TokenType::PARENTHESIS_OPEN: {
                 // Expect a procedure call
 
+                int paren_depth = 0;
                 int64_t proc_call_end_token_index = iter_get_index_at_if<Token>(
-                    tokens_iter, [](auto *token) {
-                        return token->type == TokenType::PARENTHESIS_CLOSE;
+                    tokens_iter, [&paren_depth](auto *token) {
+                        if (token->type == TokenType::PARENTHESIS_OPEN) {
+                            paren_depth++;
+                            return false;
+                        }
+                        if (token->type == TokenType::PARENTHESIS_CLOSE) {
+                            if (paren_depth == 1) {
+                                return true;
+                            }
+                            paren_depth--;
+                        }
+                        return false;
                     }
                 );
                 auto proc_call_arg_tokens_iter = iter_slice_by_offset(

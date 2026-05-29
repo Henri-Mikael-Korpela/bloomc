@@ -18,6 +18,26 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
     #define PUSH_INT(value)  allocator->offset += str_push_int(&str_buffer, value)
     #define PUSH_BOOL(value) allocator->offset += str_push_bool(&str_buffer, value)
 
+    struct ArrayVarEntry {
+        Str name;
+        size_t count;
+    };
+    ArrayVarEntry array_vars[64];
+    size_t array_var_count = 0;
+
+    auto find_array_size = [&](Str var_name) -> size_t {
+        for (size_t i = 0; i < array_var_count; i++) {
+            Str const &name = array_vars[i].name;
+            if (name.length == var_name.length &&
+                strncmp(name.data, var_name.data, name.length) == 0)
+            {
+                return array_vars[i].count;
+            }
+        }
+        assert(false && "Array variable not found for length() call");
+        return 0;
+    };
+
     auto emit_proc_call_args = [&](Array<ASTNode> *arguments) {
         for (size_t i = 0; i < arguments->length; i++) {
             if (i != 0) { PUSH_STR(", "); }
@@ -40,6 +60,9 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
                     PUSH_STR(arg->string_literal.value);
                     PUSH_STR('"');
                     break;
+                case ASTNodeType::BUILTIN_LENGTH:
+                    PUSH_INT(static_cast<intmax_t>(find_array_size(arg->identifier)));
+                    break;
                 default:
                     assert(false && "Unsupported argument type in emit_proc_call_args");
             }
@@ -57,12 +80,24 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
                 PUSH_INT(op.array_access.index);
                 PUSH_STR(']');
                 break;
-            case BinaryOperandType::PROC_CALL:
-                PUSH_STR(op.proc_call.caller_identifier);
-                PUSH_STR('(');
-                emit_proc_call_args(const_cast<Array<ASTNode>*>(&op.proc_call.arguments));
-                PUSH_STR(')');
+            case BinaryOperandType::PROC_CALL: {
+                Str const &callee = op.proc_call.caller_identifier;
+                bool const is_length = callee.length == 6 &&
+                    strncmp(callee.data, "length", 6) == 0;
+                if (is_length) {
+                    assert(op.proc_call.arguments.length > 0 && "length() requires an argument");
+                    PUSH_INT(static_cast<intmax_t>(
+                        find_array_size(op.proc_call.arguments.data[0].identifier)
+                    ));
+                }
+                else {
+                    PUSH_STR(op.proc_call.caller_identifier);
+                    PUSH_STR('(');
+                    emit_proc_call_args(const_cast<Array<ASTNode>*>(&op.proc_call.arguments));
+                    PUSH_STR(')');
+                }
                 break;
+            }
             case BinaryOperandType::INTEGER_LITERAL:
                 PUSH_INT(op.integer_literal.value);
                 break;
@@ -87,10 +122,16 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
                 PUSH_STR(']');
                 break;
             case ASTNodeType::PROC_CALL:
-                PUSH_STR(expr->proc_call.caller_identifier);
-                PUSH_STR('(');
-                emit_proc_call_args(&expr->proc_call.arguments);
-                PUSH_STR(')');
+                if (expr->proc_call.caller_identifier == "length") {
+                    assert(expr->proc_call.arguments.length > 0 && "length() requires an argument");
+                    PUSH_INT(static_cast<intmax_t>(find_array_size(expr->proc_call.arguments[0].identifier)));
+                }
+                else {
+                    PUSH_STR(expr->proc_call.caller_identifier);
+                    PUSH_STR('(');
+                    emit_proc_call_args(&expr->proc_call.arguments);
+                    PUSH_STR(')');
+                }
                 break;
             case ASTNodeType::BINARY_ADD: {
                 auto &operands = expr->binary_operation.operands;
@@ -111,6 +152,7 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
     for (auto &node : *ast_nodes) {
         switch (node.type) {
             case ASTNodeType::PROC_DEF: {
+                array_var_count = 0;
                 char const *return_type_name = nullptr;
                 if (node.proc_def.return_type != nullptr) {
                     if (node.proc_def.return_type->name == "Int") {
@@ -165,6 +207,12 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
                             PUSH_STR('\t');
                             ASTNode *expr = statement.variable_definition.expr;
                             if (expr->type == ASTNodeType::ARRAY_INIT) {
+                                if (array_var_count < 64) {
+                                    array_vars[array_var_count++] = {
+                                        .name = statement.variable_definition.name,
+                                        .count = expr->array_init.elements.length,
+                                    };
+                                }
                                 PUSH_STR("int ");
                                 PUSH_STR(statement.variable_definition.name);
                                 PUSH_STR("[] = {");

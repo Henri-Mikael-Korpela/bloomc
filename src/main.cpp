@@ -81,6 +81,7 @@ auto run(char const *input_file_path_cstr) -> int {
     }
 
     auto c_code = transpile_to_c(&ast_nodes, &main_allocator);
+    print("Transpiled C code:\n%\n", c_code);
     write(temp_fd, c_code.data, c_code.length);
     close(temp_fd);
 

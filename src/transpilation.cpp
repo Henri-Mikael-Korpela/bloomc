@@ -217,6 +217,14 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
                                     PUSH_STR(')');
                                     break;
                                 }
+                                case ASTNodeType::ARRAY_ACCESS: {
+                                    auto &aa = statement.variable_definition.array_access_expr;
+                                    PUSH_STR(aa.variable_name);
+                                    PUSH_STR('[');
+                                    PUSH_INT(aa.index);
+                                    PUSH_STR(']');
+                                    break;
+                                }
                                 default:
                                     assert(false && "Unsupported expression type in variable definition transpilation");
                             }

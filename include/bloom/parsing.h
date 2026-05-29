@@ -144,6 +144,10 @@ struct ASTNode {
                     Str element_type;
                     Array<int64_t> elements;
                 } array_init_expr;
+                struct {
+                    Str variable_name;
+                    int64_t index;
+                } array_access_expr;
             };
         } variable_definition;
     };

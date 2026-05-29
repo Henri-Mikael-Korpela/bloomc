@@ -472,6 +472,29 @@ static auto parse_expression(
         }
         case TokenType::IDENTIFIER:
         case TokenType::INTEGER_LITERAL: {
+            if (next_token->type == TokenType::IDENTIFIER &&
+                tokens_iter->current_index < tokens_iter->elements.length &&
+                iter_peek(tokens_iter)->type == TokenType::BRACKET_OPEN)
+            {
+                (void)iter_next(tokens_iter); // consume [
+                auto *index_token = iter_next(tokens_iter);
+                if (index_token->type != TokenType::INTEGER_LITERAL) {
+                    return err<ASTNode, ParseError>(PARSE_ERROR_CREATE(UNEXPECTED_TOKEN, index_token));
+                }
+                auto *close_token = iter_next(tokens_iter);
+                if (close_token->type != TokenType::BRACKET_CLOSE) {
+                    return err<ASTNode, ParseError>(PARSE_ERROR_CREATE(UNEXPECTED_TOKEN, close_token));
+                }
+                return ok<ASTNode, ParseError>(ASTNode {
+                    .type = ASTNodeType::ARRAY_ACCESS,
+                    .parent = nullptr,
+                    .array_access = {
+                        .variable_name = next_token->identifier.content,
+                        .index = index_token->integer_literal.value,
+                    },
+                });
+            }
+
             // Returns a BinaryOperand for the given token, consuming any proc call tokens
             // from tokens_iter. Never default-constructs BinaryOperand to avoid union issues.
             auto parse_operand = [&](Token *token) -> Result<BinaryOperand, ParseError> {
@@ -867,6 +890,9 @@ static auto parse_statement(
                 else if (expr_node.type == ASTNodeType::ARRAY_INIT) {
                     deduced_type = DeducedType::ARRAY_INT;
                 }
+                else if (expr_node.type == ASTNodeType::ARRAY_ACCESS) {
+                    deduced_type = DeducedType::INTEGER;
+                }
 
                 ASTNode var_def_node = {
                     .type = ASTNodeType::VARIABLE_DEFINITION,
@@ -892,6 +918,10 @@ static auto parse_statement(
                     case ASTNodeType::ARRAY_INIT:
                         var_def_node.variable_definition.array_init_expr.element_type = expr_node.array_init.element_type;
                         var_def_node.variable_definition.array_init_expr.elements = expr_node.array_init.elements;
+                        break;
+                    case ASTNodeType::ARRAY_ACCESS:
+                        var_def_node.variable_definition.array_access_expr.variable_name = expr_node.array_access.variable_name;
+                        var_def_node.variable_definition.array_access_expr.index = expr_node.array_access.index;
                         break;
                     default:
                         break;

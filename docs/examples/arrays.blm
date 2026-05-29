@@ -1,4 +1,4 @@
 main :: proc() ->
     a := [const]Int{ 2, 5, 9 }
-    b := a[1]
+    b := a[1] + 1 + a[0]
     printf("A: %i, %i, %i\n", a[0], b, a[2])

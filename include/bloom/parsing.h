@@ -3,23 +3,6 @@
 #include <bloom/string.h>
 #include <bloom/tokenization.h>
 
-enum class DeducedType : uint8_t {
-    UNKNOWN = 0,
-    ARRAY_INT,
-    BOOLEAN,
-    INTEGER,
-};
-
-constexpr auto to_string(DeducedType type) -> Str {
-    #define STR(x) cstr_to_str(x)
-    switch (type) {
-        case DeducedType::ARRAY_INT: return STR("array_int");
-        case DeducedType::BOOLEAN:   return STR("boolean");
-        case DeducedType::INTEGER:   return STR("integer");
-        default:                   return STR("unknown");
-    }
-    #undef STR
-}
 
 enum class ASTNodeType : uint8_t {
     UNKNOWN = 0,
@@ -63,6 +46,7 @@ enum class BinaryOperandType : uint8_t {
     IDENTIFIER,
     INTEGER_LITERAL,
     PROC_CALL,
+    ARRAY_ACCESS,
 };
 
 struct BinaryOperand {
@@ -74,6 +58,10 @@ struct BinaryOperand {
             Str caller_identifier;
             Array<ASTNode> arguments;
         } proc_call;
+        struct {
+            Str variable_name;
+            int64_t index;
+        } array_access;
     };
 };
 
@@ -130,25 +118,7 @@ struct ASTNode {
         } string_literal;
         struct {
             Str name;
-            DeducedType deduced_type;
-            ASTNodeType expr_type;
-            union {
-                IntegerLiteralASTNode integer_value;
-                bool boolean_value;
-                Array<BinaryOperand> add_expr;
-                struct {
-                    Str caller_identifier;
-                    Array<ASTNode> arguments;
-                } proc_call_expr;
-                struct {
-                    Str element_type;
-                    Array<int64_t> elements;
-                } array_init_expr;
-                struct {
-                    Str variable_name;
-                    int64_t index;
-                } array_access_expr;
-            };
+            ASTNode *expr;
         } variable_definition;
     };
 };

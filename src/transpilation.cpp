@@ -18,6 +18,93 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
     #define PUSH_INT(value)  allocator->offset += str_push_int(&str_buffer, value)
     #define PUSH_BOOL(value) allocator->offset += str_push_bool(&str_buffer, value)
 
+    auto emit_proc_call_args = [&](Array<ASTNode> *arguments) {
+        for (size_t i = 0; i < arguments->length; i++) {
+            if (i != 0) { PUSH_STR(", "); }
+            auto *arg = &(*arguments)[i];
+            switch (arg->type) {
+                case ASTNodeType::IDENTIFIER:
+                    PUSH_STR(arg->identifier);
+                    break;
+                case ASTNodeType::ARRAY_ACCESS:
+                    PUSH_STR(arg->array_access.variable_name);
+                    PUSH_STR('[');
+                    PUSH_INT(arg->array_access.index);
+                    PUSH_STR(']');
+                    break;
+                case ASTNodeType::INTEGER_LITERAL:
+                    PUSH_INT(arg->integer_literal.value.value);
+                    break;
+                case ASTNodeType::STRING_LITERAL:
+                    PUSH_STR('"');
+                    PUSH_STR(arg->string_literal.value);
+                    PUSH_STR('"');
+                    break;
+                default:
+                    assert(false && "Unsupported argument type in emit_proc_call_args");
+            }
+        }
+    };
+
+    auto emit_binary_operand = [&](BinaryOperand const &op) {
+        switch (op.type) {
+            case BinaryOperandType::IDENTIFIER:
+                PUSH_STR(op.identifier);
+                break;
+            case BinaryOperandType::ARRAY_ACCESS:
+                PUSH_STR(op.array_access.variable_name);
+                PUSH_STR('[');
+                PUSH_INT(op.array_access.index);
+                PUSH_STR(']');
+                break;
+            case BinaryOperandType::PROC_CALL:
+                PUSH_STR(op.proc_call.caller_identifier);
+                PUSH_STR('(');
+                emit_proc_call_args(const_cast<Array<ASTNode>*>(&op.proc_call.arguments));
+                PUSH_STR(')');
+                break;
+            case BinaryOperandType::INTEGER_LITERAL:
+                PUSH_INT(op.integer_literal.value);
+                break;
+        }
+    };
+
+    auto emit_expression = [&](ASTNode *expr) {
+        switch (expr->type) {
+            case ASTNodeType::INTEGER_LITERAL:
+                PUSH_INT(expr->integer_literal.value.value);
+                break;
+            case ASTNodeType::BOOLEAN_LITERAL:
+                PUSH_BOOL(expr->boolean_literal.value);
+                break;
+            case ASTNodeType::IDENTIFIER:
+                PUSH_STR(expr->identifier);
+                break;
+            case ASTNodeType::ARRAY_ACCESS:
+                PUSH_STR(expr->array_access.variable_name);
+                PUSH_STR('[');
+                PUSH_INT(expr->array_access.index);
+                PUSH_STR(']');
+                break;
+            case ASTNodeType::PROC_CALL:
+                PUSH_STR(expr->proc_call.caller_identifier);
+                PUSH_STR('(');
+                emit_proc_call_args(&expr->proc_call.arguments);
+                PUSH_STR(')');
+                break;
+            case ASTNodeType::BINARY_ADD: {
+                auto &operands = expr->binary_operation.operands;
+                for (size_t i = 0; i < operands.length; i++) {
+                    if (i != 0) { PUSH_STR(" + "); }
+                    emit_binary_operand(operands[i]);
+                }
+                break;
+            }
+            default:
+                assert(false && "Unsupported expression type in emit_expression");
+        }
+    };
+
     PUSH_STR("#include <stdbool.h>\n");
     PUSH_STR("#include <stdio.h>\n\n");
 
@@ -60,79 +147,28 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
                             PUSH_STR("return ");
                             auto &operands = statement.binary_operation.operands;
                             for (size_t i = 0; i < operands.length; i++) {
-                                if (i != 0) {
-                                    PUSH_STR(" + ");
-                                }
-                                auto &op = operands[i];
-                                if (op.type == BinaryOperandType::IDENTIFIER) {
-                                    PUSH_STR(op.identifier);
-                                }
-                                else if (op.type == BinaryOperandType::PROC_CALL) {
-                                    PUSH_STR(op.proc_call.caller_identifier);
-                                    PUSH_STR('(');
-                                    for (size_t j = 0; j < op.proc_call.arguments.length; j++) {
-                                        if (j != 0) { PUSH_STR(", "); }
-                                        auto *arg = &op.proc_call.arguments[j];
-                                        if (arg->type == ASTNodeType::IDENTIFIER) {
-                                            PUSH_STR(arg->identifier);
-                                        }
-                                        else if (arg->type == ASTNodeType::INTEGER_LITERAL) {
-                                            PUSH_INT(arg->integer_literal.value.value);
-                                        }
-                                        else if (arg->type == ASTNodeType::STRING_LITERAL) {
-                                            PUSH_STR('"'); PUSH_STR(arg->string_literal.value); PUSH_STR('"');
-                                        }
-                                    }
-                                    PUSH_STR(')');
-                                }
-                                else {
-                                    PUSH_INT(op.integer_literal.value);
-                                }
+                                if (i != 0) { PUSH_STR(" + "); }
+                                emit_binary_operand(operands[i]);
                             }
                             PUSH_STR(";\n");
                             break;
                         }
                         case ASTNodeType::PROC_CALL: {
-                            // For simplicity, assume procedure calls return void
                             PUSH_STR('\t');
                             PUSH_STR(statement.proc_call.caller_identifier);
                             PUSH_STR('(');
-                            auto args_len = statement.proc_call.arguments.length;
-                            for (size_t i = 0; i < args_len; i++) {
-                                auto *arg = &statement.proc_call.arguments[i];
-                                if (arg->type == ASTNodeType::IDENTIFIER) {
-                                    PUSH_STR(arg->identifier);
-                                    goto add_comma_inbetween;
-                                }
-                                else if (arg->type == ASTNodeType::ARRAY_ACCESS) {
-                                    PUSH_STR(arg->array_access.variable_name);
-                                    PUSH_STR('[');
-                                    PUSH_INT(arg->array_access.index);
-                                    PUSH_STR(']');
-                                    goto add_comma_inbetween;
-                                }
-                                else if (arg->type != ASTNodeType::STRING_LITERAL) {
-                                    assert(false && "Only identifier, array access, and string literal arguments are supported in transpilation");
-                                }
-                                PUSH_STR('"');
-                                PUSH_STR(arg->string_literal.value);
-                                PUSH_STR('"');
-
-                                add_comma_inbetween:
-                                    if (i != args_len - 1) {
-                                        PUSH_STR(", ");
-                                    }
-                            }
+                            emit_proc_call_args(&statement.proc_call.arguments);
                             PUSH_STR(");\n");
                             break;
                         }
                         case ASTNodeType::VARIABLE_DEFINITION: {
                             PUSH_STR('\t');
-                            if (statement.variable_definition.deduced_type == DeducedType::ARRAY_INT) {
+                            ASTNode *expr = statement.variable_definition.expr;
+                            if (expr->type == ASTNodeType::ARRAY_INIT) {
                                 PUSH_STR("int ");
                                 PUSH_STR(statement.variable_definition.name);
                                 PUSH_STR("[] = {");
-                                auto &elems = statement.variable_definition.array_init_expr.elements;
+                                auto &elems = expr->array_init.elements;
                                 for (size_t i = 0; i < elems.length; i++) {
                                     if (i != 0) { PUSH_STR(", "); }
                                     PUSH_INT(elems[i]);
@@ -140,94 +176,13 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
                                 PUSH_STR("};\n");
                                 break;
                             }
-                            // Emit C type from deduced Bloom type
-                            char const *c_type = nullptr;
-                            switch (statement.variable_definition.deduced_type) {
-                                case DeducedType::BOOLEAN: c_type = "bool"; break;
-                                case DeducedType::INTEGER: c_type = "int";  break;
-                                default: assert(false && "Unsupported deduced type in transpilation");
-                            }
+                            char const *c_type = (expr->type == ASTNodeType::BOOLEAN_LITERAL)
+                                ? "bool" : "int";
                             PUSH_STR(c_type);
                             PUSH_STR(' ');
                             PUSH_STR(statement.variable_definition.name);
                             PUSH_STR(" = ");
-                            // Emit value from expression type
-                            switch (statement.variable_definition.expr_type) {
-                                case ASTNodeType::INTEGER_LITERAL:
-                                    PUSH_INT(statement.variable_definition.integer_value.value);
-                                    break;
-                                case ASTNodeType::BOOLEAN_LITERAL:
-                                    PUSH_BOOL(statement.variable_definition.boolean_value);
-                                    break;
-                                case ASTNodeType::BINARY_ADD: {
-                                    auto &operands = statement.variable_definition.add_expr;
-                                    for (size_t i = 0; i < operands.length; i++) {
-                                        if (i != 0) {
-                                            PUSH_STR(" + ");
-                                        }
-                                        auto &op = operands[i];
-                                        if (op.type == BinaryOperandType::IDENTIFIER) {
-                                            PUSH_STR(op.identifier);
-                                        }
-                                        else if (op.type == BinaryOperandType::PROC_CALL) {
-                                            PUSH_STR(op.proc_call.caller_identifier);
-                                            PUSH_STR('(');
-                                            for (size_t j = 0; j < op.proc_call.arguments.length; j++) {
-                                                if (j != 0) { PUSH_STR(", "); }
-                                                auto *arg = &op.proc_call.arguments[j];
-                                                if (arg->type == ASTNodeType::IDENTIFIER) {
-                                                    PUSH_STR(arg->identifier);
-                                                }
-                                                else if (arg->type == ASTNodeType::INTEGER_LITERAL) {
-                                                    PUSH_INT(arg->integer_literal.value.value);
-                                                }
-                                                else if (arg->type == ASTNodeType::STRING_LITERAL) {
-                                                    PUSH_STR('"'); PUSH_STR(arg->string_literal.value); PUSH_STR('"');
-                                                }
-                                            }
-                                            PUSH_STR(')');
-                                        }
-                                        else {
-                                            PUSH_INT(op.integer_literal.value);
-                                        }
-                                    }
-                                    break;
-                                }
-                                case ASTNodeType::PROC_CALL: {
-                                    auto &pc = statement.variable_definition.proc_call_expr;
-                                    PUSH_STR(pc.caller_identifier);
-                                    PUSH_STR('(');
-                                    for (size_t i = 0; i < pc.arguments.length; i++) {
-                                        if (i != 0) {
-                                            PUSH_STR(", ");
-                                        }
-                                        auto *arg = &pc.arguments[i];
-                                        if (arg->type == ASTNodeType::IDENTIFIER) {
-                                            PUSH_STR(arg->identifier);
-                                        }
-                                        else if (arg->type == ASTNodeType::INTEGER_LITERAL) {
-                                            PUSH_INT(arg->integer_literal.value.value);
-                                        }
-                                        else if (arg->type == ASTNodeType::STRING_LITERAL) {
-                                            PUSH_STR('"');
-                                            PUSH_STR(arg->string_literal.value);
-                                            PUSH_STR('"');
-                                        }
-                                    }
-                                    PUSH_STR(')');
-                                    break;
-                                }
-                                case ASTNodeType::ARRAY_ACCESS: {
-                                    auto &aa = statement.variable_definition.array_access_expr;
-                                    PUSH_STR(aa.variable_name);
-                                    PUSH_STR('[');
-                                    PUSH_INT(aa.index);
-                                    PUSH_STR(']');
-                                    break;
-                                }
-                                default:
-                                    assert(false && "Unsupported expression type in variable definition transpilation");
-                            }
+                            emit_expression(expr);
                             PUSH_STR(";\n");
                             break;
                         }
@@ -236,19 +191,7 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
                                 PUSH_STR("\t\t");
                                 PUSH_STR(stmt->proc_call.caller_identifier);
                                 PUSH_STR('(');
-                                for (size_t i = 0; i < stmt->proc_call.arguments.length; i++) {
-                                    if (i != 0) { PUSH_STR(", "); }
-                                    auto *arg = &stmt->proc_call.arguments[i];
-                                    if (arg->type == ASTNodeType::IDENTIFIER) {
-                                        PUSH_STR(arg->identifier);
-                                    }
-                                    else if (arg->type == ASTNodeType::INTEGER_LITERAL) {
-                                        PUSH_INT(arg->integer_literal.value.value);
-                                    }
-                                    else if (arg->type == ASTNodeType::STRING_LITERAL) {
-                                        PUSH_STR('"'); PUSH_STR(arg->string_literal.value); PUSH_STR('"');
-                                    }
-                                }
+                                emit_proc_call_args(&stmt->proc_call.arguments);
                                 PUSH_STR(");\n");
                             };
 

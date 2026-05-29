@@ -472,29 +472,6 @@ static auto parse_expression(
         }
         case TokenType::IDENTIFIER:
         case TokenType::INTEGER_LITERAL: {
-            if (next_token->type == TokenType::IDENTIFIER &&
-                tokens_iter->current_index < tokens_iter->elements.length &&
-                iter_peek(tokens_iter)->type == TokenType::BRACKET_OPEN)
-            {
-                (void)iter_next(tokens_iter); // consume [
-                auto *index_token = iter_next(tokens_iter);
-                if (index_token->type != TokenType::INTEGER_LITERAL) {
-                    return err<ASTNode, ParseError>(PARSE_ERROR_CREATE(UNEXPECTED_TOKEN, index_token));
-                }
-                auto *close_token = iter_next(tokens_iter);
-                if (close_token->type != TokenType::BRACKET_CLOSE) {
-                    return err<ASTNode, ParseError>(PARSE_ERROR_CREATE(UNEXPECTED_TOKEN, close_token));
-                }
-                return ok<ASTNode, ParseError>(ASTNode {
-                    .type = ASTNodeType::ARRAY_ACCESS,
-                    .parent = nullptr,
-                    .array_access = {
-                        .variable_name = next_token->identifier.content,
-                        .index = index_token->integer_literal.value,
-                    },
-                });
-            }
-
             // Returns a BinaryOperand for the given token, consuming any proc call tokens
             // from tokens_iter. Never default-constructs BinaryOperand to avoid union issues.
             auto parse_operand = [&](Token *token) -> Result<BinaryOperand, ParseError> {
@@ -526,6 +503,27 @@ static auto parse_expression(
                         .proc_call = {
                             .caller_identifier = temp_node.proc_call.caller_identifier,
                             .arguments = temp_node.proc_call.arguments,
+                        },
+                    });
+                }
+                if (token->type == TokenType::IDENTIFIER &&
+                    tokens_iter->current_index < tokens_iter->elements.length &&
+                    iter_peek(tokens_iter)->type == TokenType::BRACKET_OPEN)
+                {
+                    (void)iter_next(tokens_iter); // consume [
+                    auto *index_token = iter_next(tokens_iter);
+                    if (index_token->type != TokenType::INTEGER_LITERAL) {
+                        return err<BinaryOperand, ParseError>(PARSE_ERROR_CREATE(UNEXPECTED_TOKEN, index_token));
+                    }
+                    auto *close_token = iter_next(tokens_iter);
+                    if (close_token->type != TokenType::BRACKET_CLOSE) {
+                        return err<BinaryOperand, ParseError>(PARSE_ERROR_CREATE(UNEXPECTED_TOKEN, close_token));
+                    }
+                    return ok<BinaryOperand, ParseError>(BinaryOperand {
+                        .type = BinaryOperandType::ARRAY_ACCESS,
+                        .array_access = {
+                            .variable_name = token->identifier.content,
+                            .index = index_token->integer_literal.value,
                         },
                     });
                 }
@@ -583,6 +581,16 @@ static auto parse_expression(
             }
 
             // No binary operator — return single-operand expression
+            if (left_operand.type == BinaryOperandType::ARRAY_ACCESS) {
+                return ok<ASTNode, ParseError>(ASTNode {
+                    .type = ASTNodeType::ARRAY_ACCESS,
+                    .parent = nullptr,
+                    .array_access = {
+                        .variable_name = left_operand.array_access.variable_name,
+                        .index = left_operand.array_access.index,
+                    },
+                });
+            }
             if (left_operand.type == BinaryOperandType::PROC_CALL) {
                 return ok<ASTNode, ParseError>(ASTNode {
                     .type = ASTNodeType::PROC_CALL,
@@ -837,8 +845,6 @@ static auto parse_statement(
             case TokenType::VAR_DEF: {
                 (void)iter_next(tokens_iter); // Consume VAR_DEF token
 
-                // Expect a variable definition
-    
                 // Find the end of the statement to create a sub-iterator for the expression
                 // (do not consume tokens in the main iterator yet)
                 int64_t expr_end_token_index = iter_get_index_at_if<Token>(
@@ -859,8 +865,7 @@ static auto parse_statement(
                     append(errors, PARSE_ERROR_CREATE(UNEXPECTED_TOKEN, iter_current(tokens_iter)));
                     return false;
                 }
-    
-                // Parse the expression for the variable definition
+
                 auto expr_parse_result = parse_expression(
                     &expr_tokens_iter,
                     context,
@@ -876,60 +881,19 @@ static auto parse_statement(
                     append(errors, expr_parse_result.err);
                     return false;
                 }
-                auto expr_node = expr_parse_result.ok;
 
-                DeducedType deduced_type = DeducedType::UNKNOWN;
-                if (expr_node.type == ASTNodeType::INTEGER_LITERAL ||
-                    expr_node.type == ASTNodeType::BINARY_ADD ||
-                    expr_node.type == ASTNodeType::PROC_CALL) {
-                    deduced_type = DeducedType::INTEGER;
-                }
-                else if (expr_node.type == ASTNodeType::BOOLEAN_LITERAL) {
-                    deduced_type = DeducedType::BOOLEAN;
-                }
-                else if (expr_node.type == ASTNodeType::ARRAY_INIT) {
-                    deduced_type = DeducedType::ARRAY_INT;
-                }
-                else if (expr_node.type == ASTNodeType::ARRAY_ACCESS) {
-                    deduced_type = DeducedType::INTEGER;
-                }
-
-                ASTNode var_def_node = {
+                auto *expr_node_ptr = iter_append(nodes_block_iter, std::move(expr_parse_result.ok));
+                (void)iter_append(nodes_block_iter, ASTNode {
                     .type = ASTNodeType::VARIABLE_DEFINITION,
                     .parent = parent_node,
-                };
-                var_def_node.variable_definition.name = next_token->identifier.content;
-                var_def_node.variable_definition.deduced_type = deduced_type;
-                var_def_node.variable_definition.expr_type = expr_node.type;
-                switch (expr_node.type) {
-                    case ASTNodeType::INTEGER_LITERAL:
-                        var_def_node.variable_definition.integer_value = expr_node.integer_literal.value;
-                        break;
-                    case ASTNodeType::BOOLEAN_LITERAL:
-                        var_def_node.variable_definition.boolean_value = expr_node.boolean_literal.value;
-                        break;
-                    case ASTNodeType::BINARY_ADD:
-                        var_def_node.variable_definition.add_expr = expr_node.binary_operation.operands;
-                        break;
-                    case ASTNodeType::PROC_CALL:
-                        var_def_node.variable_definition.proc_call_expr.caller_identifier = expr_node.proc_call.caller_identifier;
-                        var_def_node.variable_definition.proc_call_expr.arguments = expr_node.proc_call.arguments;
-                        break;
-                    case ASTNodeType::ARRAY_INIT:
-                        var_def_node.variable_definition.array_init_expr.element_type = expr_node.array_init.element_type;
-                        var_def_node.variable_definition.array_init_expr.elements = expr_node.array_init.elements;
-                        break;
-                    case ASTNodeType::ARRAY_ACCESS:
-                        var_def_node.variable_definition.array_access_expr.variable_name = expr_node.array_access.variable_name;
-                        var_def_node.variable_definition.array_access_expr.index = expr_node.array_access.index;
-                        break;
-                    default:
-                        break;
-                }
-                (void)iter_append(nodes_block_iter, std::move(var_def_node));
-                
+                    .variable_definition = {
+                        .name = next_token->identifier.content,
+                        .expr = expr_node_ptr,
+                    },
+                });
+
                 tokens_iter->current_index += expr_tokens_iter.current_index;
-    
+
                 // Consume the newline or end token
                 assert(
                     iter_current(tokens_iter)->type == TokenType::NEWLINE ||
@@ -1189,16 +1153,10 @@ auto parse(Array<Token> *tokens, ArenaAllocator *allocator) -> Array<ASTNode> {
                 node.binary_operation.operands.data =
                     new_operands_block.data + (node.binary_operation.operands.data - orig_operands_data);
             }
-            else if (node.type == ASTNodeType::VARIABLE_DEFINITION &&
-                     node.variable_definition.expr_type == ASTNodeType::BINARY_ADD) {
-                node.variable_definition.add_expr.data =
-                    new_operands_block.data + (node.variable_definition.add_expr.data - orig_operands_data);
-            }
-            else if (node.type == ASTNodeType::VARIABLE_DEFINITION &&
-                     node.variable_definition.expr_type == ASTNodeType::ARRAY_INIT) {
-                node.variable_definition.array_init_expr.elements.data =
+            else if (node.type == ASTNodeType::ARRAY_INIT) {
+                node.array_init.elements.data =
                     new_array_elements_block.data +
-                    (node.variable_definition.array_init_expr.elements.data - orig_array_elements_data);
+                    (node.array_init.elements.data - orig_array_elements_data);
             }
         }
 

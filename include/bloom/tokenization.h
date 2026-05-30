@@ -19,6 +19,7 @@ enum class TokenType : uint8_t {
     BRACE_OPEN        = '{',
     BRACE_CLOSE       = '}',
 
+    ADD_ASSIGN,
     ARROW,
     CONST_DEF,
     RANGE_EXCLUSIVE,
@@ -28,9 +29,11 @@ enum class TokenType : uint8_t {
     IDENTIFIER,
     INDENT,
     INTEGER_LITERAL,
+    KEYWORD_BREAK,
     KEYWORD_CONST,
     KEYWORD_ELSE,
     KEYWORD_FALSE,
+    KEYWORD_FOR,
     KEYWORD_IF,
     KEYWORD_PASS,
     KEYWORD_PROC,
@@ -40,9 +43,11 @@ enum class TokenType : uint8_t {
     VAR_DEF,
 };
 
+constexpr auto TOKEN_KEYWORD_BREAK = "break";
 constexpr auto TOKEN_KEYWORD_CONST = "const";
 constexpr auto TOKEN_KEYWORD_ELSE  = "else";
 constexpr auto TOKEN_KEYWORD_FALSE = "false";
+constexpr auto TOKEN_KEYWORD_FOR   = "for";
 constexpr auto TOKEN_KEYWORD_IF    = "if";
 constexpr auto TOKEN_KEYWORD_PASS  = "pass";
 constexpr auto TOKEN_KEYWORD_PROC  = "proc";
@@ -78,6 +83,7 @@ constexpr auto to_string(TokenType type) -> Str {
     #define STR(x) cstr_to_str(x)
     switch (type) {
         case TokenType::ADD:               return STR("+");
+        case TokenType::ADD_ASSIGN:        return STR("+=");
         case TokenType::ARROW:             return STR("->");
         case TokenType::BRACE_CLOSE:       return STR("}");
         case TokenType::BRACE_OPEN:        return STR("{");
@@ -91,9 +97,11 @@ constexpr auto to_string(TokenType type) -> Str {
         case TokenType::IDENTIFIER:        return STR("identifier");
         case TokenType::INDENT:            return STR("indent");
         case TokenType::INTEGER_LITERAL:   return STR("integer_literal");
+        case TokenType::KEYWORD_BREAK:     return STR(TOKEN_KEYWORD_BREAK);
         case TokenType::KEYWORD_CONST:     return STR(TOKEN_KEYWORD_CONST);
         case TokenType::KEYWORD_ELSE:      return STR(TOKEN_KEYWORD_ELSE);
         case TokenType::KEYWORD_FALSE:     return STR(TOKEN_KEYWORD_FALSE);
+        case TokenType::KEYWORD_FOR:       return STR(TOKEN_KEYWORD_FOR);
         case TokenType::KEYWORD_IF:        return STR(TOKEN_KEYWORD_IF);
         case TokenType::KEYWORD_PASS:      return STR(TOKEN_KEYWORD_PASS);
         case TokenType::KEYWORD_PROC:      return STR(TOKEN_KEYWORD_PROC);

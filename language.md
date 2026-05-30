@@ -15,9 +15,22 @@ Identifiers are used for names for types and variables.
 ## Keywords
 
 ```
+break
 else
+for
 if
 proc
+```
+
+## Loops
+
+There's only one loop statement in Bloom: `for`.
+
+You can create an infinite loop this way:
+
+```
+for ->
+    ...
 ```
 
 ## Arrays

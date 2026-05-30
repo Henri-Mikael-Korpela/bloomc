@@ -1,3 +1,4 @@
+#include <functional>
 #include <bloom/defer.h>
 #include <bloom/log.h>
 #include <bloom/print.h>
@@ -179,15 +180,20 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
                 }
                 PUSH_STR(')');
                 PUSH_STR("{\n");
-                for (auto &statement : node.proc_def.body) {
-                    if (statement.parent != &node) {
-                        continue;
+
+                std::function<void(ASTNode*, ASTNode*, int)> emit_stmt;
+                emit_stmt = [&](ASTNode *stmt, ASTNode *owner, int depth) {
+                    if (stmt->parent != owner) {
+                        return;
                     }
-                    switch (statement.type) {
+                    auto push_tabs = [&]() {
+                        for (int d = 0; d < depth; d++) { PUSH_STR('\t'); }
+                    };
+                    switch (stmt->type) {
                         case ASTNodeType::BINARY_ADD: {
-                            PUSH_STR('\t');
+                            push_tabs();
                             PUSH_STR("return ");
-                            auto &operands = statement.binary_operation.operands;
+                            auto &operands = stmt->binary_operation.operands;
                             for (size_t i = 0; i < operands.length; i++) {
                                 if (i != 0) { PUSH_STR(" + "); }
                                 emit_binary_operand(operands[i]);
@@ -196,25 +202,25 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
                             break;
                         }
                         case ASTNodeType::PROC_CALL: {
-                            PUSH_STR('\t');
-                            PUSH_STR(statement.proc_call.caller_identifier);
+                            push_tabs();
+                            PUSH_STR(stmt->proc_call.caller_identifier);
                             PUSH_STR('(');
-                            emit_proc_call_args(&statement.proc_call.arguments);
+                            emit_proc_call_args(&stmt->proc_call.arguments);
                             PUSH_STR(");\n");
                             break;
                         }
                         case ASTNodeType::VARIABLE_DEFINITION: {
-                            PUSH_STR('\t');
-                            ASTNode *expr = statement.variable_definition.expr;
+                            push_tabs();
+                            ASTNode *expr = stmt->variable_definition.expr;
                             if (expr->type == ASTNodeType::ARRAY_INIT) {
                                 if (array_var_count < 64) {
                                     array_vars[array_var_count++] = {
-                                        .name = statement.variable_definition.name,
+                                        .name = stmt->variable_definition.name,
                                         .count = expr->array_init.elements.length,
                                     };
                                 }
                                 PUSH_STR("int ");
-                                PUSH_STR(statement.variable_definition.name);
+                                PUSH_STR(stmt->variable_definition.name);
                                 PUSH_STR("[] = {");
                                 auto &elems = expr->array_init.elements;
                                 for (size_t i = 0; i < elems.length; i++) {
@@ -228,30 +234,36 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
                                 ? "bool" : "int";
                             PUSH_STR(c_type);
                             PUSH_STR(' ');
-                            PUSH_STR(statement.variable_definition.name);
+                            PUSH_STR(stmt->variable_definition.name);
                             PUSH_STR(" = ");
                             emit_expression(expr);
                             PUSH_STR(";\n");
                             break;
                         }
+                        case ASTNodeType::ADD_ASSIGN: {
+                            push_tabs();
+                            PUSH_STR(stmt->add_assign.variable_name);
+                            PUSH_STR(" += ");
+                            emit_binary_operand(stmt->add_assign.operand);
+                            PUSH_STR(";\n");
+                            break;
+                        }
+                        case ASTNodeType::BREAK: {
+                            push_tabs();
+                            PUSH_STR("break;\n");
+                            break;
+                        }
+                        case ASTNodeType::FOR_LOOP: {
+                            push_tabs();
+                            PUSH_STR("while (1) {\n");
+                            for (auto &body_stmt : stmt->for_loop.body) {
+                                emit_stmt(&body_stmt, stmt, depth + 1);
+                            }
+                            push_tabs();
+                            PUSH_STR("}\n");
+                            break;
+                        }
                         case ASTNodeType::IF_ELSE: {
-                            auto emit_proc_call = [&](ASTNode *stmt) {
-                                PUSH_STR("\t\t");
-                                PUSH_STR(stmt->proc_call.caller_identifier);
-                                PUSH_STR('(');
-                                emit_proc_call_args(&stmt->proc_call.arguments);
-                                PUSH_STR(");\n");
-                            };
-
-                            auto emit_body = [&](Array<ASTNode> *body, ASTNode *owner) {
-                                for (auto &stmt : *body) {
-                                    if (stmt.parent != owner || stmt.type != ASTNodeType::PROC_CALL) {
-                                        continue;
-                                    }
-                                    emit_proc_call(&stmt);
-                                }
-                            };
-
                             auto emit_condition = [&](ASTNode *if_node) {
                                 auto &cond = if_node->if_else;
                                 PUSH_STR("if (");
@@ -271,16 +283,18 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
                                 PUSH_STR(") {\n");
                             };
 
-                            PUSH_STR('\t');
-                            emit_condition(&statement);
+                            push_tabs();
+                            emit_condition(stmt);
 
-                            ASTNode *current_if = &statement;
+                            ASTNode *current_if = stmt;
                             while (true) {
                                 auto &cur = current_if->if_else;
-                                emit_body(&cur.then_body, current_if);
+                                for (auto &body_stmt : cur.then_body) {
+                                    emit_stmt(&body_stmt, current_if, depth + 1);
+                                }
 
                                 if (cur.else_body.data == nullptr) {
-                                    PUSH_STR('\t');
+                                    push_tabs();
                                     PUSH_STR("}\n");
                                     break;
                                 }
@@ -294,16 +308,18 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
                                 }
 
                                 if (next_if != nullptr) {
-                                    PUSH_STR('\t');
+                                    push_tabs();
                                     PUSH_STR("} else ");
                                     emit_condition(next_if);
                                     current_if = next_if;
                                 }
                                 else {
-                                    PUSH_STR('\t');
+                                    push_tabs();
                                     PUSH_STR("} else {\n");
-                                    emit_body(&cur.else_body, current_if);
-                                    PUSH_STR('\t');
+                                    for (auto &body_stmt : cur.else_body) {
+                                        emit_stmt(&body_stmt, current_if, depth + 1);
+                                    }
+                                    push_tabs();
                                     PUSH_STR("}\n");
                                     break;
                                 }
@@ -313,6 +329,10 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
                         default:
                             break;
                     }
+                };
+
+                for (auto &statement : node.proc_def.body) {
+                    emit_stmt(&statement, &node, 1);
                 }
                 PUSH_STR("}\n\n");
                 break;

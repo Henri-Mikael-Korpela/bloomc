@@ -10,10 +10,13 @@ enum class ASTNodeType : uint8_t {
     ARRAY_INIT,
     BINARY_ADD,
     BOOLEAN_LITERAL,
+    BREAK,
     BUILTIN_LENGTH,
+    FOR_LOOP,
     IF_ELSE,
     IDENTIFIER,
     INTEGER_LITERAL,
+    ADD_ASSIGN,
     PASS,
     PROC_CALL,
     PROC_DEF,
@@ -121,6 +124,13 @@ struct ASTNode {
             Str name;
             ASTNode *expr;
         } variable_definition;
+        struct {
+            Array<ASTNode> body;
+        } for_loop;
+        struct {
+            Str variable_name;
+            BinaryOperand operand;
+        } add_assign;
     };
 };
 
@@ -129,11 +139,14 @@ auto parse(Array<Token> *tokens, ArenaAllocator *allocator) -> Array<ASTNode>;
 constexpr auto to_string(ASTNodeType type) -> Str {
     #define STR(x) cstr_to_str(x)
     switch (type) {
+        case ASTNodeType::ADD_ASSIGN:          return STR("add_assign");
         case ASTNodeType::ARRAY_ACCESS:        return STR("array_access");
         case ASTNodeType::ARRAY_INIT:          return STR("array_init");
         case ASTNodeType::BINARY_ADD:          return STR("binary_add");
         case ASTNodeType::BOOLEAN_LITERAL:     return STR("boolean_literal");
+        case ASTNodeType::BREAK:               return STR("break");
         case ASTNodeType::BUILTIN_LENGTH:      return STR("builtin_length");
+        case ASTNodeType::FOR_LOOP:            return STR("for_loop");
         case ASTNodeType::IF_ELSE:             return STR("if_else");
         case ASTNodeType::IDENTIFIER:          return STR("identifier");
         case ASTNodeType::INTEGER_LITERAL:     return STR("integer_literal");

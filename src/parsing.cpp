@@ -421,7 +421,8 @@ static auto parse_statement(
     Iterator<TypeASTNode> *types_iter,
     Iterator<BinaryOperand> *operands_iter,
     Iterator<int64_t> *array_elements_iter,
-    DynamicArray<ParseError> *errors
+    DynamicArray<ParseError> *errors,
+    size_t current_indent_level
 ) -> bool;
 
 #define PARSE_ERROR_CREATE(error_code, token) \
@@ -757,8 +758,8 @@ static auto parse_expression(
                 if (iter_peek(tokens_iter)->type != TokenType::INDENT) {
                     break;
                 }
-                (void)iter_next(tokens_iter); // Consume the indent token
-                
+                auto *indent_token = iter_next(tokens_iter); // Consume the indent token
+
                 if (!parse_statement(
                     tokens_iter,
                     context,
@@ -769,7 +770,8 @@ static auto parse_expression(
                     types_iter,
                     operands_iter,
                     array_elements_iter,
-                    errors
+                    errors,
+                    indent_token->indent.level
                 )) {
                     return err<ASTNode, ParseError>(
                         PARSE_ERROR_CREATE(UNEXPECTED_TOKEN, iter_peek_prev(tokens_iter))
@@ -825,7 +827,8 @@ static auto parse_statement(
     Iterator<TypeASTNode> *types_iter,
     Iterator<BinaryOperand> *operands_iter,
     Iterator<int64_t> *array_elements_iter,
-    DynamicArray<ParseError> *errors
+    DynamicArray<ParseError> *errors,
+    size_t current_indent_level
 ) -> bool {
     auto *next_token = iter_next(tokens_iter);
     if (next_token->type == TokenType::IDENTIFIER) {
@@ -933,6 +936,48 @@ static auto parse_statement(
                 (void)iter_next(tokens_iter);
                 break;
             }
+            case TokenType::ADD_ASSIGN: {
+                (void)iter_next(tokens_iter); // consume +=
+
+                auto *rhs_token = iter_next(tokens_iter);
+                if (rhs_token->type == TokenType::INTEGER_LITERAL) {
+                    (void)iter_append(nodes_block_iter, ASTNode {
+                        .type = ASTNodeType::ADD_ASSIGN,
+                        .parent = parent_node,
+                        .add_assign = {
+                            .variable_name = next_token->identifier.content,
+                            .operand = BinaryOperand {
+                                .type = BinaryOperandType::INTEGER_LITERAL,
+                                .integer_literal = IntegerLiteralASTNode { .value = rhs_token->integer_literal.value },
+                            },
+                        },
+                    });
+                }
+                else if (rhs_token->type == TokenType::IDENTIFIER) {
+                    (void)iter_append(nodes_block_iter, ASTNode {
+                        .type = ASTNodeType::ADD_ASSIGN,
+                        .parent = parent_node,
+                        .add_assign = {
+                            .variable_name = next_token->identifier.content,
+                            .operand = BinaryOperand {
+                                .type = BinaryOperandType::IDENTIFIER,
+                                .identifier = rhs_token->identifier.content,
+                            },
+                        },
+                    });
+                }
+                else {
+                    append(errors, PARSE_ERROR_CREATE(UNEXPECTED_TOKEN, rhs_token));
+                    return false;
+                }
+
+                assert(
+                    iter_current(tokens_iter)->type == TokenType::NEWLINE ||
+                    iter_current(tokens_iter)->type == TokenType::END &&
+                    "Expected newline or end token after add-assign statement");
+                (void)iter_next(tokens_iter);
+                break;
+            }
             case TokenType::VAR_DEF: {
                 (void)iter_next(tokens_iter); // Consume VAR_DEF token
 
@@ -1007,6 +1052,57 @@ static auto parse_statement(
             }
         }
     }
+    else if (next_token->type == TokenType::KEYWORD_FOR) {
+        auto *arrow = iter_next(tokens_iter);
+        if (arrow->type != TokenType::ARROW) {
+            append(errors, PARSE_ERROR_CREATE(UNEXPECTED_TOKEN, arrow));
+            return false;
+        }
+        auto *newline = iter_next(tokens_iter);
+        if (newline->type != TokenType::NEWLINE) {
+            append(errors, PARSE_ERROR_CREATE(UNEXPECTED_TOKEN, newline));
+            return false;
+        }
+
+        auto *for_loop_node = iter_append(nodes_block_iter, ASTNode {
+            .type = ASTNodeType::FOR_LOOP,
+            .parent = parent_node,
+            .for_loop = {
+                .body = Array<ASTNode>(
+                    nodes_block_iter->elements.data + nodes_block_iter->current_index + 1,
+                    0
+                ),
+            },
+        });
+
+        while (tokens_iter->current_index < tokens_iter->elements.length &&
+               iter_peek(tokens_iter)->type == TokenType::INDENT &&
+               iter_peek(tokens_iter)->indent.level > current_indent_level)
+        {
+            auto *body_indent = iter_next(tokens_iter); // consume INDENT
+            if (!parse_statement(tokens_iter, context, nodes_block_iter, for_loop_node,
+                                 proc_params_block, proc_params_iter, types_iter,
+                                 operands_iter, array_elements_iter, errors,
+                                 body_indent->indent.level)) {
+                return false;
+            }
+        }
+
+        for_loop_node->for_loop.body.length =
+            nodes_block_iter->current_index
+            - ptr_sub(for_loop_node->for_loop.body.data, nodes_block_iter->elements.data);
+    }
+    else if (next_token->type == TokenType::KEYWORD_BREAK) {
+        (void)iter_append(nodes_block_iter, ASTNode {
+            .type = ASTNodeType::BREAK,
+            .parent = parent_node,
+        });
+        assert(
+            iter_current(tokens_iter)->type == TokenType::NEWLINE ||
+            iter_current(tokens_iter)->type == TokenType::END &&
+            "Expected newline or end token after break statement");
+        (void)iter_next(tokens_iter);
+    }
     else if (next_token->type == TokenType::KEYWORD_IF) {
         auto parse_cond_operand = [&](Token *token, ConditionOperand *out) -> bool {
             if (token->type == TokenType::IDENTIFIER) {
@@ -1054,12 +1150,13 @@ static auto parse_statement(
 
         while (tokens_iter->current_index < tokens_iter->elements.length &&
                iter_peek(tokens_iter)->type == TokenType::INDENT &&
-               iter_peek(tokens_iter)->indent.level > 1)
+               iter_peek(tokens_iter)->indent.level > current_indent_level)
         {
-            iter_next(tokens_iter); // consume INDENT
+            auto *body_indent = iter_next(tokens_iter); // consume INDENT
             if (!parse_statement(tokens_iter, context, nodes_block_iter, if_else_node,
                                  proc_params_block, proc_params_iter, types_iter,
-                                 operands_iter, array_elements_iter, errors)) {
+                                 operands_iter, array_elements_iter, errors,
+                                 body_indent->indent.level)) {
                 return false;
             }
         }
@@ -1088,7 +1185,8 @@ static auto parse_statement(
             if (has_else_if) {
                 if (!parse_statement(tokens_iter, context, nodes_block_iter, if_else_node,
                                      proc_params_block, proc_params_iter, types_iter,
-                                     operands_iter, array_elements_iter, errors)) {
+                                     operands_iter, array_elements_iter, errors,
+                                     current_indent_level)) {
                     return false;
                 }
             }
@@ -1098,12 +1196,13 @@ static auto parse_statement(
 
                 while (tokens_iter->current_index < tokens_iter->elements.length &&
                        iter_peek(tokens_iter)->type == TokenType::INDENT &&
-                       iter_peek(tokens_iter)->indent.level > 1)
+                       iter_peek(tokens_iter)->indent.level > current_indent_level)
                 {
-                    iter_next(tokens_iter); // consume INDENT
+                    auto *body_indent = iter_next(tokens_iter); // consume INDENT
                     if (!parse_statement(tokens_iter, context, nodes_block_iter, if_else_node,
                                          proc_params_block, proc_params_iter, types_iter,
-                                         operands_iter, array_elements_iter, errors)) {
+                                         operands_iter, array_elements_iter, errors,
+                                         body_indent->indent.level)) {
                         return false;
                     }
                 }

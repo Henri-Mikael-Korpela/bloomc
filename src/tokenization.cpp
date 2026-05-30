@@ -72,6 +72,10 @@ auto tokenize(Str *input, ArenaAllocator *allocator) -> Array<Token> {
 
             // If the text is a keyword
             auto word = str_slice(input, begin, identifier_len);
+            if (word == TOKEN_KEYWORD_BREAK) {
+                append_token_of_type(TokenType::KEYWORD_BREAK);
+                continue;
+            }
             if (word == TOKEN_KEYWORD_CONST) {
                 append_token_of_type(TokenType::KEYWORD_CONST);
                 continue;
@@ -82,6 +86,10 @@ auto tokenize(Str *input, ArenaAllocator *allocator) -> Array<Token> {
             }
             if (word == TOKEN_KEYWORD_FALSE) {
                 append_token_of_type(TokenType::KEYWORD_FALSE);
+                continue;
+            }
+            if (word == TOKEN_KEYWORD_FOR) {
+                append_token_of_type(TokenType::KEYWORD_FOR);
                 continue;
             }
             if (word == TOKEN_KEYWORD_IF) {
@@ -263,8 +271,15 @@ auto tokenize(Str *input, ArenaAllocator *allocator) -> Array<Token> {
             }
         }
         else if (c == static_cast<char>(TokenType::ADD)) {
-            append_token_of_type(TokenType::ADD);
-            current_position.col += 1;
+            if (char next_char = next_char_or_null_char(input, i); next_char == '=') {
+                i++;
+                append_token_of_type(TokenType::ADD_ASSIGN);
+                current_position.col += 2;
+            }
+            else {
+                append_token_of_type(TokenType::ADD);
+                current_position.col += 1;
+            }
         }
     }
 

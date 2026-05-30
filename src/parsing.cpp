@@ -546,6 +546,15 @@ static auto parse_expression(
                 },
             });
         }
+        case TokenType::STRING_LITERAL: {
+            return ok<ASTNode, ParseError>(ASTNode {
+                .type = ASTNodeType::STRING_LITERAL,
+                .parent = nullptr,
+                .string_literal = {
+                    .value = next_token->string_literal.content,
+                },
+            });
+        }
         case TokenType::IDENTIFIER:
         case TokenType::INTEGER_LITERAL: {
             // Returns a BinaryOperand for the given token, consuming any proc call tokens

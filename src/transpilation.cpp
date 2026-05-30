@@ -105,6 +105,19 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
         }
     };
 
+    // Returns the runtime byte length of a string literal content,
+    // treating backslash-escape pairs as a single byte.
+    auto str_literal_runtime_length = [](Str content) -> size_t {
+        size_t len = 0;
+        for (size_t k = 0; k < content.length; k++) {
+            if (content.data[k] == '\\' && k + 1 < content.length) {
+                k++;
+            }
+            len++;
+        }
+        return len;
+    };
+
     auto emit_expression = [&](ASTNode *expr) {
         switch (expr->type) {
             case ASTNodeType::INTEGER_LITERAL:
@@ -142,13 +155,25 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
                 }
                 break;
             }
+            case ASTNodeType::STRING_LITERAL: {
+                Str const &content = expr->string_literal.value;
+                size_t const runtime_len = str_literal_runtime_length(content);
+                PUSH_STR("(BloomStr){.data = \"");
+                PUSH_STR(content);
+                PUSH_STR("\", .length = ");
+                PUSH_INT(static_cast<intmax_t>(runtime_len));
+                PUSH_STR("}");
+                break;
+            }
             default:
                 assert(false && "Unsupported expression type in emit_expression");
         }
     };
 
     PUSH_STR("#include <stdbool.h>\n");
+    PUSH_STR("#include <stddef.h>\n");
     PUSH_STR("#include <stdio.h>\n\n");
+    PUSH_STR("typedef struct { char const *data; size_t length; } BloomStr;\n\n");
 
     for (auto &node : *ast_nodes) {
         switch (node.type) {
@@ -230,8 +255,16 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
                                 PUSH_STR("};\n");
                                 break;
                             }
-                            char const *c_type = (expr->type == ASTNodeType::BOOLEAN_LITERAL)
-                                ? "bool" : "int";
+                            char const *c_type = nullptr;
+                            if (expr->type == ASTNodeType::BOOLEAN_LITERAL) {
+                                c_type = "bool";
+                            }
+                            else if (expr->type == ASTNodeType::STRING_LITERAL) {
+                                c_type = "BloomStr";
+                            }
+                            else {
+                                c_type = "int";
+                            }
                             PUSH_STR(c_type);
                             PUSH_STR(' ');
                             PUSH_STR(stmt->variable_definition.name);

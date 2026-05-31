@@ -449,6 +449,31 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
                             push_tabs(); PUSH_STR("}\n");
                             break;
                         }
+                        case ASTNodeType::FOR_COND_LOOP: {
+                            push_tabs();
+                            PUSH_STR("while (");
+                            auto &cond = stmt->for_cond_loop;
+                            if (cond.condition_left.is_identifier) {
+                                PUSH_STR(cond.condition_left.identifier);
+                            }
+                            else {
+                                PUSH_INT(cond.condition_left.integer_literal.value);
+                            }
+                            PUSH_STR(" < ");
+                            if (cond.condition_right.is_identifier) {
+                                PUSH_STR(cond.condition_right.identifier);
+                            }
+                            else {
+                                PUSH_INT(cond.condition_right.integer_literal.value);
+                            }
+                            PUSH_STR(") {\n");
+                            for (auto &body_stmt : stmt->for_cond_loop.body) {
+                                emit_stmt(&body_stmt, stmt, depth + 1);
+                            }
+                            push_tabs();
+                            PUSH_STR("}\n");
+                            break;
+                        }
                         case ASTNodeType::FOR_LOOP: {
                             push_tabs();
                             PUSH_STR("while (1) {\n");

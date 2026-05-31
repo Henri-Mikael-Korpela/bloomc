@@ -8,3 +8,8 @@ main :: proc() ->
 
     for i in 0..<10 ->
         printf("Index: %i\n", i)
+    
+    j := 0
+    for j < 10 ->
+        printf("j = %i\n", j)
+        j += 1

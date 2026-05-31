@@ -39,6 +39,7 @@ enum class TokenType : uint8_t {
     KEYWORD_PASS,
     KEYWORD_PROC,
     KEYWORD_TRUE,
+    LESS_THAN,
     STRING_LITERAL,
     TYPE_SEPARATOR,
     VAR_DEF,
@@ -109,6 +110,7 @@ constexpr auto to_string(TokenType type) -> Str {
         case TokenType::KEYWORD_PASS:      return STR(TOKEN_KEYWORD_PASS);
         case TokenType::KEYWORD_PROC:      return STR(TOKEN_KEYWORD_PROC);
         case TokenType::KEYWORD_TRUE:      return STR(TOKEN_KEYWORD_TRUE);
+        case TokenType::LESS_THAN:         return STR("<");
         case TokenType::NEWLINE:           return STR("newline");
         case TokenType::PARENTHESIS_CLOSE: return STR(")");
         case TokenType::PARENTHESIS_OPEN:  return STR("(");

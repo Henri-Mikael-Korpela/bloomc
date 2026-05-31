@@ -1070,28 +1070,139 @@ static auto parse_statement(
             iter_peek(tokens_iter)->type == TokenType::IDENTIFIER)
         {
             auto *elem_token = iter_next(tokens_iter);
-            auto *in_token = iter_next(tokens_iter);
-            if (in_token->type != TokenType::KEYWORD_IN) {
-                append(errors, PARSE_ERROR_CREATE(UNEXPECTED_TOKEN, in_token));
-                return false;
+            auto *op_token = iter_next(tokens_iter);
+
+            if (op_token->type == TokenType::KEYWORD_IN) {
+                if (iter_peek(tokens_iter)->type == TokenType::INTEGER_LITERAL) {
+                    auto *start_token = iter_next(tokens_iter);
+                    int64_t range_start = start_token->integer_literal.value;
+
+                    auto *range_op = iter_next(tokens_iter);
+                    if (range_op->type != TokenType::RANGE_EXCLUSIVE) {
+                        append(errors, PARSE_ERROR_CREATE(UNEXPECTED_TOKEN, range_op));
+                        return false;
+                    }
+
+                    auto *end_token = iter_next(tokens_iter);
+                    if (end_token->type != TokenType::INTEGER_LITERAL) {
+                        append(errors, PARSE_ERROR_CREATE(UNEXPECTED_TOKEN, end_token));
+                        return false;
+                    }
+                    int64_t range_end = end_token->integer_literal.value;
+
+                    auto *arrow = iter_next(tokens_iter);
+                    if (arrow->type != TokenType::ARROW) {
+                        append(errors, PARSE_ERROR_CREATE(UNEXPECTED_TOKEN, arrow));
+                        return false;
+                    }
+                    auto *newline = iter_next(tokens_iter);
+                    if (newline->type != TokenType::NEWLINE) {
+                        append(errors, PARSE_ERROR_CREATE(UNEXPECTED_TOKEN, newline));
+                        return false;
+                    }
+
+                    auto *for_range_node = iter_append(nodes_block_iter, ASTNode {
+                        .type = ASTNodeType::FOR_RANGE_LOOP,
+                        .parent = parent_node,
+                        .for_range_loop = {
+                            .element_name = elem_token->identifier.content,
+                            .range_start = range_start,
+                            .range_end = range_end,
+                            .body = Array<ASTNode>(
+                                nodes_block_iter->elements.data + nodes_block_iter->current_index + 1,
+                                0
+                            ),
+                        },
+                    });
+
+                    while (tokens_iter->current_index < tokens_iter->elements.length &&
+                           iter_peek(tokens_iter)->type == TokenType::INDENT &&
+                           iter_peek(tokens_iter)->indent.level > current_indent_level)
+                    {
+                        auto *body_indent = iter_next(tokens_iter);
+                        if (!parse_statement(tokens_iter, context, nodes_block_iter, for_range_node,
+                                             proc_params_block, proc_params_iter, types_iter,
+                                             operands_iter, array_elements_iter, errors,
+                                             body_indent->indent.level)) {
+                            return false;
+                        }
+                    }
+
+                    for_range_node->for_range_loop.body.length =
+                        nodes_block_iter->current_index
+                        - ptr_sub(for_range_node->for_range_loop.body.data, nodes_block_iter->elements.data);
+                }
+                else {
+                    auto *coll_token = iter_next(tokens_iter);
+                    if (coll_token->type != TokenType::IDENTIFIER) {
+                        append(errors, PARSE_ERROR_CREATE(UNEXPECTED_TOKEN, coll_token));
+                        return false;
+                    }
+                    auto *arrow = iter_next(tokens_iter);
+                    if (arrow->type != TokenType::ARROW) {
+                        append(errors, PARSE_ERROR_CREATE(UNEXPECTED_TOKEN, arrow));
+                        return false;
+                    }
+                    auto *newline = iter_next(tokens_iter);
+                    if (newline->type != TokenType::NEWLINE) {
+                        append(errors, PARSE_ERROR_CREATE(UNEXPECTED_TOKEN, newline));
+                        return false;
+                    }
+
+                    auto *for_in_node = iter_append(nodes_block_iter, ASTNode {
+                        .type = ASTNodeType::FOR_IN_LOOP,
+                        .parent = parent_node,
+                        .for_in_loop = {
+                            .element_name = elem_token->identifier.content,
+                            .collection_name = coll_token->identifier.content,
+                            .body = Array<ASTNode>(
+                                nodes_block_iter->elements.data + nodes_block_iter->current_index + 1,
+                                0
+                            ),
+                        },
+                    });
+
+                    while (tokens_iter->current_index < tokens_iter->elements.length &&
+                           iter_peek(tokens_iter)->type == TokenType::INDENT &&
+                           iter_peek(tokens_iter)->indent.level > current_indent_level)
+                    {
+                        auto *body_indent = iter_next(tokens_iter);
+                        if (!parse_statement(tokens_iter, context, nodes_block_iter, for_in_node,
+                                             proc_params_block, proc_params_iter, types_iter,
+                                             operands_iter, array_elements_iter, errors,
+                                             body_indent->indent.level)) {
+                            return false;
+                        }
+                    }
+
+                    for_in_node->for_in_loop.body.length =
+                        nodes_block_iter->current_index
+                        - ptr_sub(for_in_node->for_in_loop.body.data, nodes_block_iter->elements.data);
+                }
             }
-
-            if (iter_peek(tokens_iter)->type == TokenType::INTEGER_LITERAL) {
-                auto *start_token = iter_next(tokens_iter);
-                int64_t range_start = start_token->integer_literal.value;
-
-                auto *range_op = iter_next(tokens_iter);
-                if (range_op->type != TokenType::RANGE_EXCLUSIVE) {
-                    append(errors, PARSE_ERROR_CREATE(UNEXPECTED_TOKEN, range_op));
+            else if (op_token->type == TokenType::LESS_THAN) {
+                auto *rhs_token = iter_next(tokens_iter);
+                ConditionOperand cond_left = {
+                    .is_identifier = true,
+                    .identifier = elem_token->identifier.content,
+                };
+                ConditionOperand cond_right;
+                if (rhs_token->type == TokenType::IDENTIFIER) {
+                    cond_right = {
+                        .is_identifier = true,
+                        .identifier = rhs_token->identifier.content,
+                    };
+                }
+                else if (rhs_token->type == TokenType::INTEGER_LITERAL) {
+                    cond_right = {
+                        .is_identifier = false,
+                        .integer_literal = IntegerLiteralASTNode { .value = rhs_token->integer_literal.value },
+                    };
+                }
+                else {
+                    append(errors, PARSE_ERROR_CREATE(UNEXPECTED_TOKEN, rhs_token));
                     return false;
                 }
-
-                auto *end_token = iter_next(tokens_iter);
-                if (end_token->type != TokenType::INTEGER_LITERAL) {
-                    append(errors, PARSE_ERROR_CREATE(UNEXPECTED_TOKEN, end_token));
-                    return false;
-                }
-                int64_t range_end = end_token->integer_literal.value;
 
                 auto *arrow = iter_next(tokens_iter);
                 if (arrow->type != TokenType::ARROW) {
@@ -1104,13 +1215,12 @@ static auto parse_statement(
                     return false;
                 }
 
-                auto *for_range_node = iter_append(nodes_block_iter, ASTNode {
-                    .type = ASTNodeType::FOR_RANGE_LOOP,
+                auto *for_cond_node = iter_append(nodes_block_iter, ASTNode {
+                    .type = ASTNodeType::FOR_COND_LOOP,
                     .parent = parent_node,
-                    .for_range_loop = {
-                        .element_name = elem_token->identifier.content,
-                        .range_start = range_start,
-                        .range_end = range_end,
+                    .for_cond_loop = {
+                        .condition_left = cond_left,
+                        .condition_right = cond_right,
                         .body = Array<ASTNode>(
                             nodes_block_iter->elements.data + nodes_block_iter->current_index + 1,
                             0
@@ -1123,7 +1233,7 @@ static auto parse_statement(
                        iter_peek(tokens_iter)->indent.level > current_indent_level)
                 {
                     auto *body_indent = iter_next(tokens_iter);
-                    if (!parse_statement(tokens_iter, context, nodes_block_iter, for_range_node,
+                    if (!parse_statement(tokens_iter, context, nodes_block_iter, for_cond_node,
                                          proc_params_block, proc_params_iter, types_iter,
                                          operands_iter, array_elements_iter, errors,
                                          body_indent->indent.level)) {
@@ -1131,56 +1241,13 @@ static auto parse_statement(
                     }
                 }
 
-                for_range_node->for_range_loop.body.length =
+                for_cond_node->for_cond_loop.body.length =
                     nodes_block_iter->current_index
-                    - ptr_sub(for_range_node->for_range_loop.body.data, nodes_block_iter->elements.data);
+                    - ptr_sub(for_cond_node->for_cond_loop.body.data, nodes_block_iter->elements.data);
             }
             else {
-                auto *coll_token = iter_next(tokens_iter);
-                if (coll_token->type != TokenType::IDENTIFIER) {
-                    append(errors, PARSE_ERROR_CREATE(UNEXPECTED_TOKEN, coll_token));
-                    return false;
-                }
-                auto *arrow = iter_next(tokens_iter);
-                if (arrow->type != TokenType::ARROW) {
-                    append(errors, PARSE_ERROR_CREATE(UNEXPECTED_TOKEN, arrow));
-                    return false;
-                }
-                auto *newline = iter_next(tokens_iter);
-                if (newline->type != TokenType::NEWLINE) {
-                    append(errors, PARSE_ERROR_CREATE(UNEXPECTED_TOKEN, newline));
-                    return false;
-                }
-
-                auto *for_in_node = iter_append(nodes_block_iter, ASTNode {
-                    .type = ASTNodeType::FOR_IN_LOOP,
-                    .parent = parent_node,
-                    .for_in_loop = {
-                        .element_name = elem_token->identifier.content,
-                        .collection_name = coll_token->identifier.content,
-                        .body = Array<ASTNode>(
-                            nodes_block_iter->elements.data + nodes_block_iter->current_index + 1,
-                            0
-                        ),
-                    },
-                });
-
-                while (tokens_iter->current_index < tokens_iter->elements.length &&
-                       iter_peek(tokens_iter)->type == TokenType::INDENT &&
-                       iter_peek(tokens_iter)->indent.level > current_indent_level)
-                {
-                    auto *body_indent = iter_next(tokens_iter);
-                    if (!parse_statement(tokens_iter, context, nodes_block_iter, for_in_node,
-                                         proc_params_block, proc_params_iter, types_iter,
-                                         operands_iter, array_elements_iter, errors,
-                                         body_indent->indent.level)) {
-                        return false;
-                    }
-                }
-
-                for_in_node->for_in_loop.body.length =
-                    nodes_block_iter->current_index
-                    - ptr_sub(for_in_node->for_in_loop.body.data, nodes_block_iter->elements.data);
+                append(errors, PARSE_ERROR_CREATE(UNEXPECTED_TOKEN, op_token));
+                return false;
             }
         }
         else {

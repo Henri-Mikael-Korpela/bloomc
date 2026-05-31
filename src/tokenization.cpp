@@ -253,6 +253,10 @@ auto tokenize(Str *input, ArenaAllocator *allocator) -> Array<Token> {
             });
             current_position.col += (string_len + 2); // +2 for the quotes
         }
+        else if (c == '<') {
+            append_token_of_type(TokenType::LESS_THAN);
+            current_position.col += 1;
+        }
         else if (c == '.') {
             if (i + 2 < input->length &&
                 str_char_at(input, i + 1) == '.' &&

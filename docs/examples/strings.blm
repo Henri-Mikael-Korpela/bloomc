@@ -1,3 +1,3 @@
 main :: proc() ->
     s := "Hello, world!"
-    
+    printf("Length (in bytes): %zu", length_in_bytes(s))

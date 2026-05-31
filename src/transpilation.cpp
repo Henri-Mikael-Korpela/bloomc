@@ -64,6 +64,10 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
                 case ASTNodeType::BUILTIN_LENGTH:
                     PUSH_INT(static_cast<intmax_t>(find_array_size(arg->identifier)));
                     break;
+                case ASTNodeType::BUILTIN_LENGTH_IN_BYTES:
+                    PUSH_STR(arg->identifier);
+                    PUSH_STR(".length");
+                    break;
                 default:
                     assert(false && "Unsupported argument type in emit_proc_call_args");
             }

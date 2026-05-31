@@ -12,6 +12,7 @@ enum class ASTNodeType : uint8_t {
     BOOLEAN_LITERAL,
     BREAK,
     BUILTIN_LENGTH,
+    BUILTIN_LENGTH_IN_BYTES,
     FOR_LOOP,
     IF_ELSE,
     IDENTIFIER,
@@ -145,7 +146,8 @@ constexpr auto to_string(ASTNodeType type) -> Str {
         case ASTNodeType::BINARY_ADD:          return STR("binary_add");
         case ASTNodeType::BOOLEAN_LITERAL:     return STR("boolean_literal");
         case ASTNodeType::BREAK:               return STR("break");
-        case ASTNodeType::BUILTIN_LENGTH:      return STR("builtin_length");
+        case ASTNodeType::BUILTIN_LENGTH:          return STR("builtin_length");
+        case ASTNodeType::BUILTIN_LENGTH_IN_BYTES: return STR("builtin_length_in_bytes");
         case ASTNodeType::FOR_LOOP:            return STR("for_loop");
         case ASTNodeType::IF_ELSE:             return STR("if_else");
         case ASTNodeType::IDENTIFIER:          return STR("identifier");

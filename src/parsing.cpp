@@ -259,8 +259,12 @@ static auto parse_proc_call_arguments(
                     });
                     return false;
                 }
+                ASTNodeType const builtin_type =
+                    (next_token->identifier.content == "length_in_bytes")
+                    ? ASTNodeType::BUILTIN_LENGTH_IN_BYTES
+                    : ASTNodeType::BUILTIN_LENGTH;
                 (void)iter_append(nodes_block_iter, ASTNode {
-                    .type = ASTNodeType::BUILTIN_LENGTH,
+                    .type = builtin_type,
                     .parent = proc_call_node,
                     .identifier = inner_id_token->identifier.content,
                 });

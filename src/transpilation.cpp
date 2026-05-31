@@ -26,6 +26,30 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
     ArrayVarEntry array_vars[64];
     size_t array_var_count = 0;
 
+    enum class VarKind : uint8_t { INT, BOOL, BLOOM_STR, BLOOM_CHAR };
+    struct VarEntry {
+        Str name;
+        VarKind kind;
+    };
+    VarEntry var_types[128];
+    size_t var_type_count = 0;
+
+    auto register_var = [&](Str name, VarKind kind) {
+        if (var_type_count < 128) {
+            var_types[var_type_count++] = { .name = name, .kind = kind };
+        }
+    };
+
+    auto lookup_var_kind = [&](Str name) -> VarKind {
+        for (size_t i = 0; i < var_type_count; i++) {
+            if (var_types[i].name.length == name.length &&
+                strncmp(var_types[i].name.data, name.data, name.length) == 0) {
+                return var_types[i].kind;
+            }
+        }
+        return VarKind::INT;
+    };
+
     auto find_array_size = [&](Str var_name) -> size_t {
         for (size_t i = 0; i < array_var_count; i++) {
             Str const &name = array_vars[i].name;
@@ -176,13 +200,17 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
 
     PUSH_STR("#include <stdbool.h>\n");
     PUSH_STR("#include <stddef.h>\n");
+    PUSH_STR("#include <stdint.h>\n");
     PUSH_STR("#include <stdio.h>\n\n");
-    PUSH_STR("typedef struct { char const *data; size_t length; } BloomStr;\n\n");
+    PUSH_STR("typedef struct { char const *data; size_t length; } BloomStr;\n");
+    PUSH_STR("typedef struct { char bytes[4]; uint8_t len; } BloomChar;\n\n");
 
     for (auto &node : *ast_nodes) {
         switch (node.type) {
             case ASTNodeType::PROC_DEF: {
                 array_var_count = 0;
+                var_type_count = 0;
+                size_t for_in_counter = 0;
                 char const *return_type_name = nullptr;
                 if (node.proc_def.return_type != nullptr) {
                     if (node.proc_def.return_type->name == "Int") {
@@ -231,11 +259,77 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
                             break;
                         }
                         case ASTNodeType::PROC_CALL: {
-                            push_tabs();
-                            PUSH_STR(stmt->proc_call.caller_identifier);
-                            PUSH_STR('(');
-                            emit_proc_call_args(&stmt->proc_call.arguments);
-                            PUSH_STR(");\n");
+                            if (stmt->proc_call.caller_identifier == "print") {
+                                assert(stmt->proc_call.arguments.length >= 1 &&
+                                    "print() requires at least a format string argument");
+                                auto &fmt_arg = stmt->proc_call.arguments[0];
+                                assert(fmt_arg.type == ASTNodeType::STRING_LITERAL &&
+                                    "First argument to print() must be a string literal");
+                                Str const &fmt = fmt_arg.string_literal.value;
+                                size_t arg_idx = 1;
+                                size_t seg_start = 0;
+                                for (size_t k = 0; k < fmt.length; k++) {
+                                    if (fmt.data[k] == '{' && k + 1 < fmt.length &&
+                                        fmt.data[k + 1] == '}')
+                                    {
+                                        if (k > seg_start) {
+                                            push_tabs();
+                                            PUSH_STR("fputs(\"");
+                                            PUSH_STR(str_from_data_and_length(
+                                                fmt.data + seg_start, k - seg_start));
+                                            PUSH_STR("\", stdout);\n");
+                                        }
+                                        if (arg_idx < stmt->proc_call.arguments.length) {
+                                            auto &arg = stmt->proc_call.arguments[arg_idx];
+                                            push_tabs();
+                                            if (arg.type == ASTNodeType::IDENTIFIER) {
+                                                VarKind kind = lookup_var_kind(arg.identifier);
+                                                if (kind == VarKind::BLOOM_CHAR) {
+                                                    PUSH_STR("fwrite(");
+                                                    PUSH_STR(arg.identifier);
+                                                    PUSH_STR(".bytes, 1, ");
+                                                    PUSH_STR(arg.identifier);
+                                                    PUSH_STR(".len, stdout);\n");
+                                                }
+                                                else if (kind == VarKind::BLOOM_STR) {
+                                                    PUSH_STR("fwrite(");
+                                                    PUSH_STR(arg.identifier);
+                                                    PUSH_STR(".data, 1, ");
+                                                    PUSH_STR(arg.identifier);
+                                                    PUSH_STR(".length, stdout);\n");
+                                                }
+                                                else {
+                                                    PUSH_STR("printf(\"%d\", ");
+                                                    PUSH_STR(arg.identifier);
+                                                    PUSH_STR(");\n");
+                                                }
+                                            }
+                                            else if (arg.type == ASTNodeType::INTEGER_LITERAL) {
+                                                PUSH_STR("printf(\"%d\", ");
+                                                PUSH_INT(arg.integer_literal.value.value);
+                                                PUSH_STR(");\n");
+                                            }
+                                            arg_idx++;
+                                        }
+                                        k++;
+                                        seg_start = k + 1;
+                                    }
+                                }
+                                if (seg_start < fmt.length) {
+                                    push_tabs();
+                                    PUSH_STR("fputs(\"");
+                                    PUSH_STR(str_from_data_and_length(
+                                        fmt.data + seg_start, fmt.length - seg_start));
+                                    PUSH_STR("\", stdout);\n");
+                                }
+                            }
+                            else {
+                                push_tabs();
+                                PUSH_STR(stmt->proc_call.caller_identifier);
+                                PUSH_STR('(');
+                                emit_proc_call_args(&stmt->proc_call.arguments);
+                                PUSH_STR(");\n");
+                            }
                             break;
                         }
                         case ASTNodeType::VARIABLE_DEFINITION: {
@@ -248,6 +342,7 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
                                         .count = expr->array_init.elements.length,
                                     };
                                 }
+                                register_var(stmt->variable_definition.name, VarKind::INT);
                                 PUSH_STR("int ");
                                 PUSH_STR(stmt->variable_definition.name);
                                 PUSH_STR("[] = {");
@@ -260,15 +355,20 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
                                 break;
                             }
                             char const *c_type = nullptr;
+                            VarKind var_kind = VarKind::INT;
                             if (expr->type == ASTNodeType::BOOLEAN_LITERAL) {
                                 c_type = "bool";
+                                var_kind = VarKind::BOOL;
                             }
                             else if (expr->type == ASTNodeType::STRING_LITERAL) {
                                 c_type = "BloomStr";
+                                var_kind = VarKind::BLOOM_STR;
                             }
                             else {
                                 c_type = "int";
+                                var_kind = VarKind::INT;
                             }
+                            register_var(stmt->variable_definition.name, var_kind);
                             PUSH_STR(c_type);
                             PUSH_STR(' ');
                             PUSH_STR(stmt->variable_definition.name);
@@ -290,10 +390,91 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
                             PUSH_STR("break;\n");
                             break;
                         }
+                        case ASTNodeType::FOR_IN_LOOP: {
+                            size_t const loop_idx = for_in_counter++;
+                            Str const &elem = stmt->for_in_loop.element_name;
+                            Str const &coll = stmt->for_in_loop.collection_name;
+                            register_var(elem, VarKind::BLOOM_CHAR);
+
+                            push_tabs(); PUSH_STR("{\n");
+                            push_tabs(); PUSH_STR("\tsize_t __bloom_i");
+                            PUSH_INT(static_cast<intmax_t>(loop_idx));
+                            PUSH_STR(" = 0;\n");
+                            push_tabs(); PUSH_STR("\twhile (__bloom_i");
+                            PUSH_INT(static_cast<intmax_t>(loop_idx));
+                            PUSH_STR(" < "); PUSH_STR(coll); PUSH_STR(".length) {\n");
+                            push_tabs(); PUSH_STR("\t\tBloomChar "); PUSH_STR(elem); PUSH_STR(";\n");
+                            push_tabs(); PUSH_STR("\t\tunsigned char __bloom_f");
+                            PUSH_INT(static_cast<intmax_t>(loop_idx));
+                            PUSH_STR(" = (unsigned char)");
+                            PUSH_STR(coll); PUSH_STR(".data[__bloom_i");
+                            PUSH_INT(static_cast<intmax_t>(loop_idx)); PUSH_STR("];\n");
+                            push_tabs(); PUSH_STR("\t\tif (__bloom_f");
+                            PUSH_INT(static_cast<intmax_t>(loop_idx)); PUSH_STR(" < 0x80) {\n");
+                            push_tabs(); PUSH_STR("\t\t\t"); PUSH_STR(elem); PUSH_STR(".len = 1;\n");
+                            push_tabs(); PUSH_STR("\t\t}\n");
+                            push_tabs(); PUSH_STR("\t\telse if (__bloom_f");
+                            PUSH_INT(static_cast<intmax_t>(loop_idx)); PUSH_STR(" < 0xE0) {\n");
+                            push_tabs(); PUSH_STR("\t\t\t"); PUSH_STR(elem); PUSH_STR(".len = 2;\n");
+                            push_tabs(); PUSH_STR("\t\t}\n");
+                            push_tabs(); PUSH_STR("\t\telse if (__bloom_f");
+                            PUSH_INT(static_cast<intmax_t>(loop_idx)); PUSH_STR(" < 0xF0) {\n");
+                            push_tabs(); PUSH_STR("\t\t\t"); PUSH_STR(elem); PUSH_STR(".len = 3;\n");
+                            push_tabs(); PUSH_STR("\t\t}\n");
+                            push_tabs(); PUSH_STR("\t\telse {\n");
+                            push_tabs(); PUSH_STR("\t\t\t"); PUSH_STR(elem); PUSH_STR(".len = 4;\n");
+                            push_tabs(); PUSH_STR("\t\t}\n");
+                            push_tabs(); PUSH_STR("\t\tfor (uint8_t __bloom_k");
+                            PUSH_INT(static_cast<intmax_t>(loop_idx));
+                            PUSH_STR(" = 0; __bloom_k");
+                            PUSH_INT(static_cast<intmax_t>(loop_idx));
+                            PUSH_STR(" < "); PUSH_STR(elem); PUSH_STR(".len; __bloom_k");
+                            PUSH_INT(static_cast<intmax_t>(loop_idx)); PUSH_STR("++) {\n");
+                            push_tabs(); PUSH_STR("\t\t\t"); PUSH_STR(elem); PUSH_STR(".bytes[__bloom_k");
+                            PUSH_INT(static_cast<intmax_t>(loop_idx));
+                            PUSH_STR("] = "); PUSH_STR(coll); PUSH_STR(".data[__bloom_i");
+                            PUSH_INT(static_cast<intmax_t>(loop_idx));
+                            PUSH_STR(" + __bloom_k");
+                            PUSH_INT(static_cast<intmax_t>(loop_idx)); PUSH_STR("];\n");
+                            push_tabs(); PUSH_STR("\t\t}\n");
+                            push_tabs(); PUSH_STR("\t\t__bloom_i");
+                            PUSH_INT(static_cast<intmax_t>(loop_idx));
+                            PUSH_STR(" += "); PUSH_STR(elem); PUSH_STR(".len;\n");
+
+                            for (auto &body_stmt : stmt->for_in_loop.body) {
+                                emit_stmt(&body_stmt, stmt, depth + 2);
+                            }
+
+                            push_tabs(); PUSH_STR("\t}\n");
+                            push_tabs(); PUSH_STR("}\n");
+                            break;
+                        }
                         case ASTNodeType::FOR_LOOP: {
                             push_tabs();
                             PUSH_STR("while (1) {\n");
                             for (auto &body_stmt : stmt->for_loop.body) {
+                                emit_stmt(&body_stmt, stmt, depth + 1);
+                            }
+                            push_tabs();
+                            PUSH_STR("}\n");
+                            break;
+                        }
+                        case ASTNodeType::FOR_RANGE_LOOP: {
+                            Str const &elem = stmt->for_range_loop.element_name;
+                            register_var(elem, VarKind::INT);
+                            push_tabs();
+                            PUSH_STR("for (int ");
+                            PUSH_STR(elem);
+                            PUSH_STR(" = ");
+                            PUSH_INT(stmt->for_range_loop.range_start);
+                            PUSH_STR("; ");
+                            PUSH_STR(elem);
+                            PUSH_STR(" < ");
+                            PUSH_INT(stmt->for_range_loop.range_end);
+                            PUSH_STR("; ");
+                            PUSH_STR(elem);
+                            PUSH_STR("++) {\n");
+                            for (auto &body_stmt : stmt->for_range_loop.body) {
                                 emit_stmt(&body_stmt, stmt, depth + 1);
                             }
                             push_tabs();

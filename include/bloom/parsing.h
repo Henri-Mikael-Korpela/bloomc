@@ -13,7 +13,9 @@ enum class ASTNodeType : uint8_t {
     BREAK,
     BUILTIN_LENGTH,
     BUILTIN_LENGTH_IN_BYTES,
+    FOR_IN_LOOP,
     FOR_LOOP,
+    FOR_RANGE_LOOP,
     IF_ELSE,
     IDENTIFIER,
     INTEGER_LITERAL,
@@ -126,8 +128,19 @@ struct ASTNode {
             ASTNode *expr;
         } variable_definition;
         struct {
+            Str element_name;
+            Str collection_name;
+            Array<ASTNode> body;
+        } for_in_loop;
+        struct {
             Array<ASTNode> body;
         } for_loop;
+        struct {
+            Str element_name;
+            int64_t range_start;
+            int64_t range_end;
+            Array<ASTNode> body;
+        } for_range_loop;
         struct {
             Str variable_name;
             BinaryOperand operand;
@@ -148,7 +161,9 @@ constexpr auto to_string(ASTNodeType type) -> Str {
         case ASTNodeType::BREAK:               return STR("break");
         case ASTNodeType::BUILTIN_LENGTH:          return STR("builtin_length");
         case ASTNodeType::BUILTIN_LENGTH_IN_BYTES: return STR("builtin_length_in_bytes");
+        case ASTNodeType::FOR_IN_LOOP:         return STR("for_in_loop");
         case ASTNodeType::FOR_LOOP:            return STR("for_loop");
+        case ASTNodeType::FOR_RANGE_LOOP:      return STR("for_range_loop");
         case ASTNodeType::IF_ELSE:             return STR("if_else");
         case ASTNodeType::IDENTIFIER:          return STR("identifier");
         case ASTNodeType::INTEGER_LITERAL:     return STR("integer_literal");

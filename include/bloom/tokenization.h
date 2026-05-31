@@ -35,6 +35,7 @@ enum class TokenType : uint8_t {
     KEYWORD_FALSE,
     KEYWORD_FOR,
     KEYWORD_IF,
+    KEYWORD_IN,
     KEYWORD_PASS,
     KEYWORD_PROC,
     KEYWORD_TRUE,
@@ -49,6 +50,7 @@ constexpr auto TOKEN_KEYWORD_ELSE  = "else";
 constexpr auto TOKEN_KEYWORD_FALSE = "false";
 constexpr auto TOKEN_KEYWORD_FOR   = "for";
 constexpr auto TOKEN_KEYWORD_IF    = "if";
+constexpr auto TOKEN_KEYWORD_IN    = "in";
 constexpr auto TOKEN_KEYWORD_PASS  = "pass";
 constexpr auto TOKEN_KEYWORD_PROC  = "proc";
 constexpr auto TOKEN_KEYWORD_TRUE  = "true";
@@ -103,6 +105,7 @@ constexpr auto to_string(TokenType type) -> Str {
         case TokenType::KEYWORD_FALSE:     return STR(TOKEN_KEYWORD_FALSE);
         case TokenType::KEYWORD_FOR:       return STR(TOKEN_KEYWORD_FOR);
         case TokenType::KEYWORD_IF:        return STR(TOKEN_KEYWORD_IF);
+        case TokenType::KEYWORD_IN:        return STR(TOKEN_KEYWORD_IN);
         case TokenType::KEYWORD_PASS:      return STR(TOKEN_KEYWORD_PASS);
         case TokenType::KEYWORD_PROC:      return STR(TOKEN_KEYWORD_PROC);
         case TokenType::KEYWORD_TRUE:      return STR(TOKEN_KEYWORD_TRUE);

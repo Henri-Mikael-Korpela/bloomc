@@ -16,9 +16,11 @@ Identifiers are used for names for types and variables.
 
 ```
 break
+const
 else
 for
 if
+in
 proc
 ```
 

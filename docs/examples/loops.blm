@@ -10,6 +10,6 @@ main :: proc() ->
         printf("Index: %i\n", i)
     
     j := 0
-    for j < 10 ->
+    for if j < 10 ->
         printf("j = %i\n", j)
         j += 1

@@ -24,7 +24,22 @@ proc
 
 ## Loops
 
-There's only one loop statement in Bloom: `for`.
+There's only one loop statement in Bloom: `for`. It is used for a variety of loops already familiar from languages like C and Python.
+
+Loops can iterate over a given range like this:
+
+```
+for i in 0..<10 ->
+    ...
+```
+
+C-style `while` can be repreented with `for if` statement:
+
+```
+i := 0
+for if i < 10 ->
+    i += 1
+```
 
 You can create an infinite loop this way:
 

@@ -52,10 +52,16 @@ for ->
 
 ## Arrays
 
-Compile-time arrays are initialized as follows
+Compile-time arrays can be initialized as follows
+
+```
+a := [3]Int{ 2, 5, 9 }
+```
+
+where 3 indicates the array length, Int represents the element type and values of that type are given inside brackets.
+
+It is possible to omit the length and let the compiler deduce the length based on specified values. In order to do that, the length is replaced by keyword `const`. Example:
 
 ```
 a := [const]Int{ 2, 5, 9 }
 ```
-
-where const indicates the size of the array is determined at compile-time, Int represents the element type and values of that type are given inside brackets.

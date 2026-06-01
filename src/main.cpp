@@ -15,7 +15,7 @@
 constexpr auto kb(size_t n) -> size_t { return n * 1024; }
 constexpr auto mb(size_t n) -> size_t { return n * 1024 * 1024; }
 
-constexpr size_t MAIN_MEMORY_SIZE = kb(32);
+constexpr size_t MAIN_MEMORY_SIZE = kb(64);
 
 /**
  * Allocates a null-terminated C string.

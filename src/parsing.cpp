@@ -7,7 +7,16 @@
 
 enum class ParseErrorCode {
     UNEXPECTED_TOKEN,
+    ARRAY_LENGTH_MISMATCH,
 };
+
+constexpr auto to_string(ParseErrorCode code) -> char const * {
+    switch (code) {
+        case ParseErrorCode::UNEXPECTED_TOKEN:      return "unexpected token";
+        case ParseErrorCode::ARRAY_LENGTH_MISMATCH: return "array length mismatch";
+    }
+    return "unknown error";
+}
 
 struct ParseError {
     ParseErrorCode code;
@@ -448,10 +457,17 @@ static auto parse_expression(
         "Next token should not be null when parsing an expression");
     switch(next_token->type) {
         case TokenType::BRACKET_OPEN: {
-            // Parse [const]ElementType{ val, val, ... }
-            auto *const_token = iter_next(tokens_iter);
-            if (const_token->type != TokenType::KEYWORD_CONST) {
-                return err<ASTNode, ParseError>(PARSE_ERROR_CREATE(UNEXPECTED_TOKEN, const_token));
+            // Parse [const]ElementType{ ... } or [N]ElementType{ ... }
+            auto *size_token = iter_next(tokens_iter);
+            int64_t explicit_length = -1;
+            if (size_token->type == TokenType::KEYWORD_CONST) {
+                // no explicit length check
+            }
+            else if (size_token->type == TokenType::INTEGER_LITERAL) {
+                explicit_length = size_token->integer_literal.value;
+            }
+            else {
+                return err<ASTNode, ParseError>(PARSE_ERROR_CREATE(UNEXPECTED_TOKEN, size_token));
             }
             auto *bracket_close = iter_next(tokens_iter);
             if (bracket_close->type != TokenType::BRACKET_CLOSE) {
@@ -528,6 +544,14 @@ static auto parse_expression(
                     (void)iter_append(array_elements_iter, std::move(element_value));
                 }
             }
+            size_t const actual_count = array_elements_iter->current_index - elements_begin;
+            if (explicit_length >= 0 && static_cast<int64_t>(actual_count) != explicit_length) {
+                return err<ASTNode, ParseError>(ParseError {
+                    .code = ParseErrorCode::ARRAY_LENGTH_MISMATCH,
+                    .position = size_token->position,
+                    .src_code_line = __LINE__,
+                });
+            }
             return ok<ASTNode, ParseError>(ASTNode {
                 .type = ASTNodeType::ARRAY_INIT,
                 .parent = nullptr,
@@ -535,7 +559,7 @@ static auto parse_expression(
                     .element_type = element_type,
                     .elements = Array<int64_t>(
                         array_elements_iter->elements.data + elements_begin,
-                        array_elements_iter->current_index - elements_begin
+                        actual_count
                     ),
                 },
             });
@@ -1506,11 +1530,10 @@ auto parse(Array<Token> *tokens, ArenaAllocator *allocator) -> Array<ASTNode> {
     after_parsing:
         print("Error count: %\n", errors.length);
         for (auto &error : to_array(&errors)) {
-            print("\tParse error at line %, column %, source line %: %\n",
+            print("\tParse error at line %, column %: %\n",
                 error.position.line,
                 error.position.col,
-                error.src_code_line,
-                static_cast<int>(error.code)
+                to_string(error.code)
             );
         }
 

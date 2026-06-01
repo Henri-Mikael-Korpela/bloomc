@@ -69,7 +69,12 @@ auto run(char const *input_file_path_cstr) -> int {
 
     auto input_file_content = cstr_to_str(reinterpret_cast<char*>(mapped_memory));
     Array<Token> tokens = tokenize(&input_file_content, &main_allocator);
-    auto ast_nodes = parse(&tokens, &main_allocator);
+    bool had_parse_errors = false;
+    auto ast_nodes = parse(&tokens, &main_allocator, input_file_content, cstr_to_str(input_file_path_cstr), &had_parse_errors);
+    if (had_parse_errors) {
+        delete_allocator(&main_allocator);
+        return 1;
+    }
 
     std::filesystem::create_directories("build/tmp");
     char temp_c_file[] = "build/tmp/transpiled_XXXXXX.c";
@@ -183,7 +188,12 @@ auto transpile(char const *input_file_path_cstr, char const *output_file_path_cs
     printf("\n");
 
     // Parse the tokens into an AST
-    auto ast_nodes = parse(&tokens, &main_allocator);
+    bool had_parse_errors = false;
+    auto ast_nodes = parse(&tokens, &main_allocator, input_file_content, cstr_to_str(input_file_path_cstr), &had_parse_errors);
+    if (had_parse_errors) {
+        delete_allocator(&main_allocator);
+        return 1;
+    }
 
     auto MISSING_TYPE = cstr_to_str("(none)");
 

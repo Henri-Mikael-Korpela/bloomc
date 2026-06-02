@@ -179,6 +179,9 @@ struct Context {
     ASTNode *current_proc_node = nullptr;
     bool in_proc_definition = false;
     AllocatedArrayBlock<ASTNode> *nodes_block;
+    struct ConstEntry { Str name; int64_t value; };
+    ConstEntry constants[64] = {};
+    size_t constant_count = 0;
 };
 
 // For debugging purposes
@@ -527,6 +530,23 @@ static auto parse_expression(
             }
             else if (size_token->type == TokenType::INTEGER_LITERAL) {
                 explicit_length = size_token->integer_literal.value;
+            }
+            else if (size_token->type == TokenType::IDENTIFIER) {
+                bool found = false;
+                for (size_t ci = 0; ci < context->constant_count; ci++) {
+                    Str const &cname = context->constants[ci].name;
+                    Str const &sname = size_token->identifier.content;
+                    if (cname.length == sname.length &&
+                        strncmp(cname.data, sname.data, cname.length) == 0)
+                    {
+                        explicit_length = context->constants[ci].value;
+                        found = true;
+                        break;
+                    }
+                }
+                if (!found) {
+                    return err<ASTNode, ParseError>(PARSE_ERROR_CREATE(UNEXPECTED_TOKEN, size_token));
+                }
             }
             else {
                 return err<ASTNode, ParseError>(PARSE_ERROR_CREATE(UNEXPECTED_TOKEN, size_token));
@@ -1154,6 +1174,96 @@ static auto parse_statement(
                     iter_current(tokens_iter)->type == TokenType::END &&
                     "Expected newline or end token after variable definition");
                 (void)iter_next(tokens_iter);
+                break;
+            }
+            case TokenType::CONST_DEF: {
+                (void)iter_next(tokens_iter); // consume ::
+
+                if (iter_peek(tokens_iter)->type == TokenType::INTEGER_LITERAL) {
+                    auto *value_token = iter_next(tokens_iter);
+                    if (context->constant_count < 64) {
+                        context->constants[context->constant_count++] = {
+                            .name = next_token->identifier.content,
+                            .value = value_token->integer_literal.value,
+                        };
+                    }
+                    (void)iter_append(nodes_block_iter, ASTNode {
+                        .type = ASTNodeType::CONSTANT_DEFINITION,
+                        .parent = parent_node,
+                        .constant_def = {
+                            .name = next_token->identifier.content,
+                            .value = value_token->integer_literal.value,
+                        },
+                    });
+                    assert(
+                        iter_current(tokens_iter)->type == TokenType::NEWLINE ||
+                        iter_current(tokens_iter)->type == TokenType::END &&
+                        "Expected newline or end token after constant definition");
+                    (void)iter_next(tokens_iter);
+                }
+                else {
+                    // Expression constant (e.g. array): reuse VAR_DEF expression parsing path
+                    int brace_depth = 0;
+                    int64_t expr_end_token_index = iter_get_index_at_if<Token>(
+                        tokens_iter, [&brace_depth](auto *token) {
+                            if (token->type == TokenType::BRACE_OPEN) {
+                                brace_depth++;
+                                return false;
+                            }
+                            if (token->type == TokenType::BRACE_CLOSE && brace_depth > 0) {
+                                brace_depth--;
+                                return false;
+                            }
+                            return brace_depth == 0 && (
+                                token->type == TokenType::NEWLINE ||
+                                token->type == TokenType::END
+                            );
+                        }
+                    );
+                    if (expr_end_token_index == -1) {
+                        append(errors, PARSE_ERROR_CREATE(UNEXPECTED_TOKEN, iter_current(tokens_iter)));
+                        return false;
+                    }
+                    auto expr_tokens_iter = iter_slice_by_offset(
+                        tokens_iter,
+                        tokens_iter->current_index,
+                        expr_end_token_index
+                    );
+                    if (expr_tokens_iter.elements.length == 0) {
+                        append(errors, PARSE_ERROR_CREATE(UNEXPECTED_TOKEN, iter_current(tokens_iter)));
+                        return false;
+                    }
+                    auto expr_parse_result = parse_expression(
+                        &expr_tokens_iter,
+                        context,
+                        nodes_block_iter,
+                        proc_params_block,
+                        proc_params_iter,
+                        types_iter,
+                        operands_iter,
+                        array_elements_iter,
+                        errors
+                    );
+                    if (!is_ok(expr_parse_result)) {
+                        append(errors, expr_parse_result.err);
+                        return false;
+                    }
+                    auto *expr_node_ptr = iter_append(nodes_block_iter, std::move(expr_parse_result.ok));
+                    (void)iter_append(nodes_block_iter, ASTNode {
+                        .type = ASTNodeType::VARIABLE_DEFINITION,
+                        .parent = parent_node,
+                        .variable_definition = {
+                            .name = next_token->identifier.content,
+                            .expr = expr_node_ptr,
+                        },
+                    });
+                    tokens_iter->current_index += expr_tokens_iter.current_index;
+                    assert(
+                        iter_current(tokens_iter)->type == TokenType::NEWLINE ||
+                        iter_current(tokens_iter)->type == TokenType::END &&
+                        "Expected newline or end token after constant expression definition");
+                    (void)iter_next(tokens_iter);
+                }
                 break;
             }
         }

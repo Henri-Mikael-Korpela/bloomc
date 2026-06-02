@@ -320,6 +320,13 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
                                                 PUSH_INT(arg.integer_literal.value.value);
                                                 PUSH_STR(");\n");
                                             }
+                                            else if (arg.type == ASTNodeType::ARRAY_ACCESS) {
+                                                PUSH_STR("printf(\"%d\", ");
+                                                PUSH_STR(arg.array_access.variable_name);
+                                                PUSH_STR('[');
+                                                PUSH_INT(arg.array_access.index);
+                                                PUSH_STR("]);\n");
+                                            }
                                             arg_idx++;
                                         }
                                         k++;
@@ -341,6 +348,16 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
                                 emit_proc_call_args(&stmt->proc_call.arguments);
                                 PUSH_STR(");\n");
                             }
+                            break;
+                        }
+                        case ASTNodeType::CONSTANT_DEFINITION: {
+                            push_tabs();
+                            register_var(stmt->constant_def.name, VarKind::INT);
+                            PUSH_STR("int const ");
+                            PUSH_STR(stmt->constant_def.name);
+                            PUSH_STR(" = ");
+                            PUSH_INT(stmt->constant_def.value);
+                            PUSH_STR(";\n");
                             break;
                         }
                         case ASTNodeType::VARIABLE_DEFINITION: {

@@ -12,6 +12,7 @@ enum class ASTNodeType : uint8_t {
     BOOLEAN_LITERAL,
     BREAK,
     BUILTIN_LENGTH,
+    CONSTANT_DEFINITION,
     BUILTIN_LENGTH_IN_BYTES,
     FOR_COND_LOOP,
     FOR_IN_LOOP,
@@ -129,6 +130,10 @@ struct ASTNode {
             ASTNode *expr;
         } variable_definition;
         struct {
+            Str name;
+            int64_t value;
+        } constant_def;
+        struct {
             Str element_name;
             Str index_name;
             Str collection_name;
@@ -167,6 +172,7 @@ constexpr auto to_string(ASTNodeType type) -> Str {
         case ASTNodeType::BOOLEAN_LITERAL:     return STR("boolean_literal");
         case ASTNodeType::BREAK:               return STR("break");
         case ASTNodeType::BUILTIN_LENGTH:          return STR("builtin_length");
+        case ASTNodeType::CONSTANT_DEFINITION: return STR("constant_definition");
         case ASTNodeType::BUILTIN_LENGTH_IN_BYTES: return STR("builtin_length_in_bytes");
         case ASTNodeType::FOR_COND_LOOP:       return STR("for_cond_loop");
         case ASTNodeType::FOR_IN_LOOP:         return STR("for_in_loop");

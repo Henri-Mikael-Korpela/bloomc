@@ -1,0 +1,6 @@
+main :: proc() ->
+    SIZE :: 3
+
+    // Constant in array initialization
+    a :: [SIZE]Int{ 2, 6, 12 }
+    print("A: {}, {}, {}\n", a[0], a[1], a[2])

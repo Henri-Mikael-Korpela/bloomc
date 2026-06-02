@@ -1,0 +1,5 @@
+my_func :: proc(a: Int) ->
+    print("A: {}\n", a)
+
+main :: proc() ->
+    my_func(true)

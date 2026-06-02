@@ -92,6 +92,9 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
                     PUSH_STR(arg->identifier);
                     PUSH_STR(".length");
                     break;
+                case ASTNodeType::BOOLEAN_LITERAL:
+                    PUSH_BOOL(arg->boolean_literal.value);
+                    break;
                 case ASTNodeType::PROC_CALL:
                     PUSH_STR(arg->proc_call.caller_identifier);
                     PUSH_STR('(');
@@ -333,6 +336,11 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
                                                     PUSH_STR(arg.identifier);
                                                     PUSH_STR(");\n");
                                                 }
+                                            }
+                                            else if (arg.type == ASTNodeType::BOOLEAN_LITERAL) {
+                                                PUSH_STR("fputs(");
+                                                PUSH_STR(arg.boolean_literal.value ? "\"true\"" : "\"false\"");
+                                                PUSH_STR(", stdout);\n");
                                             }
                                             else if (arg.type == ASTNodeType::INTEGER_LITERAL) {
                                                 PUSH_STR("printf(\"%d\", ");

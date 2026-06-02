@@ -205,15 +205,54 @@ static auto print_value(FILE *file, Context *context) -> void {
     );
 }
 
+static inline auto str_equal(Str a, Str b) -> bool {
+    return a.length == b.length && strncmp(a.data, b.data, a.length) == 0;
+}
+
+static auto find_proc_def_node(
+    Iterator<ASTNode> const *nodes_block_iter,
+    Str const &name
+) -> ASTNode const * {
+    for (size_t i = 0; i < nodes_block_iter->current_index; i++) {
+        auto const &node = nodes_block_iter->elements.data[i];
+        if (node.type == ASTNodeType::PROC_DEF && str_equal(node.proc_def.name, name)) {
+            return &node;
+        }
+    }
+    return nullptr;
+}
+
+static auto infer_arg_type_name(ASTNode const *arg, Context const *context) -> Str {
+    switch (arg->type) {
+        case ASTNodeType::BOOLEAN_LITERAL:
+            return cstr_to_str("Bool");
+        case ASTNodeType::INTEGER_LITERAL:
+            return cstr_to_str("Int");
+        case ASTNodeType::STRING_LITERAL:
+            return cstr_to_str("Str");
+        case ASTNodeType::IDENTIFIER:
+            for (size_t i = context->var_type_count; i-- > 0;) {
+                Str const &vname = context->var_types[i].name;
+                if (str_equal(vname, arg->identifier)) {
+                    return context->var_types[i].is_bool ? cstr_to_str("Bool") : cstr_to_str("Int");
+                }
+            }
+            return {};
+        default:
+            return {};
+    }
+}
+
 /**
  * Parses procedure call parameters and appends them to the given procedure call AST node.
- * 
+ *
  * @return true on success, false on failure.
  */
 static auto parse_proc_call_arguments(
     Iterator<Token> *tokens_iter,
     ASTNode *proc_call_node,
     Iterator<ASTNode> *nodes_block_iter,
+    Context *context,
     DynamicArray<ParseError> *errors
 ) -> bool {
     assert(proc_call_node->type == ASTNodeType::PROC_CALL &&
@@ -234,6 +273,35 @@ static auto parse_proc_call_arguments(
 
     size_t const proc_call_nodes_begin_index = nodes_block_iter->current_index;
     size_t arg_count = 0;
+
+    auto check_arg_type = [&](Token const *arg_token) -> bool {
+        if (context == nullptr) { return true; }
+        ASTNode const *proc_def = find_proc_def_node(nodes_block_iter, proc_call_node->proc_call.caller_identifier);
+        if (proc_def == nullptr || arg_count >= proc_def->proc_def.parameters.length) {
+            return true;
+        }
+        ProcParameterASTNode const &param = proc_def->proc_def.parameters.data[arg_count];
+        if (param.type_name.length == 0) { return true; }
+        ASTNode const *appended_arg = &nodes_block_iter->elements.data[nodes_block_iter->current_index - 1];
+        Str actual_type = infer_arg_type_name(appended_arg, context);
+        if (actual_type.length == 0 || str_equal(actual_type, param.type_name)) { return true; }
+        size_t token_width = 1;
+        if (arg_token->type == TokenType::KEYWORD_TRUE) { token_width = 4; }
+        else if (arg_token->type == TokenType::KEYWORD_FALSE) { token_width = 5; }
+        else if (arg_token->type == TokenType::IDENTIFIER) { token_width = arg_token->identifier.content.length; }
+        else if (arg_token->type == TokenType::STRING_LITERAL) { token_width = arg_token->string_literal.content.length + 2; }
+        append(errors, ParseError {
+            .code = ParseErrorCode::PROC_ARG_TYPE_MISMATCH,
+            .position = arg_token->position,
+            .src_code_line = __LINE__,
+            .token_type = arg_token->type,
+            .size_token_width = token_width,
+            .expected_type_name = param.type_name,
+            .actual_type_name = actual_type,
+            .param_name = param.name,
+        });
+        return false;
+    };
 
     Token *next_token;
     while(true) {
@@ -287,6 +355,7 @@ static auto parse_proc_call_arguments(
                         .parent = proc_call_node,
                         .identifier = inner_id_token->identifier.content,
                     });
+                    if (!check_arg_type(next_token)) { return false; }
                     arg_count++;
                 }
                 else {
@@ -315,6 +384,7 @@ static auto parse_proc_call_arguments(
                         .parent = proc_call_node,
                         .proc_call = { .caller_identifier = next_token->identifier.content },
                     });
+                    if (!check_arg_type(next_token)) { return false; }
                     arg_count++;
                     pending_nested_calls[pending_nested_call_count++] = {
                         nested_node,
@@ -356,6 +426,7 @@ static auto parse_proc_call_arguments(
                         .index = index_token->integer_literal.value,
                     },
                 });
+                if (!check_arg_type(next_token)) { return false; }
                 arg_count++;
             }
             else {
@@ -364,6 +435,7 @@ static auto parse_proc_call_arguments(
                     .parent = proc_call_node,
                     .identifier = next_token->identifier.content,
                 });
+                if (!check_arg_type(next_token)) { return false; }
                 arg_count++;
             }
         }
@@ -375,6 +447,7 @@ static auto parse_proc_call_arguments(
                     .value = next_token->string_literal.content,
                 },
             });
+            if (!check_arg_type(next_token)) { return false; }
             arg_count++;
         }
         else if (next_token->type == TokenType::INTEGER_LITERAL) {
@@ -385,6 +458,20 @@ static auto parse_proc_call_arguments(
                     .value = IntegerLiteralASTNode { .value = next_token->integer_literal.value },
                 },
             });
+            if (!check_arg_type(next_token)) { return false; }
+            arg_count++;
+        }
+        else if (next_token->type == TokenType::KEYWORD_TRUE ||
+                 next_token->type == TokenType::KEYWORD_FALSE)
+        {
+            (void)iter_append(nodes_block_iter, ASTNode {
+                .type = ASTNodeType::BOOLEAN_LITERAL,
+                .parent = proc_call_node,
+                .boolean_literal = {
+                    .value = next_token->type == TokenType::KEYWORD_TRUE,
+                },
+            });
+            if (!check_arg_type(next_token)) { return false; }
             arg_count++;
         }
         else {
@@ -407,7 +494,7 @@ static auto parse_proc_call_arguments(
             pending.token_begin,
             static_cast<int64_t>(pending.token_end)
         );
-        if (!parse_proc_call_arguments(&nested_args_iter, pending.node, nodes_block_iter, errors)) {
+        if (!parse_proc_call_arguments(&nested_args_iter, pending.node, nodes_block_iter, context, errors)) {
             return false;
         }
     }
@@ -455,7 +542,7 @@ static auto parse_proc_params(
                 // Just skip commas
                 continue;
             case TokenType::IDENTIFIER: {
-                (void)iter_append(proc_params_iter, ProcParameterASTNode {
+                auto *param_node = iter_append(proc_params_iter, ProcParameterASTNode {
                     .name = current_token->identifier.content
                 });
 
@@ -472,8 +559,8 @@ static auto parse_proc_params(
                     return false;
                 }
 
-                // TODO: Skip the type token for now but deal with it later
-                (void)iter_next(tokens_iter);
+                auto *type_token = iter_next(tokens_iter);
+                param_node->type_name = type_token->identifier.content;
                 break;
             }
             default:
@@ -702,7 +789,7 @@ static auto parse_expression(
                         .parent = nullptr,
                         .proc_call = { .caller_identifier = token->identifier.content },
                     };
-                    if (!parse_proc_call_arguments(&arg_tokens_iter, &temp_node, nodes_block_iter, errors)) {
+                    if (!parse_proc_call_arguments(&arg_tokens_iter, &temp_node, nodes_block_iter, context, errors)) {
                         return err<BinaryOperand, ParseError>(PARSE_ERROR_CREATE(UNEXPECTED_TOKEN, token));
                     }
                     tokens_iter->current_index = close_paren_index + 1;
@@ -1048,11 +1135,13 @@ static auto parse_statement(
                     &proc_call_arg_tokens_iter,
                     proc_call_node,
                     nodes_block_iter,
+                    context,
                     errors
                 );
                 if (!proc_call_args_parsed_ok) {
-                    // TODO: Append a better error
-                    append(errors, PARSE_ERROR_CREATE(UNEXPECTED_TOKEN, iter_current(tokens_iter)));
+                    if (errors->length == 0) {
+                        append(errors, PARSE_ERROR_CREATE(UNEXPECTED_TOKEN, iter_current(tokens_iter)));
+                    }
                     return false;
                 }
 

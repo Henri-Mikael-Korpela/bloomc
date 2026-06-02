@@ -9,12 +9,15 @@ enum class ParseErrorCode {
     UNEXPECTED_TOKEN,
     ARRAY_LENGTH_MISMATCH,
     BOOL_IN_ADDITION,
+    PROC_ARG_TYPE_MISMATCH,
 };
 
 constexpr auto to_string(ParseErrorCode code) -> char const * {
     switch (code) {
-        case ParseErrorCode::UNEXPECTED_TOKEN:      return "unexpected token";
-        case ParseErrorCode::ARRAY_LENGTH_MISMATCH: return "array length mismatch";
+        case ParseErrorCode::UNEXPECTED_TOKEN:       return "unexpected token";
+        case ParseErrorCode::ARRAY_LENGTH_MISMATCH:  return "array length mismatch";
+        case ParseErrorCode::BOOL_IN_ADDITION:       return "bool in addition";
+        case ParseErrorCode::PROC_ARG_TYPE_MISMATCH: return "proc arg type mismatch";
     }
     return "unknown error";
 }
@@ -29,6 +32,9 @@ struct ParseError {
     size_t size_token_width;
     Token::Position brace_open_pos;
     Token::Position brace_close_pos;
+    Str expected_type_name;
+    Str actual_type_name;
+    Str param_name;
 };
 
 auto report_parse_errors(Array<ParseError> errors, bool *had_errors, Str source_content, Str filename) -> void;

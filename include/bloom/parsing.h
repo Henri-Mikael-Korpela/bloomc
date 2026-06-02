@@ -76,6 +76,7 @@ struct BinaryOperand {
 
 struct ProcParameterASTNode {
     Str name;
+    Str type_name;
 };
 
 struct TypeASTNode {

@@ -119,6 +119,52 @@ auto report_parse_errors(Array<ParseError> errors, bool *had_errors, Str source_
                 "%s    - If this is intentional, convert the boolean value to an integer (Int) before adding.%s\n",
                 ANSI_BLUE, ANSI_RESET);
         }
+        else if (error.code == ParseErrorCode::PROC_ARG_TYPE_MISMATCH) {
+            fprintf(stderr, "\n%sError: Type mismatch in procedure call:%s\n", ANSI_RED, ANSI_RESET);
+            fprintf(stderr,
+                "%s    Cannot pass a value of type '%.*s' to parameter '%.*s' which expects type '%.*s'.%s\n",
+                ANSI_RED,
+                (int)error.actual_type_name.length, error.actual_type_name.data,
+                (int)error.param_name.length, error.param_name.data,
+                (int)error.expected_type_name.length, error.expected_type_name.data,
+                ANSI_RESET);
+            fprintf(stderr, "\n%sLocation:%s\n", ANSI_CYAN, ANSI_RESET);
+            fprintf(stderr, "%s    In file %.*s, line %llu, column %llu:%s\n",
+                ANSI_CYAN, (int)filename.length, filename.data,
+                (unsigned long long)error.position.line,
+                (unsigned long long)(error.position.col - 1), ANSI_RESET);
+            Str const source_line = get_source_line(source_content, error.position.line);
+            uint64_t const line_num = error.position.line;
+            int gutter_digits = 0;
+            for (uint64_t n = line_num; n > 0; n /= 10) { gutter_digits++; }
+            int const gutter_width = gutter_digits + 1;
+            fprintf(stderr, "%s%*s|%s\n", ANSI_CYAN, gutter_width, "", ANSI_RESET);
+            fprintf(stderr, "%s%llu |%s%.*s\n",
+                ANSI_CYAN, (unsigned long long)line_num, ANSI_RESET,
+                (int)source_line.length, source_line.data);
+            fprintf(stderr, "%s%*s|%s", ANSI_CYAN, gutter_width, "", ANSI_RESET);
+            for (uint64_t i = 0; i < error.position.col - 1; i++) {
+                fputc(' ', stderr);
+            }
+            fprintf(stderr, "%s", ANSI_ORANGE);
+            size_t const underline_width = error.size_token_width > 0 ? error.size_token_width : 1;
+            for (size_t i = 0; i < underline_width; i++) {
+                fputc('^', stderr);
+            }
+            fprintf(stderr, "%s\n", ANSI_RESET);
+            fprintf(stderr, "\n%sHow to fix:%s\n", ANSI_BLUE, ANSI_RESET);
+            fprintf(stderr,
+                "%s    - Change the argument to be of type '%.*s' to match the parameter '%.*s'.%s\n",
+                ANSI_BLUE,
+                (int)error.expected_type_name.length, error.expected_type_name.data,
+                (int)error.param_name.length, error.param_name.data,
+                ANSI_RESET);
+            fprintf(stderr,
+                "%s    - If this is intentional, convert the value to '%.*s' before passing it.%s\n",
+                ANSI_BLUE,
+                (int)error.expected_type_name.length, error.expected_type_name.data,
+                ANSI_RESET);
+        }
         else if (error.code == ParseErrorCode::UNEXPECTED_TOKEN) {
             Str const token_type_str = to_string(error.token_type);
             fprintf(stderr, "\n%sError: Unexpected token:%s\n", ANSI_RED, ANSI_RESET);

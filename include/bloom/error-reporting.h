@@ -8,6 +8,7 @@
 enum class ParseErrorCode {
     UNEXPECTED_TOKEN,
     ARRAY_LENGTH_MISMATCH,
+    BOOL_IN_ADDITION,
 };
 
 constexpr auto to_string(ParseErrorCode code) -> char const * {

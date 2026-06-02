@@ -84,6 +84,41 @@ auto report_parse_errors(Array<ParseError> errors, bool *had_errors, Str source_
                 " values to match the length of %lld.%s\n",
                 ANSI_BLUE, (long long)error.explicit_length, (long long)error.explicit_length, ANSI_RESET);
         }
+        else if (error.code == ParseErrorCode::BOOL_IN_ADDITION) {
+            fprintf(stderr, "\n%sError: Type error in addition:%s\n", ANSI_RED, ANSI_RESET);
+            fprintf(stderr, "%s    Adding an integer to a boolean is forbidden.%s\n",
+                ANSI_RED, ANSI_RESET);
+            fprintf(stderr, "\n%sLocation:%s\n", ANSI_CYAN, ANSI_RESET);
+            fprintf(stderr, "%s    In file %.*s, line %llu, column %llu:%s\n",
+                ANSI_CYAN, (int)filename.length, filename.data,
+                (unsigned long long)error.position.line,
+                (unsigned long long)(error.position.col - 1), ANSI_RESET);
+            Str const source_line = get_source_line(source_content, error.position.line);
+            uint64_t const line_num = error.position.line;
+            int gutter_digits = 0;
+            for (uint64_t n = line_num; n > 0; n /= 10) { gutter_digits++; }
+            int const gutter_width = gutter_digits + 1;
+            fprintf(stderr, "%s%*s|%s\n", ANSI_CYAN, gutter_width, "", ANSI_RESET);
+            fprintf(stderr, "%s%llu |%s%.*s\n",
+                ANSI_CYAN, (unsigned long long)line_num, ANSI_RESET,
+                (int)source_line.length, source_line.data);
+            fprintf(stderr, "%s%*s|%s", ANSI_CYAN, gutter_width, "", ANSI_RESET);
+            for (uint64_t i = 0; i < error.position.col - 1; i++) {
+                fputc(' ', stderr);
+            }
+            fprintf(stderr, "%s", ANSI_ORANGE);
+            for (size_t i = 0; i < error.size_token_width; i++) {
+                fputc('^', stderr);
+            }
+            fprintf(stderr, "%s\n", ANSI_RESET);
+            fprintf(stderr, "\n%sHow to fix:%s\n", ANSI_BLUE, ANSI_RESET);
+            fprintf(stderr,
+                "%s    - Ensure both values in an addition are of the same numeric type (integer).%s\n",
+                ANSI_BLUE, ANSI_RESET);
+            fprintf(stderr,
+                "%s    - If this is intentional, convert the boolean value to an integer (Int) before adding.%s\n",
+                ANSI_BLUE, ANSI_RESET);
+        }
         else if (error.code == ParseErrorCode::UNEXPECTED_TOKEN) {
             Str const token_type_str = to_string(error.token_type);
             fprintf(stderr, "\n%sError: Unexpected token:%s\n", ANSI_RED, ANSI_RESET);

@@ -765,6 +765,18 @@ static auto parse_expression(
                 {
                     (void)iter_next(tokens_iter); // consume '+'
                     Token *operand_token = iter_next(tokens_iter);
+                    if (operand_token->type == TokenType::KEYWORD_TRUE ||
+                        operand_token->type == TokenType::KEYWORD_FALSE)
+                    {
+                        size_t const bool_width =
+                            (operand_token->type == TokenType::KEYWORD_TRUE) ? 4 : 5;
+                        return err<ASTNode, ParseError>(ParseError {
+                            .code = ParseErrorCode::BOOL_IN_ADDITION,
+                            .position = operand_token->position,
+                            .src_code_line = __LINE__,
+                            .size_token_width = bool_width,
+                        });
+                    }
                     auto operand_result = parse_operand(operand_token);
                     if (!is_ok(operand_result)) {
                         return err<ASTNode, ParseError>(operand_result.err);

@@ -1,0 +1,4 @@
+main :: proc() ->
+    i := 4
+
+    x := i + true // Fails

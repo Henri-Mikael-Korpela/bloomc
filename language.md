@@ -24,6 +24,17 @@ in
 proc
 ```
 
+## Data types
+
+### Boolean
+
+Bloom support a boolean type whose values are `true` and `false`:
+
+```
+my_var := false
+my_var := true
+```
+
 ## Operators
 
 Bloom has the following operators:

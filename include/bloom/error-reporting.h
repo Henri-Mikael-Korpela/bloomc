@@ -25,6 +25,7 @@ struct ParseError {
     TokenType token_type;
     int64_t explicit_length;
     size_t actual_count;
+    size_t size_token_width;
     Token::Position brace_open_pos;
     Token::Position brace_close_pos;
 };

@@ -55,11 +55,15 @@ auto report_parse_errors(Array<ParseError> errors, bool *had_errors, Str source_
             for (uint64_t i = 0; i < error.position.col - 1; i++) {
                 fputc(' ', stderr);
             }
-            fprintf(stderr, "%s^%s", ANSI_ORANGE, ANSI_RESET);
+            fprintf(stderr, "%s", ANSI_ORANGE);
+            for (size_t i = 0; i < error.size_token_width; i++) {
+                fputc('^', stderr);
+            }
+            fprintf(stderr, "%s", ANSI_RESET);
             if (error.brace_open_pos.line == error.position.line &&
                 error.brace_close_pos.line == error.position.line)
             {
-                uint64_t const gap = error.brace_open_pos.col - error.position.col - 1;
+                uint64_t const gap = error.brace_open_pos.col - error.position.col - error.size_token_width;
                 for (uint64_t i = 0; i < gap; i++) {
                     fputc(' ', stderr);
                 }

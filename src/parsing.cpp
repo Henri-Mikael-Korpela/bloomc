@@ -637,6 +637,9 @@ static auto parse_expression(
                     .src_code_line = __LINE__,
                     .explicit_length = explicit_length,
                     .actual_count = actual_count,
+                    .size_token_width = (size_token->type == TokenType::IDENTIFIER)
+                        ? size_token->identifier.content.length
+                        : 1,
                     .brace_open_pos = brace_open_pos,
                     .brace_close_pos = brace_close_pos,
                 });

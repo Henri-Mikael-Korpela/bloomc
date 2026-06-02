@@ -1,5 +1,5 @@
 main :: proc() ->
-    LENGTH :: 3
+    LENGTH :: 4
 
     // Constant in array initialization
     a :: [LENGTH]Int{ 2, 6, 12 }

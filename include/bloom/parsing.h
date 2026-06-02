@@ -130,6 +130,7 @@ struct ASTNode {
         } variable_definition;
         struct {
             Str element_name;
+            Str index_name;
             Str collection_name;
             Array<ASTNode> body;
         } for_in_loop;

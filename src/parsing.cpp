@@ -1242,6 +1242,17 @@ static auto parse_statement(
             auto *elem_token = iter_next(tokens_iter);
             auto *op_token = iter_next(tokens_iter);
 
+            Str index_name = {};
+            if (op_token->type == TokenType::COMMA) {
+                auto *index_token = iter_next(tokens_iter);
+                if (index_token->type != TokenType::IDENTIFIER) {
+                    append(errors, PARSE_ERROR_CREATE(UNEXPECTED_TOKEN, index_token));
+                    return false;
+                }
+                index_name = index_token->identifier.content;
+                op_token = iter_next(tokens_iter);
+            }
+
             if (op_token->type == TokenType::KEYWORD_IN) {
                 if (iter_peek(tokens_iter)->type == TokenType::INTEGER_LITERAL) {
                     auto *start_token = iter_next(tokens_iter);
@@ -1324,6 +1335,7 @@ static auto parse_statement(
                         .parent = parent_node,
                         .for_in_loop = {
                             .element_name = elem_token->identifier.content,
+                            .index_name = index_name,
                             .collection_name = coll_token->identifier.content,
                             .body = Array<ASTNode>(
                                 nodes_block_iter->elements.data + nodes_block_iter->current_index + 1,

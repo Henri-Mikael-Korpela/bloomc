@@ -26,7 +26,7 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
     ArrayVarEntry array_vars[64];
     size_t array_var_count = 0;
 
-    enum class VarKind : uint8_t { INT, BOOL, BLOOM_STR, BLOOM_CHAR };
+    enum class VarKind : uint8_t { INT, BOOL, BLOOM_STR, BLOOM_CHAR, SIZE_T };
     struct VarEntry {
         Str name;
         VarKind kind;
@@ -304,6 +304,11 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
                                                     PUSH_STR(arg.identifier);
                                                     PUSH_STR(".length, stdout);\n");
                                                 }
+                                                else if (kind == VarKind::SIZE_T) {
+                                                    PUSH_STR("printf(\"%zu\", ");
+                                                    PUSH_STR(arg.identifier);
+                                                    PUSH_STR(");\n");
+                                                }
                                                 else {
                                                     PUSH_STR("printf(\"%d\", ");
                                                     PUSH_STR(arg.identifier);
@@ -400,12 +405,17 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
                             size_t const loop_idx = for_in_counter++;
                             Str const &elem = stmt->for_in_loop.element_name;
                             Str const &coll = stmt->for_in_loop.collection_name;
+                            Str const &idx = stmt->for_in_loop.index_name;
                             register_var(elem, VarKind::BLOOM_CHAR);
 
                             push_tabs(); PUSH_STR("{\n");
                             push_tabs(); PUSH_STR("\tsize_t __bloom_i");
                             PUSH_INT(static_cast<intmax_t>(loop_idx));
                             PUSH_STR(" = 0;\n");
+                            if (idx.length > 0) {
+                                register_var(idx, VarKind::SIZE_T);
+                                push_tabs(); PUSH_STR("\tsize_t "); PUSH_STR(idx); PUSH_STR(" = 0;\n");
+                            }
                             push_tabs(); PUSH_STR("\twhile (__bloom_i");
                             PUSH_INT(static_cast<intmax_t>(loop_idx));
                             PUSH_STR(" < "); PUSH_STR(coll); PUSH_STR(".length) {\n");
@@ -449,6 +459,9 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
 
                             for (auto &body_stmt : stmt->for_in_loop.body) {
                                 emit_stmt(&body_stmt, stmt, depth + 2);
+                            }
+                            if (idx.length > 0) {
+                                push_tabs(); PUSH_STR("\t\t"); PUSH_STR(idx); PUSH_STR("++;\n");
                             }
 
                             push_tabs(); PUSH_STR("\t}\n");

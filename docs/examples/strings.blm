@@ -1,5 +1,9 @@
 main :: proc() ->
     s := "Hello, Абрам!"
     printf("Length (in bytes): %zu", length_in_bytes(s))
+
     for c in s ->
         print("Char: {}\n", c)
+
+    for c, i in s ->
+        print("Char: {} at index {}\n", c, i)

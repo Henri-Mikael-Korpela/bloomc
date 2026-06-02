@@ -1,0 +1,6 @@
+main :: proc() ->
+    is_ok := true
+    print("Is OK: {}\n", is_ok)
+
+    is_alright := false
+    print("Are you alright? {}", is_alright)

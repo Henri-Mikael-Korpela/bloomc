@@ -309,6 +309,11 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
                                                     PUSH_STR(arg.identifier);
                                                     PUSH_STR(");\n");
                                                 }
+                                                else if (kind == VarKind::BOOL) {
+                                                    PUSH_STR("fputs(");
+                                                    PUSH_STR(arg.identifier);
+                                                    PUSH_STR(" ? \"true\" : \"false\", stdout);\n");
+                                                }
                                                 else {
                                                     PUSH_STR("printf(\"%d\", ");
                                                     PUSH_STR(arg.identifier);

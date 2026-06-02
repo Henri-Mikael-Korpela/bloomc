@@ -1,6 +1,8 @@
+// No parameters, no return type
 print_thing :: proc() ->
     printf("Print a thing\n")
 
+// Some parameters, return type
 sum :: proc(a: Int, b: Int) Int ->
     a + b
 

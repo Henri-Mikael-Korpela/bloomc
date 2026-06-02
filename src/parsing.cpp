@@ -213,7 +213,22 @@ static auto parse_proc_call_arguments(
     assert(proc_call_node->type == ASTNodeType::PROC_CALL &&
         "Procedure call node should be of PROC_CALL type after parsing arguments");
 
-    size_t proc_call_nodes_begin_index = nodes_block_iter->current_index;
+    // Nested proc calls are parsed in two phases:
+    //   Phase 1: append all top-level argument nodes (nested calls get placeholder nodes)
+    //   Phase 2: fill in each nested call's sub-arguments after the top-level args
+    // This keeps the outer call's arguments slice contiguous and correctly sized.
+    struct PendingNestedCall {
+        ASTNode *node;
+        size_t token_begin;
+        size_t token_end;
+    };
+    constexpr size_t MAX_PENDING_NESTED_CALLS = 16;
+    PendingNestedCall pending_nested_calls[MAX_PENDING_NESTED_CALLS];
+    size_t pending_nested_call_count = 0;
+
+    size_t const proc_call_nodes_begin_index = nodes_block_iter->current_index;
+    size_t arg_count = 0;
+
     Token *next_token;
     while(true) {
         next_token = iter_try_next(tokens_iter);
@@ -231,36 +246,77 @@ static auto parse_proc_call_arguments(
             if (tokens_iter->current_index < tokens_iter->elements.length &&
                 iter_peek(tokens_iter)->type == TokenType::PARENTHESIS_OPEN)
             {
+                bool const is_builtin = (
+                    next_token->identifier.content == "length" ||
+                    next_token->identifier.content == "length_in_bytes"
+                );
                 (void)iter_next(tokens_iter); // consume (
-                auto *inner_id_token = iter_next(tokens_iter);
-                if (inner_id_token->type != TokenType::IDENTIFIER) {
-                    append(errors, ParseError {
-                        .code = ParseErrorCode::UNEXPECTED_TOKEN,
-                        .position = inner_id_token->position,
-                        .src_code_line = __LINE__,
-                        .token_type = inner_id_token->type,
+                if (is_builtin) {
+                    auto *inner_id_token = iter_next(tokens_iter);
+                    if (inner_id_token->type != TokenType::IDENTIFIER) {
+                        append(errors, ParseError {
+                            .code = ParseErrorCode::UNEXPECTED_TOKEN,
+                            .position = inner_id_token->position,
+                            .src_code_line = __LINE__,
+                            .token_type = inner_id_token->type,
+                        });
+                        return false;
+                    }
+                    auto *close_paren = iter_next(tokens_iter);
+                    if (close_paren->type != TokenType::PARENTHESIS_CLOSE) {
+                        append(errors, ParseError {
+                            .code = ParseErrorCode::UNEXPECTED_TOKEN,
+                            .position = close_paren->position,
+                            .src_code_line = __LINE__,
+                            .token_type = close_paren->type,
+                        });
+                        return false;
+                    }
+                    ASTNodeType const builtin_type =
+                        (next_token->identifier.content == "length_in_bytes")
+                        ? ASTNodeType::BUILTIN_LENGTH_IN_BYTES
+                        : ASTNodeType::BUILTIN_LENGTH;
+                    (void)iter_append(nodes_block_iter, ASTNode {
+                        .type = builtin_type,
+                        .parent = proc_call_node,
+                        .identifier = inner_id_token->identifier.content,
                     });
-                    return false;
+                    arg_count++;
                 }
-                auto *close_paren = iter_next(tokens_iter);
-                if (close_paren->type != TokenType::PARENTHESIS_CLOSE) {
-                    append(errors, ParseError {
-                        .code = ParseErrorCode::UNEXPECTED_TOKEN,
-                        .position = close_paren->position,
-                        .src_code_line = __LINE__,
-                        .token_type = close_paren->type,
+                else {
+                    // General nested proc call: append a placeholder node for phase 1,
+                    // defer sub-argument parsing to phase 2 so other top-level arguments
+                    // added after this call remain contiguous with the outer arg slice.
+                    assert(pending_nested_call_count < MAX_PENDING_NESTED_CALLS &&
+                        "Too many nested proc call arguments");
+                    size_t const nested_tokens_begin = tokens_iter->current_index;
+                    int paren_depth = 0;
+                    int64_t const close_paren_idx = iter_get_index_at_if<Token>(
+                        tokens_iter, [&paren_depth](Token const *t) {
+                            if (t->type == TokenType::PARENTHESIS_OPEN) {
+                                paren_depth++;
+                                return false;
+                            }
+                            if (t->type == TokenType::PARENTHESIS_CLOSE) {
+                                if (paren_depth == 0) return true;
+                                paren_depth--;
+                            }
+                            return false;
+                        }
+                    );
+                    auto *nested_node = iter_append(nodes_block_iter, ASTNode {
+                        .type = ASTNodeType::PROC_CALL,
+                        .parent = proc_call_node,
+                        .proc_call = { .caller_identifier = next_token->identifier.content },
                     });
-                    return false;
+                    arg_count++;
+                    pending_nested_calls[pending_nested_call_count++] = {
+                        nested_node,
+                        nested_tokens_begin,
+                        static_cast<size_t>(close_paren_idx),
+                    };
+                    tokens_iter->current_index = static_cast<size_t>(close_paren_idx) + 1;
                 }
-                ASTNodeType const builtin_type =
-                    (next_token->identifier.content == "length_in_bytes")
-                    ? ASTNodeType::BUILTIN_LENGTH_IN_BYTES
-                    : ASTNodeType::BUILTIN_LENGTH;
-                (void)iter_append(nodes_block_iter, ASTNode {
-                    .type = builtin_type,
-                    .parent = proc_call_node,
-                    .identifier = inner_id_token->identifier.content,
-                });
             }
             else if (tokens_iter->current_index < tokens_iter->elements.length &&
                 iter_peek(tokens_iter)->type == TokenType::BRACKET_OPEN)
@@ -294,6 +350,7 @@ static auto parse_proc_call_arguments(
                         .index = index_token->integer_literal.value,
                     },
                 });
+                arg_count++;
             }
             else {
                 (void)iter_append(nodes_block_iter, ASTNode {
@@ -301,6 +358,7 @@ static auto parse_proc_call_arguments(
                     .parent = proc_call_node,
                     .identifier = next_token->identifier.content,
                 });
+                arg_count++;
             }
         }
         else if (next_token->type == TokenType::STRING_LITERAL) {
@@ -311,6 +369,7 @@ static auto parse_proc_call_arguments(
                     .value = next_token->string_literal.content,
                 },
             });
+            arg_count++;
         }
         else if (next_token->type == TokenType::INTEGER_LITERAL) {
             (void)iter_append(nodes_block_iter, ASTNode {
@@ -320,6 +379,7 @@ static auto parse_proc_call_arguments(
                     .value = IntegerLiteralASTNode { .value = next_token->integer_literal.value },
                 },
             });
+            arg_count++;
         }
         else {
             append(errors, ParseError {
@@ -332,12 +392,24 @@ static auto parse_proc_call_arguments(
         }
     }
 
-    // Set the arguments array for the procedure call node to include all parsed arguments
-    proc_call_node->proc_call.arguments = to_array(nodes_block_iter);
-    proc_call_node->proc_call.arguments = slice_by_offset(
-        &proc_call_node->proc_call.arguments,
-        proc_call_nodes_begin_index,
-        nodes_block_iter->current_index
+    // Phase 2: fill in sub-arguments for each deferred nested call.
+    // Sub-arguments are appended after all top-level argument nodes.
+    for (size_t p = 0; p < pending_nested_call_count; p++) {
+        auto &pending = pending_nested_calls[p];
+        auto nested_args_iter = iter_slice_by_offset(
+            tokens_iter,
+            pending.token_begin,
+            static_cast<int64_t>(pending.token_end)
+        );
+        if (!parse_proc_call_arguments(&nested_args_iter, pending.node, nodes_block_iter, errors)) {
+            return false;
+        }
+    }
+
+    // Set the arguments array to the contiguous slice of top-level argument nodes only.
+    proc_call_node->proc_call.arguments = Array<ASTNode>(
+        nodes_block_iter->elements.data + proc_call_nodes_begin_index,
+        arg_count
     );
 
     return true;

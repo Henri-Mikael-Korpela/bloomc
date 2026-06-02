@@ -63,7 +63,7 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
         return 0;
     };
 
-    auto emit_proc_call_args = [&](Array<ASTNode> *arguments) {
+    std::function<void(Array<ASTNode>*)> emit_proc_call_args = [&](Array<ASTNode> *arguments) {
         for (size_t i = 0; i < arguments->length; i++) {
             if (i != 0) { PUSH_STR(", "); }
             auto *arg = &(*arguments)[i];
@@ -91,6 +91,12 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
                 case ASTNodeType::BUILTIN_LENGTH_IN_BYTES:
                     PUSH_STR(arg->identifier);
                     PUSH_STR(".length");
+                    break;
+                case ASTNodeType::PROC_CALL:
+                    PUSH_STR(arg->proc_call.caller_identifier);
+                    PUSH_STR('(');
+                    emit_proc_call_args(&arg->proc_call.arguments);
+                    PUSH_STR(')');
                     break;
                 default:
                     assert(false && "Unsupported argument type in emit_proc_call_args");

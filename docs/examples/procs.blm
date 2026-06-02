@@ -1,5 +1,9 @@
+print_thing :: proc() ->
+    printf("Print a thing\n")
+
 sum :: proc(a: Int, b: Int) Int ->
     a + b
 
 main :: proc() ->
+    print_thing()
     printf("Sum: %i\n", sum(5, 10))

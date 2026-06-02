@@ -6,6 +6,7 @@ static constexpr char const *ANSI_RED    = "\033[91m";
 static constexpr char const *ANSI_CYAN   = "\033[96m";
 static constexpr char const *ANSI_ORANGE = "\033[38;5;208m";
 static constexpr char const *ANSI_BLUE   = "\033[94m";
+static constexpr char const *ANSI_GRAY   = "\033[90m";
 
 static auto get_source_line(Str content, uint64_t line_number) -> Str {
     uint64_t current_line = 1;
@@ -20,6 +21,67 @@ static auto get_source_line(Str content, uint64_t line_number) -> Str {
         }
     }
     return str_from_data_and_length(content.data, 0);
+}
+
+static auto count_source_lines(Str content) -> uint64_t {
+    if (content.length == 0) { return 0; }
+    uint64_t count = 1;
+    for (size_t i = 0; i < content.length; i++) {
+        if (content.data[i] == '\n') { count++; }
+    }
+    return count;
+}
+
+static auto emit_source_context(
+    Str source_content,
+    uint64_t error_line,
+    uint64_t col,
+    size_t underline_width,
+    Token::Position brace_open_pos,
+    Token::Position brace_close_pos
+) -> void {
+    uint64_t const total_lines = count_source_lines(source_content);
+    uint64_t const first_line = error_line > 2 ? error_line - 2 : 1;
+    uint64_t const last_line  = error_line + 2 <= total_lines ? error_line + 2 : total_lines;
+
+    int gutter_digits = 0;
+    for (uint64_t n = last_line; n > 0; n /= 10) { gutter_digits++; }
+    if (gutter_digits == 0) { gutter_digits = 1; }
+    int const gutter_width = gutter_digits + 1;
+
+    fprintf(stderr, "%s%*s|%s\n", ANSI_CYAN, gutter_width, "", ANSI_RESET);
+
+    for (uint64_t line = first_line; line <= last_line; line++) {
+        Str const line_content = get_source_line(source_content, line);
+        bool const is_error_line = (line == error_line);
+
+        if (is_error_line) {
+            fprintf(stderr, "%s%*llu |%s%.*s\n",
+                ANSI_CYAN, gutter_digits, (unsigned long long)line, ANSI_RESET,
+                (int)line_content.length, line_content.data);
+
+            fprintf(stderr, "%s%*s|%s", ANSI_CYAN, gutter_width, "", ANSI_RESET);
+            for (uint64_t i = 0; i < col - 1; i++) { fputc(' ', stderr); }
+            fprintf(stderr, "%s", ANSI_ORANGE);
+            size_t const underline = underline_width > 0 ? underline_width : 1;
+            for (size_t i = 0; i < underline; i++) { fputc('^', stderr); }
+            fprintf(stderr, "%s", ANSI_RESET);
+            if (brace_open_pos.line == error_line && brace_close_pos.line == error_line) {
+                uint64_t const gap = brace_open_pos.col - col - underline;
+                for (uint64_t i = 0; i < gap; i++) { fputc(' ', stderr); }
+                fprintf(stderr, "%s", ANSI_ORANGE);
+                uint64_t const brace_span = brace_close_pos.col - brace_open_pos.col + 1;
+                for (uint64_t i = 0; i < brace_span; i++) { fputc('^', stderr); }
+                fprintf(stderr, "%s", ANSI_RESET);
+            }
+            fprintf(stderr, "\n");
+        }
+        else {
+            fprintf(stderr, "%s%*llu |%.*s%s\n",
+                ANSI_GRAY, gutter_digits, (unsigned long long)line,
+                (int)line_content.length, line_content.data, ANSI_RESET);
+        }
+    }
 }
 
 auto report_parse_errors(Array<ParseError> errors, bool *had_errors, Str source_content, Str filename) -> void {
@@ -42,39 +104,9 @@ auto report_parse_errors(Array<ParseError> errors, bool *had_errors, Str source_
                 ANSI_CYAN, (int)filename.length, filename.data,
                 (unsigned long long)error.position.line,
                 (unsigned long long)(error.position.col - 1), ANSI_RESET);
-            Str const source_line = get_source_line(source_content, error.position.line);
-            uint64_t const line_num = error.position.line;
-            int gutter_digits = 0;
-            for (uint64_t n = line_num; n > 0; n /= 10) { gutter_digits++; }
-            int const gutter_width = gutter_digits + 1;
-            fprintf(stderr, "%s%*s|%s\n", ANSI_CYAN, gutter_width, "", ANSI_RESET);
-            fprintf(stderr, "%s%llu |%s%.*s\n",
-                ANSI_CYAN, (unsigned long long)line_num, ANSI_RESET,
-                (int)source_line.length, source_line.data);
-            fprintf(stderr, "%s%*s|%s", ANSI_CYAN, gutter_width, "", ANSI_RESET);
-            for (uint64_t i = 0; i < error.position.col - 1; i++) {
-                fputc(' ', stderr);
-            }
-            fprintf(stderr, "%s", ANSI_ORANGE);
-            for (size_t i = 0; i < error.size_token_width; i++) {
-                fputc('^', stderr);
-            }
-            fprintf(stderr, "%s", ANSI_RESET);
-            if (error.brace_open_pos.line == error.position.line &&
-                error.brace_close_pos.line == error.position.line)
-            {
-                uint64_t const gap = error.brace_open_pos.col - error.position.col - error.size_token_width;
-                for (uint64_t i = 0; i < gap; i++) {
-                    fputc(' ', stderr);
-                }
-                fprintf(stderr, "%s", ANSI_ORANGE);
-                uint64_t const brace_span = error.brace_close_pos.col - error.brace_open_pos.col + 1;
-                for (uint64_t i = 0; i < brace_span; i++) {
-                    fputc('^', stderr);
-                }
-                fprintf(stderr, "%s", ANSI_RESET);
-            }
-            fprintf(stderr, "\n\n%sHow to fix:%s\n", ANSI_BLUE, ANSI_RESET);
+            emit_source_context(source_content, error.position.line, error.position.col,
+                error.size_token_width, error.brace_open_pos, error.brace_close_pos);
+            fprintf(stderr, "\n%sHow to fix:%s\n", ANSI_BLUE, ANSI_RESET);
             fprintf(stderr,
                 "%s    - If the list of elements is correct, change the array length of %lld"
                 " to %zu to match the number of elements.%s\n",
@@ -93,24 +125,8 @@ auto report_parse_errors(Array<ParseError> errors, bool *had_errors, Str source_
                 ANSI_CYAN, (int)filename.length, filename.data,
                 (unsigned long long)error.position.line,
                 (unsigned long long)(error.position.col - 1), ANSI_RESET);
-            Str const source_line = get_source_line(source_content, error.position.line);
-            uint64_t const line_num = error.position.line;
-            int gutter_digits = 0;
-            for (uint64_t n = line_num; n > 0; n /= 10) { gutter_digits++; }
-            int const gutter_width = gutter_digits + 1;
-            fprintf(stderr, "%s%*s|%s\n", ANSI_CYAN, gutter_width, "", ANSI_RESET);
-            fprintf(stderr, "%s%llu |%s%.*s\n",
-                ANSI_CYAN, (unsigned long long)line_num, ANSI_RESET,
-                (int)source_line.length, source_line.data);
-            fprintf(stderr, "%s%*s|%s", ANSI_CYAN, gutter_width, "", ANSI_RESET);
-            for (uint64_t i = 0; i < error.position.col - 1; i++) {
-                fputc(' ', stderr);
-            }
-            fprintf(stderr, "%s", ANSI_ORANGE);
-            for (size_t i = 0; i < error.size_token_width; i++) {
-                fputc('^', stderr);
-            }
-            fprintf(stderr, "%s\n", ANSI_RESET);
+            emit_source_context(source_content, error.position.line, error.position.col,
+                error.size_token_width, {}, {});
             fprintf(stderr, "\n%sHow to fix:%s\n", ANSI_BLUE, ANSI_RESET);
             fprintf(stderr,
                 "%s    - Ensure both values in an addition are of the same numeric type (integer).%s\n",
@@ -133,25 +149,8 @@ auto report_parse_errors(Array<ParseError> errors, bool *had_errors, Str source_
                 ANSI_CYAN, (int)filename.length, filename.data,
                 (unsigned long long)error.position.line,
                 (unsigned long long)(error.position.col - 1), ANSI_RESET);
-            Str const source_line = get_source_line(source_content, error.position.line);
-            uint64_t const line_num = error.position.line;
-            int gutter_digits = 0;
-            for (uint64_t n = line_num; n > 0; n /= 10) { gutter_digits++; }
-            int const gutter_width = gutter_digits + 1;
-            fprintf(stderr, "%s%*s|%s\n", ANSI_CYAN, gutter_width, "", ANSI_RESET);
-            fprintf(stderr, "%s%llu |%s%.*s\n",
-                ANSI_CYAN, (unsigned long long)line_num, ANSI_RESET,
-                (int)source_line.length, source_line.data);
-            fprintf(stderr, "%s%*s|%s", ANSI_CYAN, gutter_width, "", ANSI_RESET);
-            for (uint64_t i = 0; i < error.position.col - 1; i++) {
-                fputc(' ', stderr);
-            }
-            fprintf(stderr, "%s", ANSI_ORANGE);
-            size_t const underline_width = error.size_token_width > 0 ? error.size_token_width : 1;
-            for (size_t i = 0; i < underline_width; i++) {
-                fputc('^', stderr);
-            }
-            fprintf(stderr, "%s\n", ANSI_RESET);
+            emit_source_context(source_content, error.position.line, error.position.col,
+                error.size_token_width, {}, {});
             fprintf(stderr, "\n%sHow to fix:%s\n", ANSI_BLUE, ANSI_RESET);
             fprintf(stderr,
                 "%s    - Change the argument to be of type '%.*s' to match the parameter '%.*s'.%s\n",
@@ -175,20 +174,8 @@ auto report_parse_errors(Array<ParseError> errors, bool *had_errors, Str source_
                 ANSI_CYAN, (int)filename.length, filename.data,
                 (unsigned long long)error.position.line,
                 (unsigned long long)(error.position.col - 1), ANSI_RESET);
-            Str const source_line = get_source_line(source_content, error.position.line);
-            uint64_t const line_num = error.position.line;
-            int gutter_digits = 0;
-            for (uint64_t n = line_num; n > 0; n /= 10) { gutter_digits++; }
-            int const gutter_width = gutter_digits + 1;
-            fprintf(stderr, "%s%*s|%s\n", ANSI_CYAN, gutter_width, "", ANSI_RESET);
-            fprintf(stderr, "%s%llu |%s%.*s\n",
-                ANSI_CYAN, (unsigned long long)line_num, ANSI_RESET,
-                (int)source_line.length, source_line.data);
-            fprintf(stderr, "%s%*s|%s", ANSI_CYAN, gutter_width, "", ANSI_RESET);
-            for (uint64_t i = 0; i < error.position.col - 1; i++) {
-                fputc(' ', stderr);
-            }
-            fprintf(stderr, "%s^%s\n", ANSI_ORANGE, ANSI_RESET);
+            emit_source_context(source_content, error.position.line, error.position.col,
+                0, {}, {});
         }
     }
 }

@@ -24,6 +24,24 @@ in
 proc
 ```
 
+## Operators
+
+Bloom has the following operators:
+
+|Operator|Name             |
+|--------|-----------------|
+|`+`     |Addition         |
+|`==`    |Equality         |
+|`..<`   |Range (exclusive)|
+
+And here are the operators by precendence (from highest to lowest):
+
+|Level|Operators|Notes                          |
+|-----|---------|-------------------------------|
+|1    |`+`      |                               |
+|2    |`..<`    |                               |
+|3    |`==`, `<`|Comparison, all non-associative|
+
 ## Loops
 
 There's only one loop statement in Bloom: `for`. It is used for a variety of loops already familiar from languages like C and Python.

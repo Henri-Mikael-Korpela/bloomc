@@ -1,6 +1,10 @@
 main :: proc() ->
     LENGTH :: 3
 
+    // Constant in arithmetic expressions
+    x := 15 + LENGTH
+    print("X: {}\n", x)
+
     // Constant in array initialization
     a :: [LENGTH]Int{ 2, 6, 12 }
     print("A: {}, {}, {}\n", a[0], a[1], a[2])

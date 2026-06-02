@@ -80,12 +80,30 @@ auto report_parse_errors(Array<ParseError> errors, bool *had_errors, Str source_
                 " values to match the length of %lld.%s\n",
                 ANSI_BLUE, (long long)error.explicit_length, (long long)error.explicit_length, ANSI_RESET);
         }
-        else {
-            fprintf(stderr, "\n%sError at line %llu, column %llu: %s%s\n",
-                ANSI_RED,
+        else if (error.code == ParseErrorCode::UNEXPECTED_TOKEN) {
+            Str const token_type_str = to_string(error.token_type);
+            fprintf(stderr, "\n%sError: Unexpected token:%s\n", ANSI_RED, ANSI_RESET);
+            fprintf(stderr, "%s    Encountered an unexpected \"%.*s\" at this location.%s\n",
+                ANSI_RED, (int)token_type_str.length, token_type_str.data, ANSI_RESET);
+            fprintf(stderr, "\n%sLocation:%s\n", ANSI_CYAN, ANSI_RESET);
+            fprintf(stderr, "%s    In file %.*s, line %llu, column %llu:%s\n",
+                ANSI_CYAN, (int)filename.length, filename.data,
                 (unsigned long long)error.position.line,
-                (unsigned long long)error.position.col,
-                to_string(error.code), ANSI_RESET);
+                (unsigned long long)(error.position.col - 1), ANSI_RESET);
+            Str const source_line = get_source_line(source_content, error.position.line);
+            uint64_t const line_num = error.position.line;
+            int gutter_digits = 0;
+            for (uint64_t n = line_num; n > 0; n /= 10) { gutter_digits++; }
+            int const gutter_width = gutter_digits + 1;
+            fprintf(stderr, "%s%*s|%s\n", ANSI_CYAN, gutter_width, "", ANSI_RESET);
+            fprintf(stderr, "%s%llu |%s%.*s\n",
+                ANSI_CYAN, (unsigned long long)line_num, ANSI_RESET,
+                (int)source_line.length, source_line.data);
+            fprintf(stderr, "%s%*s|%s", ANSI_CYAN, gutter_width, "", ANSI_RESET);
+            for (uint64_t i = 0; i < error.position.col - 1; i++) {
+                fputc(' ', stderr);
+            }
+            fprintf(stderr, "%s^%s\n", ANSI_ORANGE, ANSI_RESET);
         }
     }
 }

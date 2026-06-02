@@ -238,6 +238,7 @@ static auto parse_proc_call_arguments(
                         .code = ParseErrorCode::UNEXPECTED_TOKEN,
                         .position = inner_id_token->position,
                         .src_code_line = __LINE__,
+                        .token_type = inner_id_token->type,
                     });
                     return false;
                 }
@@ -247,6 +248,7 @@ static auto parse_proc_call_arguments(
                         .code = ParseErrorCode::UNEXPECTED_TOKEN,
                         .position = close_paren->position,
                         .src_code_line = __LINE__,
+                        .token_type = close_paren->type,
                     });
                     return false;
                 }
@@ -270,6 +272,7 @@ static auto parse_proc_call_arguments(
                         .code = ParseErrorCode::UNEXPECTED_TOKEN,
                         .position = index_token->position,
                         .src_code_line = __LINE__,
+                        .token_type = index_token->type,
                     });
                     return false;
                 }
@@ -279,6 +282,7 @@ static auto parse_proc_call_arguments(
                         .code = ParseErrorCode::UNEXPECTED_TOKEN,
                         .position = close_token->position,
                         .src_code_line = __LINE__,
+                        .token_type = close_token->type,
                     });
                     return false;
                 }
@@ -322,6 +326,7 @@ static auto parse_proc_call_arguments(
                 .code = ParseErrorCode::UNEXPECTED_TOKEN,
                 .position = next_token->position,
                 .src_code_line = __LINE__,
+                .token_type = next_token->type,
             });
             return false;
         }
@@ -359,6 +364,7 @@ static auto parse_proc_params(
             .code = ParseErrorCode::UNEXPECTED_TOKEN,
             .position = current_token->position,
             .src_code_line = __LINE__,
+            .token_type = current_token->type,
         });
         return false;
     }
@@ -383,6 +389,7 @@ static auto parse_proc_params(
                         .code = ParseErrorCode::UNEXPECTED_TOKEN,
                         .position = iter_current(tokens_iter)->position,
                         .src_code_line = __LINE__,
+                        .token_type = iter_peek_prev(tokens_iter)->type,
                     });
                     return false;
                 }
@@ -396,6 +403,7 @@ static auto parse_proc_params(
                     .code = ParseErrorCode::UNEXPECTED_TOKEN,
                     .position = current_token->position,
                     .src_code_line = __LINE__,
+                    .token_type = current_token->type,
                 });
                 return false;
         }
@@ -421,7 +429,7 @@ static auto parse_statement(
 ) -> bool;
 
 #define PARSE_ERROR_CREATE(error_code, token) \
-    ParseError { .code = ParseErrorCode::error_code, .position = token->position, .src_code_line = __LINE__ }
+    ParseError { .code = ParseErrorCode::error_code, .position = token->position, .src_code_line = __LINE__, .token_type = token->type }
 
 static auto parse_expression(
     Iterator<Token> *tokens_iter,

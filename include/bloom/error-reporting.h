@@ -22,6 +22,7 @@ struct ParseError {
     ParseErrorCode code;
     Token::Position position;
     size_t src_code_line;
+    TokenType token_type;
     int64_t explicit_length;
     size_t actual_count;
     Token::Position brace_open_pos;

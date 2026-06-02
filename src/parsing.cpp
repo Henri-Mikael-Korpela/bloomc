@@ -182,6 +182,9 @@ struct Context {
     struct ConstEntry { Str name; int64_t value; };
     ConstEntry constants[64] = {};
     size_t constant_count = 0;
+    struct VarTypeEntry { Str name; bool is_bool; };
+    VarTypeEntry var_types[128] = {};
+    size_t var_type_count = 0;
 };
 
 // For debugging purposes
@@ -757,6 +760,24 @@ static auto parse_expression(
             if (tokens_iter->current_index < tokens_iter->elements.length &&
                 iter_peek(tokens_iter)->type == TokenType::ADD)
             {
+                if (left_operand.type == BinaryOperandType::IDENTIFIER) {
+                    Str const &iname = left_operand.identifier;
+                    for (size_t vi = context->var_type_count; vi-- > 0; ) {
+                        Str const &vname = context->var_types[vi].name;
+                        if (context->var_types[vi].is_bool &&
+                            vname.length == iname.length &&
+                            strncmp(vname.data, iname.data, vname.length) == 0)
+                        {
+                            return err<ASTNode, ParseError>(ParseError {
+                                .code = ParseErrorCode::BOOL_IN_ADDITION,
+                                .position = next_token->position,
+                                .src_code_line = __LINE__,
+                                .size_token_width = iname.length,
+                            });
+                        }
+                    }
+                }
+
                 size_t operands_begin = operands_iter->current_index;
                 (void)iter_append(operands_iter, std::move(left_operand));
 
@@ -776,6 +797,23 @@ static auto parse_expression(
                             .src_code_line = __LINE__,
                             .size_token_width = bool_width,
                         });
+                    }
+                    if (operand_token->type == TokenType::IDENTIFIER) {
+                        Str const &iname = operand_token->identifier.content;
+                        for (size_t vi = context->var_type_count; vi-- > 0; ) {
+                            Str const &vname = context->var_types[vi].name;
+                            if (context->var_types[vi].is_bool &&
+                                vname.length == iname.length &&
+                                strncmp(vname.data, iname.data, vname.length) == 0)
+                            {
+                                return err<ASTNode, ParseError>(ParseError {
+                                    .code = ParseErrorCode::BOOL_IN_ADDITION,
+                                    .position = operand_token->position,
+                                    .src_code_line = __LINE__,
+                                    .size_token_width = iname.length,
+                                });
+                            }
+                        }
                     }
                     auto operand_result = parse_operand(operand_token);
                     if (!is_ok(operand_result)) {
@@ -1172,6 +1210,16 @@ static auto parse_statement(
                 }
 
                 auto *expr_node_ptr = iter_append(nodes_block_iter, std::move(expr_parse_result.ok));
+
+                if (expr_node_ptr->type == ASTNodeType::BOOLEAN_LITERAL &&
+                    context->var_type_count < 128)
+                {
+                    context->var_types[context->var_type_count++] = {
+                        .name = next_token->identifier.content,
+                        .is_bool = true,
+                    };
+                }
+
                 (void)iter_append(nodes_block_iter, ASTNode {
                     .type = ASTNodeType::VARIABLE_DEFINITION,
                     .parent = parent_node,

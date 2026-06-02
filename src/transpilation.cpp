@@ -119,7 +119,15 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
                 Str const &callee = op.proc_call.caller_identifier;
                 bool const is_length = callee.length == 6 &&
                     strncmp(callee.data, "length", 6) == 0;
-                if (is_length) {
+                bool const is_int_cast = callee.length == 3 &&
+                    strncmp(callee.data, "Int", 3) == 0;
+                if (is_int_cast) {
+                    assert(op.proc_call.arguments.length == 1 && "Int() cast requires exactly one argument");
+                    PUSH_STR("(int)(");
+                    emit_proc_call_args(const_cast<Array<ASTNode>*>(&op.proc_call.arguments));
+                    PUSH_STR(")");
+                }
+                else if (is_length) {
                     assert(op.proc_call.arguments.length > 0 && "length() requires an argument");
                     PUSH_INT(static_cast<intmax_t>(
                         find_array_size(op.proc_call.arguments.data[0].identifier)
@@ -170,7 +178,13 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
                 PUSH_STR(']');
                 break;
             case ASTNodeType::PROC_CALL:
-                if (expr->proc_call.caller_identifier == "length") {
+                if (expr->proc_call.caller_identifier == "Int") {
+                    assert(expr->proc_call.arguments.length == 1 && "Int() cast requires exactly one argument");
+                    PUSH_STR("(int)(");
+                    emit_proc_call_args(&expr->proc_call.arguments);
+                    PUSH_STR(")");
+                }
+                else if (expr->proc_call.caller_identifier == "length") {
                     assert(expr->proc_call.arguments.length > 0 && "length() requires an argument");
                     PUSH_INT(static_cast<intmax_t>(find_array_size(expr->proc_call.arguments[0].identifier)));
                 }

@@ -1,0 +1,6 @@
+main :: proc() ->
+    b := true
+    i := Int(b)
+
+    x := i + Int(b)
+    print("X: {}\n", x)

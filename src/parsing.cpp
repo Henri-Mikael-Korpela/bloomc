@@ -429,6 +429,30 @@ static auto parse_proc_call_arguments(
                 if (!check_arg_type(next_token)) { return false; }
                 arg_count++;
             }
+            else if (tokens_iter->current_index < tokens_iter->elements.length &&
+                iter_peek(tokens_iter)->type == TokenType::DOT)
+            {
+                (void)iter_next(tokens_iter); // consume .
+                auto *field_token = iter_next(tokens_iter);
+                if (field_token->type != TokenType::IDENTIFIER) {
+                    append(errors, ParseError {
+                        .code = ParseErrorCode::UNEXPECTED_TOKEN,
+                        .position = field_token->position,
+                        .src_code_line = __LINE__,
+                        .token_type = field_token->type,
+                    });
+                    return false;
+                }
+                (void)iter_append(nodes_block_iter, ASTNode {
+                    .type = ASTNodeType::MEMBER_ACCESS,
+                    .parent = proc_call_node,
+                    .member_access = {
+                        .object_name = next_token->identifier.content,
+                        .field_name = field_token->identifier.content,
+                    },
+                });
+                arg_count++;
+            }
             else {
                 (void)iter_append(nodes_block_iter, ASTNode {
                     .type = ASTNodeType::IDENTIFIER,
@@ -767,6 +791,25 @@ static auto parse_expression(
         }
         case TokenType::IDENTIFIER:
         case TokenType::INTEGER_LITERAL: {
+            // Struct init: TypeName {}
+            if (next_token->type == TokenType::IDENTIFIER &&
+                tokens_iter->current_index < tokens_iter->elements.length &&
+                iter_peek(tokens_iter)->type == TokenType::BRACE_OPEN)
+            {
+                (void)iter_next(tokens_iter); // consume {
+                auto *brace_close = iter_next(tokens_iter);
+                if (brace_close->type != TokenType::BRACE_CLOSE) {
+                    return err<ASTNode, ParseError>(PARSE_ERROR_CREATE(UNEXPECTED_TOKEN, brace_close));
+                }
+                return ok<ASTNode, ParseError>(ASTNode {
+                    .type = ASTNodeType::STRUCT_INIT,
+                    .parent = nullptr,
+                    .struct_init = {
+                        .type_name = next_token->identifier.content,
+                    },
+                });
+            }
+
             // Returns a BinaryOperand for the given token, consuming any proc call tokens
             // from tokens_iter. Never default-constructs BinaryOperand to avoid union issues.
             auto parse_operand = [&](Token *token) -> Result<BinaryOperand, ParseError> {
@@ -1077,6 +1120,60 @@ static auto parse_expression(
                 nodes_block_iter->elements[nodes_block_iter->current_index].type == ASTNodeType::UNKNOWN &&
                 "Next node after procedure body should be of UNKNOWN type");
             return ok<ASTNode, ParseError>(*proc_node);
+        }
+        case TokenType::KEYWORD_STRUCT: {
+            auto *arrow = iter_next(tokens_iter);
+            if (arrow->type != TokenType::ARROW) {
+                return err<ASTNode, ParseError>(PARSE_ERROR_CREATE(UNEXPECTED_TOKEN, arrow));
+            }
+            auto *newline = iter_next(tokens_iter);
+            if (newline->type != TokenType::NEWLINE) {
+                return err<ASTNode, ParseError>(PARSE_ERROR_CREATE(UNEXPECTED_TOKEN, newline));
+            }
+
+            size_t const fields_start = proc_params_iter->current_index;
+
+            while (tokens_iter->current_index < tokens_iter->elements.length &&
+                   iter_peek(tokens_iter)->type == TokenType::INDENT)
+            {
+                (void)iter_next(tokens_iter); // consume indent
+                auto *field_name_token = iter_next(tokens_iter);
+                if (field_name_token->type != TokenType::IDENTIFIER) {
+                    return err<ASTNode, ParseError>(PARSE_ERROR_CREATE(UNEXPECTED_TOKEN, field_name_token));
+                }
+                auto *colon = iter_next(tokens_iter);
+                if (colon->type != TokenType::TYPE_SEPARATOR) {
+                    return err<ASTNode, ParseError>(PARSE_ERROR_CREATE(UNEXPECTED_TOKEN, colon));
+                }
+                auto *type_token = iter_next(tokens_iter);
+                if (type_token->type != TokenType::IDENTIFIER) {
+                    return err<ASTNode, ParseError>(PARSE_ERROR_CREATE(UNEXPECTED_TOKEN, type_token));
+                }
+                (void)iter_append(proc_params_iter, ProcParameterASTNode {
+                    .name = field_name_token->identifier.content,
+                    .type_name = type_token->identifier.content,
+                });
+                if (tokens_iter->current_index < tokens_iter->elements.length) {
+                    auto *nl = iter_peek(tokens_iter);
+                    if (nl->type == TokenType::NEWLINE || nl->type == TokenType::END) {
+                        (void)iter_next(tokens_iter);
+                    }
+                }
+            }
+
+            auto *struct_node = iter_append(nodes_block_iter, ASTNode {
+                .type = ASTNodeType::STRUCT_DEF,
+                .parent = nullptr,
+                .struct_def = {
+                    .name = context->current_identifier->identifier.content,
+                    .fields = Array<ProcParameterASTNode>(
+                        proc_params_block->data + fields_start,
+                        proc_params_iter->current_index - fields_start
+                    ),
+                },
+            });
+
+            return ok<ASTNode, ParseError>(*struct_node);
         }
         default:
             return err<ASTNode, ParseError>(PARSE_ERROR_CREATE(UNEXPECTED_TOKEN, next_token));
@@ -1812,6 +1909,7 @@ auto parse(Array<Token> *tokens, ArenaAllocator *allocator, Str source_content, 
     auto nodes_block_iter = to_iterator(&nodes_block);
 
     auto proc_params_block = allocate_array<ProcParameterASTNode>(allocator, tokens->length);
+    ProcParameterASTNode *const orig_proc_params_data = proc_params_block.data;
     auto proc_params_iter = to_iterator(&proc_params_block);
     assert (proc_params_iter.current_index == 0 &&
         "Procedure parameters iterator current index should be 0 at the start");
@@ -1916,12 +2014,17 @@ auto parse(Array<Token> *tokens, ArenaAllocator *allocator, Str source_content, 
         assert(new_array_elements_block.length == array_elements_iter.current_index &&
             "Array element count mismatch after re-allocation");
 
-        // Update the proc parameters pointers in the AST nodes to point to the new tightly packed block
+        // Update the proc parameters and struct field pointers in the AST nodes
+        // to point to the new tightly packed block.
         for (auto &node : new_nodes_block) {
             if (node.type == ASTNodeType::PROC_DEF) {
                 node.proc_def.parameters.data =
                     ptr_sub(node.proc_def.parameters.data,
                         ptr_sub(node.proc_def.parameters.data, new_proc_params_block.data));
+            }
+            else if (node.type == ASTNodeType::STRUCT_DEF) {
+                ptrdiff_t const offset = node.struct_def.fields.data - orig_proc_params_data;
+                node.struct_def.fields.data = new_proc_params_block.data + offset;
             }
             else if (node.type == ASTNodeType::BINARY_ADD) {
                 node.binary_operation.operands.data =

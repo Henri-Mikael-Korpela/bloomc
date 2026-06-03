@@ -21,12 +21,15 @@ enum class ASTNodeType : uint8_t {
     IF_ELSE,
     IDENTIFIER,
     INTEGER_LITERAL,
+    MEMBER_ACCESS,
     ADD_ASSIGN,
     PASS,
     PROC_CALL,
     PROC_DEF,
     RETURN,
     STRING_LITERAL,
+    STRUCT_DEF,
+    STRUCT_INIT,
     VARIABLE_DEFINITION,
 };
 
@@ -158,6 +161,17 @@ struct ASTNode {
             Str variable_name;
             BinaryOperand operand;
         } add_assign;
+        struct {
+            Str object_name;
+            Str field_name;
+        } member_access;
+        struct {
+            Str name;
+            Array<ProcParameterASTNode> fields;
+        } struct_def;
+        struct {
+            Str type_name;
+        } struct_init;
     };
 };
 
@@ -182,11 +196,14 @@ constexpr auto to_string(ASTNodeType type) -> Str {
         case ASTNodeType::IF_ELSE:             return STR("if_else");
         case ASTNodeType::IDENTIFIER:          return STR("identifier");
         case ASTNodeType::INTEGER_LITERAL:     return STR("integer_literal");
+        case ASTNodeType::MEMBER_ACCESS:       return STR("member_access");
         case ASTNodeType::PASS:                return STR("pass");
         case ASTNodeType::PROC_CALL:           return STR("procedure call");
         case ASTNodeType::PROC_DEF:            return STR("procedure definition");
         case ASTNodeType::RETURN:              return STR("return");
         case ASTNodeType::STRING_LITERAL:      return STR("string_literal");
+        case ASTNodeType::STRUCT_DEF:          return STR("struct_def");
+        case ASTNodeType::STRUCT_INIT:         return STR("struct_init");
         case ASTNodeType::VARIABLE_DEFINITION: return STR("variable_definition");
         default:                               return STR("undefined");
     }

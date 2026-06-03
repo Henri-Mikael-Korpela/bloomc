@@ -108,6 +108,10 @@ auto tokenize(Str *input, ArenaAllocator *allocator) -> Array<Token> {
                 append_token_of_type(TokenType::KEYWORD_PROC);
                 continue;
             }
+            if (word == TOKEN_KEYWORD_STRUCT) {
+                append_token_of_type(TokenType::KEYWORD_STRUCT);
+                continue;
+            }
             if (word == TOKEN_KEYWORD_TRUE) {
                 append_token_of_type(TokenType::KEYWORD_TRUE);
                 continue;
@@ -265,6 +269,10 @@ auto tokenize(Str *input, ArenaAllocator *allocator) -> Array<Token> {
                 i += 2;
                 append_token_of_type(TokenType::RANGE_EXCLUSIVE);
                 current_position.col += 3;
+            }
+            else {
+                append_token_of_type(TokenType::DOT);
+                current_position.col += 1;
             }
         }
         else if (c == '=') {

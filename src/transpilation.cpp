@@ -26,17 +26,23 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
     ArrayVarEntry array_vars[64];
     size_t array_var_count = 0;
 
-    enum class VarKind : uint8_t { INT, BOOL, BLOOM_STR, BLOOM_CHAR, SIZE_T };
+    enum class VarKind : uint8_t { INT, BOOL, BLOOM_STR, BLOOM_CHAR, SIZE_T, STRUCT };
     struct VarEntry {
         Str name;
         VarKind kind;
+        Str struct_type_name;
     };
-    VarEntry var_types[128];
+    VarEntry var_types[128] = {};
     size_t var_type_count = 0;
 
     auto register_var = [&](Str name, VarKind kind) {
         if (var_type_count < 128) {
-            var_types[var_type_count++] = { .name = name, .kind = kind };
+            var_types[var_type_count++] = { .name = name, .kind = kind, .struct_type_name = {} };
+        }
+    };
+    auto register_struct_var = [&](Str name, Str type_name) {
+        if (var_type_count < 128) {
+            var_types[var_type_count++] = { .name = name, .kind = VarKind::STRUCT, .struct_type_name = type_name };
         }
     };
 
@@ -230,6 +236,26 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
 
     for (auto &node : *ast_nodes) {
         switch (node.type) {
+            case ASTNodeType::STRUCT_DEF: {
+                PUSH_STR("typedef struct {\n");
+                for (size_t i = 0; i < node.struct_def.fields.length; i++) {
+                    auto &field = node.struct_def.fields.data[i];
+                    PUSH_STR("\t");
+                    if (field.type_name == "Int") {
+                        PUSH_STR("int");
+                    }
+                    else {
+                        PUSH_STR(field.type_name);
+                    }
+                    PUSH_STR(" ");
+                    PUSH_STR(field.name);
+                    PUSH_STR(";\n");
+                }
+                PUSH_STR("} ");
+                PUSH_STR(node.struct_def.name);
+                PUSH_STR(";\n\n");
+                break;
+            }
             case ASTNodeType::PROC_DEF: {
                 array_var_count = 0;
                 var_type_count = 0;
@@ -354,6 +380,13 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
                                                 PUSH_INT(arg.array_access.index);
                                                 PUSH_STR("]);\n");
                                             }
+                                            else if (arg.type == ASTNodeType::MEMBER_ACCESS) {
+                                                PUSH_STR("printf(\"%d\", ");
+                                                PUSH_STR(arg.member_access.object_name);
+                                                PUSH_STR(".");
+                                                PUSH_STR(arg.member_access.field_name);
+                                                PUSH_STR(");\n");
+                                            }
                                             arg_idx++;
                                         }
                                         k++;
@@ -390,6 +423,14 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
                         case ASTNodeType::VARIABLE_DEFINITION: {
                             push_tabs();
                             ASTNode *expr = stmt->variable_definition.expr;
+                            if (expr->type == ASTNodeType::STRUCT_INIT) {
+                                register_struct_var(stmt->variable_definition.name, expr->struct_init.type_name);
+                                PUSH_STR(expr->struct_init.type_name);
+                                PUSH_STR(' ');
+                                PUSH_STR(stmt->variable_definition.name);
+                                PUSH_STR(" = {0};\n");
+                                break;
+                            }
                             if (expr->type == ASTNodeType::ARRAY_INIT) {
                                 if (array_var_count < 64) {
                                     array_vars[array_var_count++] = {

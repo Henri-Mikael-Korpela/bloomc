@@ -22,6 +22,7 @@ for
 if
 in
 proc
+struct
 ```
 
 ## Data types

@@ -11,6 +11,7 @@ enum class ParseErrorCode {
     BOOL_IN_ADDITION,
     PROC_ARG_TYPE_MISMATCH,
     STRUCT_MISSING_FIELDS,
+    STRUCT_DUPLICATE_FIELD,
 };
 
 constexpr auto to_string(ParseErrorCode code) -> char const * {
@@ -20,6 +21,7 @@ constexpr auto to_string(ParseErrorCode code) -> char const * {
         case ParseErrorCode::BOOL_IN_ADDITION:        return "bool in addition";
         case ParseErrorCode::PROC_ARG_TYPE_MISMATCH:  return "proc arg type mismatch";
         case ParseErrorCode::STRUCT_MISSING_FIELDS:   return "struct missing fields";
+        case ParseErrorCode::STRUCT_DUPLICATE_FIELD:  return "struct duplicate field";
     }
     return "unknown error";
 }
@@ -43,6 +45,8 @@ struct ParseError {
     Str struct_field_type_names[8];
     size_t struct_field_count;
     bool struct_field_is_missing[8];
+    // For STRUCT_DUPLICATE_FIELD
+    Str duplicate_field_name;
 };
 
 auto report_parse_errors(Array<ParseError> errors, bool *had_errors, Str source_content, Str filename) -> void;

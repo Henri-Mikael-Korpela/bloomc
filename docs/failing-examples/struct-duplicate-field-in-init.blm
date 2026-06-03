@@ -1,0 +1,7 @@
+MyStruct :: struct ->
+    days: Int
+    years: Int
+
+main :: proc() ->
+    s :: MyStruct { days = 15, days = 20 }
+    print("Days: {}, Years: {}\n", s.days, s.years)

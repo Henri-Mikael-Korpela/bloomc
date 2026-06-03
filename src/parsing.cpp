@@ -918,6 +918,19 @@ static auto parse_expression(
                         return err<ASTNode, ParseError>(PARSE_ERROR_CREATE(UNEXPECTED_TOKEN, tok));
                     }
                     Str const field_name = tok->identifier.content;
+                    for (size_t fi = 0; fi < proc_params_iter->current_index - field_names_begin; fi++) {
+                        if (str_equal(proc_params_iter->elements.data[field_names_begin + fi].name, field_name)) {
+                            ParseError dup_err = {};
+                            dup_err.code = ParseErrorCode::STRUCT_DUPLICATE_FIELD;
+                            dup_err.position = tok->position;
+                            dup_err.src_code_line = __LINE__;
+                            dup_err.token_type = tok->type;
+                            dup_err.size_token_width = field_name.length;
+                            dup_err.struct_type_name = next_token->identifier.content;
+                            dup_err.duplicate_field_name = field_name;
+                            return err<ASTNode, ParseError>(dup_err);
+                        }
+                    }
                     auto *equals = iter_next(tokens_iter);
                     if (equals->type != TokenType::EQUALS) {
                         return err<ASTNode, ParseError>(PARSE_ERROR_CREATE(UNEXPECTED_TOKEN, equals));

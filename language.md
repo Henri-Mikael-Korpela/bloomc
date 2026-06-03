@@ -95,3 +95,7 @@ It is possible to omit the length and let the compiler deduce the length based o
 ```
 a := [const]Int{ 2, 5, 9 }
 ```
+
+## Structs
+
+C allows for multiple same fields in a designed initializer list (e.g. `MyStruct { .field1 = 3, .field1 = 7 }`) for a struct. In Bloom, this is not possible and results in a compilation error because it is wasteful to initialize the same field twice or more times.

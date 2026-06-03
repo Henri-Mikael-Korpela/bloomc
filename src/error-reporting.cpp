@@ -164,6 +164,27 @@ auto report_parse_errors(Array<ParseError> errors, bool *had_errors, Str source_
                 (int)error.expected_type_name.length, error.expected_type_name.data,
                 ANSI_RESET);
         }
+        else if (error.code == ParseErrorCode::STRUCT_DUPLICATE_FIELD) {
+            fprintf(stderr, "\n%sError: Duplicate field in struct initialization:%s\n", ANSI_RED, ANSI_RESET);
+            fprintf(stderr, "%s    Field '%.*s' is initialized more than once in %.*s.%s\n",
+                ANSI_RED,
+                (int)error.duplicate_field_name.length, error.duplicate_field_name.data,
+                (int)error.struct_type_name.length, error.struct_type_name.data,
+                ANSI_RESET);
+            fprintf(stderr, "\n%sLocation:%s\n", ANSI_CYAN, ANSI_RESET);
+            fprintf(stderr, "%s    In file %.*s, line %llu, column %llu:%s\n",
+                ANSI_CYAN, (int)filename.length, filename.data,
+                (unsigned long long)error.position.line,
+                (unsigned long long)(error.position.col - 1), ANSI_RESET);
+            emit_source_context(source_content, error.position.line, error.position.col,
+                error.size_token_width, {}, {});
+            fprintf(stderr, "\n%sHow to fix:%s\n", ANSI_BLUE, ANSI_RESET);
+            fprintf(stderr,
+                "%s    - Remove the duplicate '%.*s' entry and keep only one initialization for this field.%s\n",
+                ANSI_BLUE,
+                (int)error.duplicate_field_name.length, error.duplicate_field_name.data,
+                ANSI_RESET);
+        }
         else if (error.code == ParseErrorCode::STRUCT_MISSING_FIELDS) {
             size_t const missing_count = [&]() -> size_t {
                 size_t n = 0;

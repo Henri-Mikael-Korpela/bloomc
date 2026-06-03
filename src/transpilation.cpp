@@ -61,17 +61,17 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
     StructDefEntry struct_defs[16] = {};
     size_t struct_def_count = 0;
 
-    auto register_struct_def = [&](ASTNode const &node) {
+    auto register_struct_def = [&](ASTNode const *node) {
         if (struct_def_count >= 16) { return; }
-        auto &def = struct_defs[struct_def_count++];
-        def.name = node.struct_def.name;
-        def.field_count = 0;
-        for (size_t i = 0; i < node.struct_def.fields.length && i < 16; i++) {
-            auto &field = node.struct_def.fields.data[i];
+        auto *def = &struct_defs[struct_def_count++];
+        def->name = node->struct_def.name;
+        def->field_count = 0;
+        for (size_t i = 0; i < node->struct_def.fields.length && i < 16; i++) {
+            auto *field = &node->struct_def.fields.data[i];
             VarKind kind = VarKind::INT;
-            if (field.type_name == "Bool") { kind = VarKind::BOOL; }
-            else if (field.type_name == "Str") { kind = VarKind::BLOOM_STR; }
-            def.fields[def.field_count++] = { .name = field.name, .kind = kind };
+            if (field->type_name == "Bool") { kind = VarKind::BOOL; }
+            else if (field->type_name == "Str") { kind = VarKind::BLOOM_STR; }
+            def->fields[def->field_count++] = { .name = field->name, .kind = kind };
         }
     };
 
@@ -104,9 +104,9 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
 
     auto find_array_size = [&](Str var_name) -> size_t {
         for (size_t i = 0; i < array_var_count; i++) {
-            Str const &name = array_vars[i].name;
-            if (name.length == var_name.length &&
-                strncmp(name.data, var_name.data, name.length) == 0)
+            Str const *name = &array_vars[i].name;
+            if (name->length == var_name.length &&
+                strncmp(name->data, var_name.data, name->length) == 0)
             {
                 return array_vars[i].count;
             }
@@ -164,50 +164,50 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
         }
     };
 
-    auto emit_binary_operand = [&](BinaryOperand const &op) {
-        switch (op.type) {
+    auto emit_binary_operand = [&](BinaryOperand const *op) {
+        switch (op->type) {
             case BinaryOperandType::IDENTIFIER:
-                PUSH_STR(op.identifier);
+                PUSH_STR(op->identifier);
                 break;
             case BinaryOperandType::ARRAY_ACCESS:
-                PUSH_STR(op.array_access.variable_name);
+                PUSH_STR(op->array_access.variable_name);
                 PUSH_STR('[');
-                PUSH_INT(op.array_access.index);
+                PUSH_INT(op->array_access.index);
                 PUSH_STR(']');
                 break;
             case BinaryOperandType::PROC_CALL: {
-                Str const &callee = op.proc_call.caller_identifier;
-                bool const is_length = callee.length == 6 &&
-                    strncmp(callee.data, "length", 6) == 0;
-                bool const is_int_cast = callee.length == 3 &&
-                    strncmp(callee.data, "Int", 3) == 0;
+                Str const *callee = &op->proc_call.caller_identifier;
+                bool const is_length = callee->length == 6 &&
+                    strncmp(callee->data, "length", 6) == 0;
+                bool const is_int_cast = callee->length == 3 &&
+                    strncmp(callee->data, "Int", 3) == 0;
                 if (is_int_cast) {
-                    assert(op.proc_call.arguments.length == 1 && "Int() cast requires exactly one argument");
+                    assert(op->proc_call.arguments.length == 1 && "Int() cast requires exactly one argument");
                     PUSH_STR("(int)(");
-                    emit_proc_call_args(const_cast<Array<ASTNode>*>(&op.proc_call.arguments));
+                    emit_proc_call_args(const_cast<Array<ASTNode>*>(&op->proc_call.arguments));
                     PUSH_STR(")");
                 }
                 else if (is_length) {
-                    assert(op.proc_call.arguments.length > 0 && "length() requires an argument");
+                    assert(op->proc_call.arguments.length > 0 && "length() requires an argument");
                     PUSH_INT(static_cast<intmax_t>(
-                        find_array_size(op.proc_call.arguments.data[0].identifier)
+                        find_array_size(op->proc_call.arguments.data[0].identifier)
                     ));
                 }
                 else {
-                    PUSH_STR(op.proc_call.caller_identifier);
+                    PUSH_STR(op->proc_call.caller_identifier);
                     PUSH_STR('(');
-                    emit_proc_call_args(const_cast<Array<ASTNode>*>(&op.proc_call.arguments));
+                    emit_proc_call_args(const_cast<Array<ASTNode>*>(&op->proc_call.arguments));
                     PUSH_STR(')');
                 }
                 break;
             }
             case BinaryOperandType::INTEGER_LITERAL:
-                PUSH_INT(op.integer_literal.value);
+                PUSH_INT(op->integer_literal.value);
                 break;
             case BinaryOperandType::MEMBER_ACCESS:
-                PUSH_STR(op.member_access.object_name);
+                PUSH_STR(op->member_access.object_name);
                 PUSH_STR('.');
-                PUSH_STR(op.member_access.field_name);
+                PUSH_STR(op->member_access.field_name);
                 break;
         }
     };
@@ -261,18 +261,18 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
                 }
                 break;
             case ASTNodeType::BINARY_ADD: {
-                auto &operands = expr->binary_operation.operands;
-                for (size_t i = 0; i < operands.length; i++) {
+                auto *operands = &expr->binary_operation.operands;
+                for (size_t i = 0; i < operands->length; i++) {
                     if (i != 0) { PUSH_STR(" + "); }
-                    emit_binary_operand(operands[i]);
+                    emit_binary_operand(&operands->data[i]);
                 }
                 break;
             }
             case ASTNodeType::STRING_LITERAL: {
-                Str const &content = expr->string_literal.value;
-                size_t const runtime_len = str_literal_runtime_length(content);
+                Str const *content = &expr->string_literal.value;
+                size_t const runtime_len = str_literal_runtime_length(*content);
                 PUSH_STR("(BloomStr){.data = \"");
-                PUSH_STR(content);
+                PUSH_STR(*content);
                 PUSH_STR("\", .length = ");
                 PUSH_INT(static_cast<intmax_t>(runtime_len));
                 PUSH_STR("}");
@@ -295,26 +295,27 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
     PUSH_STR("typedef struct { char const *data; size_t length; } BloomStr;\n");
     PUSH_STR("typedef struct { char bytes[4]; uint8_t len; } BloomChar;\n\n");
 
-    for (auto &node : *ast_nodes) {
-        switch (node.type) {
+    for (size_t ni = 0; ni < ast_nodes->length; ni++) {
+        auto *node = &ast_nodes->data[ni];
+        switch (node->type) {
             case ASTNodeType::STRUCT_DEF: {
                 register_struct_def(node);
                 PUSH_STR("typedef struct {\n");
-                for (size_t i = 0; i < node.struct_def.fields.length; i++) {
-                    auto &field = node.struct_def.fields.data[i];
+                for (size_t i = 0; i < node->struct_def.fields.length; i++) {
+                    auto *field = &node->struct_def.fields.data[i];
                     PUSH_STR("\t");
-                    if (field.type_name == "Int") {
+                    if (field->type_name == "Int") {
                         PUSH_STR("int");
                     }
                     else {
-                        PUSH_STR(field.type_name);
+                        PUSH_STR(field->type_name);
                     }
                     PUSH_STR(" ");
-                    PUSH_STR(field.name);
+                    PUSH_STR(field->name);
                     PUSH_STR(";\n");
                 }
                 PUSH_STR("} ");
-                PUSH_STR(node.struct_def.name);
+                PUSH_STR(node->struct_def.name);
                 PUSH_STR(";\n\n");
                 break;
             }
@@ -323,8 +324,8 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
                 var_type_count = 0;
                 size_t for_in_counter = 0;
                 char const *return_type_name = nullptr;
-                if (node.proc_def.return_type != nullptr) {
-                    if (node.proc_def.return_type->name == "Int") {
+                if (node->proc_def.return_type != nullptr) {
+                    if (node->proc_def.return_type->name == "Int") {
                         return_type_name = "int";
                     }
                 }
@@ -334,9 +335,9 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
                 assert(return_type_name != nullptr && "Unsupported return type in transpilation");
                 PUSH_STR(return_type_name);
                 PUSH_STR(' ');
-                PUSH_STR(node.proc_def.name);
+                PUSH_STR(node->proc_def.name);
                 PUSH_STR('(');
-                auto *params = &node.proc_def.parameters;
+                auto *params = &node->proc_def.parameters;
                 for (size_t i = 0; i < params->length; i++) {
                     auto *param = &params->data[i];
                     if (i != 0) {
@@ -361,10 +362,10 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
                         case ASTNodeType::BINARY_ADD: {
                             push_tabs();
                             PUSH_STR("return ");
-                            auto &operands = stmt->binary_operation.operands;
-                            for (size_t i = 0; i < operands.length; i++) {
+                            auto *operands = &stmt->binary_operation.operands;
+                            for (size_t i = 0; i < operands->length; i++) {
                                 if (i != 0) { PUSH_STR(" + "); }
-                                emit_binary_operand(operands[i]);
+                                emit_binary_operand(&operands->data[i]);
                             }
                             PUSH_STR(";\n");
                             break;
@@ -373,112 +374,112 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
                             if (stmt->proc_call.caller_identifier == "print") {
                                 assert(stmt->proc_call.arguments.length >= 1 &&
                                     "print() requires at least a format string argument");
-                                auto &fmt_arg = stmt->proc_call.arguments[0];
-                                assert(fmt_arg.type == ASTNodeType::STRING_LITERAL &&
+                                auto *fmt_arg = &stmt->proc_call.arguments.data[0];
+                                assert(fmt_arg->type == ASTNodeType::STRING_LITERAL &&
                                     "First argument to print() must be a string literal");
-                                Str const &fmt = fmt_arg.string_literal.value;
+                                Str const *fmt = &fmt_arg->string_literal.value;
                                 size_t arg_idx = 1;
                                 size_t seg_start = 0;
-                                for (size_t k = 0; k < fmt.length; k++) {
-                                    if (fmt.data[k] == '{' && k + 1 < fmt.length &&
-                                        fmt.data[k + 1] == '}')
+                                for (size_t k = 0; k < fmt->length; k++) {
+                                    if (fmt->data[k] == '{' && k + 1 < fmt->length &&
+                                        fmt->data[k + 1] == '}')
                                     {
                                         if (k > seg_start) {
                                             push_tabs();
                                             PUSH_STR("fputs(\"");
                                             PUSH_STR(str_from_data_and_length(
-                                                fmt.data + seg_start, k - seg_start));
+                                                fmt->data + seg_start, k - seg_start));
                                             PUSH_STR("\", stdout);\n");
                                         }
                                         if (arg_idx < stmt->proc_call.arguments.length) {
-                                            auto &arg = stmt->proc_call.arguments[arg_idx];
+                                            auto *arg = &stmt->proc_call.arguments.data[arg_idx];
                                             push_tabs();
-                                            if (arg.type == ASTNodeType::IDENTIFIER) {
-                                                VarKind kind = lookup_var_kind(arg.identifier);
+                                            if (arg->type == ASTNodeType::IDENTIFIER) {
+                                                VarKind kind = lookup_var_kind(arg->identifier);
                                                 if (kind == VarKind::BLOOM_CHAR) {
                                                     PUSH_STR("fwrite(");
-                                                    PUSH_STR(arg.identifier);
+                                                    PUSH_STR(arg->identifier);
                                                     PUSH_STR(".bytes, 1, ");
-                                                    PUSH_STR(arg.identifier);
+                                                    PUSH_STR(arg->identifier);
                                                     PUSH_STR(".len, stdout);\n");
                                                 }
                                                 else if (kind == VarKind::BLOOM_STR) {
                                                     PUSH_STR("fwrite(");
-                                                    PUSH_STR(arg.identifier);
+                                                    PUSH_STR(arg->identifier);
                                                     PUSH_STR(".data, 1, ");
-                                                    PUSH_STR(arg.identifier);
+                                                    PUSH_STR(arg->identifier);
                                                     PUSH_STR(".length, stdout);\n");
                                                 }
                                                 else if (kind == VarKind::SIZE_T) {
                                                     PUSH_STR("printf(\"%zu\", ");
-                                                    PUSH_STR(arg.identifier);
+                                                    PUSH_STR(arg->identifier);
                                                     PUSH_STR(");\n");
                                                 }
                                                 else if (kind == VarKind::BOOL) {
                                                     PUSH_STR("fputs(");
-                                                    PUSH_STR(arg.identifier);
+                                                    PUSH_STR(arg->identifier);
                                                     PUSH_STR(" ? \"true\" : \"false\", stdout);\n");
                                                 }
                                                 else {
                                                     PUSH_STR("printf(\"%d\", ");
-                                                    PUSH_STR(arg.identifier);
+                                                    PUSH_STR(arg->identifier);
                                                     PUSH_STR(");\n");
                                                 }
                                             }
-                                            else if (arg.type == ASTNodeType::BOOLEAN_LITERAL) {
+                                            else if (arg->type == ASTNodeType::BOOLEAN_LITERAL) {
                                                 PUSH_STR("fputs(");
-                                                PUSH_STR(arg.boolean_literal.value ? "\"true\"" : "\"false\"");
+                                                PUSH_STR(arg->boolean_literal.value ? "\"true\"" : "\"false\"");
                                                 PUSH_STR(", stdout);\n");
                                             }
-                                            else if (arg.type == ASTNodeType::INTEGER_LITERAL) {
+                                            else if (arg->type == ASTNodeType::INTEGER_LITERAL) {
                                                 PUSH_STR("printf(\"%d\", ");
-                                                PUSH_INT(arg.integer_literal.value.value);
+                                                PUSH_INT(arg->integer_literal.value.value);
                                                 PUSH_STR(");\n");
                                             }
-                                            else if (arg.type == ASTNodeType::ARRAY_ACCESS) {
+                                            else if (arg->type == ASTNodeType::ARRAY_ACCESS) {
                                                 PUSH_STR("printf(\"%d\", ");
-                                                PUSH_STR(arg.array_access.variable_name);
+                                                PUSH_STR(arg->array_access.variable_name);
                                                 PUSH_STR('[');
-                                                PUSH_INT(arg.array_access.index);
+                                                PUSH_INT(arg->array_access.index);
                                                 PUSH_STR("]);\n");
                                             }
-                                            else if (arg.type == ASTNodeType::BINARY_ADD) {
+                                            else if (arg->type == ASTNodeType::BINARY_ADD) {
                                                 PUSH_STR("printf(\"%d\", ");
-                                                auto &ops = arg.binary_operation.operands;
-                                                for (size_t k = 0; k < ops.length; k++) {
+                                                auto *ops = &arg->binary_operation.operands;
+                                                for (size_t k = 0; k < ops->length; k++) {
                                                     if (k != 0) { PUSH_STR(" + "); }
-                                                    emit_binary_operand(ops[k]);
+                                                    emit_binary_operand(&ops->data[k]);
                                                 }
                                                 PUSH_STR(");\n");
                                             }
-                                            else if (arg.type == ASTNodeType::MEMBER_ACCESS) {
+                                            else if (arg->type == ASTNodeType::MEMBER_ACCESS) {
                                                 VarKind kind = lookup_member_kind(
-                                                    arg.member_access.object_name,
-                                                    arg.member_access.field_name
+                                                    arg->member_access.object_name,
+                                                    arg->member_access.field_name
                                                 );
                                                 if (kind == VarKind::BOOL) {
                                                     PUSH_STR("fputs(");
-                                                    PUSH_STR(arg.member_access.object_name);
+                                                    PUSH_STR(arg->member_access.object_name);
                                                     PUSH_STR(".");
-                                                    PUSH_STR(arg.member_access.field_name);
+                                                    PUSH_STR(arg->member_access.field_name);
                                                     PUSH_STR(" ? \"true\" : \"false\", stdout);\n");
                                                 }
                                                 else if (kind == VarKind::BLOOM_STR) {
                                                     PUSH_STR("fwrite(");
-                                                    PUSH_STR(arg.member_access.object_name);
+                                                    PUSH_STR(arg->member_access.object_name);
                                                     PUSH_STR(".");
-                                                    PUSH_STR(arg.member_access.field_name);
+                                                    PUSH_STR(arg->member_access.field_name);
                                                     PUSH_STR(".data, 1, ");
-                                                    PUSH_STR(arg.member_access.object_name);
+                                                    PUSH_STR(arg->member_access.object_name);
                                                     PUSH_STR(".");
-                                                    PUSH_STR(arg.member_access.field_name);
+                                                    PUSH_STR(arg->member_access.field_name);
                                                     PUSH_STR(".length, stdout);\n");
                                                 }
                                                 else {
                                                     PUSH_STR("printf(\"%d\", ");
-                                                    PUSH_STR(arg.member_access.object_name);
+                                                    PUSH_STR(arg->member_access.object_name);
                                                     PUSH_STR(".");
-                                                    PUSH_STR(arg.member_access.field_name);
+                                                    PUSH_STR(arg->member_access.field_name);
                                                     PUSH_STR(");\n");
                                                 }
                                             }
@@ -488,11 +489,11 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
                                         seg_start = k + 1;
                                     }
                                 }
-                                if (seg_start < fmt.length) {
+                                if (seg_start < fmt->length) {
                                     push_tabs();
                                     PUSH_STR("fputs(\"");
                                     PUSH_STR(str_from_data_and_length(
-                                        fmt.data + seg_start, fmt.length - seg_start));
+                                        fmt->data + seg_start, fmt->length - seg_start));
                                     PUSH_STR("\", stdout);\n");
                                 }
                             }
@@ -552,10 +553,10 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
                                 PUSH_STR("int ");
                                 PUSH_STR(stmt->variable_definition.name);
                                 PUSH_STR("[] = {");
-                                auto &elems = expr->array_init.elements;
-                                for (size_t i = 0; i < elems.length; i++) {
+                                auto *elems = &expr->array_init.elements;
+                                for (size_t i = 0; i < elems->length; i++) {
                                     if (i != 0) { PUSH_STR(", "); }
-                                    PUSH_INT(elems[i]);
+                                    PUSH_INT(elems->data[i]);
                                 }
                                 PUSH_STR("};\n");
                                 break;
@@ -587,7 +588,7 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
                             push_tabs();
                             PUSH_STR(stmt->add_assign.variable_name);
                             PUSH_STR(" += ");
-                            emit_binary_operand(stmt->add_assign.operand);
+                            emit_binary_operand(&stmt->add_assign.operand);
                             PUSH_STR(";\n");
                             break;
                         }
@@ -608,65 +609,66 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
                         }
                         case ASTNodeType::FOR_IN_LOOP: {
                             size_t const loop_idx = for_in_counter++;
-                            Str const &elem = stmt->for_in_loop.element_name;
-                            Str const &coll = stmt->for_in_loop.collection_name;
-                            Str const &idx = stmt->for_in_loop.index_name;
-                            register_var(elem, VarKind::BLOOM_CHAR);
+                            Str const *elem = &stmt->for_in_loop.element_name;
+                            Str const *coll = &stmt->for_in_loop.collection_name;
+                            Str const *idx = &stmt->for_in_loop.index_name;
+                            register_var(*elem, VarKind::BLOOM_CHAR);
 
                             push_tabs(); PUSH_STR("{\n");
                             push_tabs(); PUSH_STR("\tsize_t __bloom_i");
                             PUSH_INT(static_cast<intmax_t>(loop_idx));
                             PUSH_STR(" = 0;\n");
-                            if (idx.length > 0) {
-                                register_var(idx, VarKind::SIZE_T);
-                                push_tabs(); PUSH_STR("\tsize_t "); PUSH_STR(idx); PUSH_STR(" = 0;\n");
+                            if (idx->length > 0) {
+                                register_var(*idx, VarKind::SIZE_T);
+                                push_tabs(); PUSH_STR("\tsize_t "); PUSH_STR(*idx); PUSH_STR(" = 0;\n");
                             }
                             push_tabs(); PUSH_STR("\twhile (__bloom_i");
                             PUSH_INT(static_cast<intmax_t>(loop_idx));
-                            PUSH_STR(" < "); PUSH_STR(coll); PUSH_STR(".length) {\n");
-                            push_tabs(); PUSH_STR("\t\tBloomChar "); PUSH_STR(elem); PUSH_STR(";\n");
+                            PUSH_STR(" < "); PUSH_STR(*coll); PUSH_STR(".length) {\n");
+                            push_tabs(); PUSH_STR("\t\tBloomChar "); PUSH_STR(*elem); PUSH_STR(";\n");
                             push_tabs(); PUSH_STR("\t\tunsigned char __bloom_f");
                             PUSH_INT(static_cast<intmax_t>(loop_idx));
                             PUSH_STR(" = (unsigned char)");
-                            PUSH_STR(coll); PUSH_STR(".data[__bloom_i");
+                            PUSH_STR(*coll); PUSH_STR(".data[__bloom_i");
                             PUSH_INT(static_cast<intmax_t>(loop_idx)); PUSH_STR("];\n");
                             push_tabs(); PUSH_STR("\t\tif (__bloom_f");
                             PUSH_INT(static_cast<intmax_t>(loop_idx)); PUSH_STR(" < 0x80) {\n");
-                            push_tabs(); PUSH_STR("\t\t\t"); PUSH_STR(elem); PUSH_STR(".len = 1;\n");
+                            push_tabs(); PUSH_STR("\t\t\t"); PUSH_STR(*elem); PUSH_STR(".len = 1;\n");
                             push_tabs(); PUSH_STR("\t\t}\n");
                             push_tabs(); PUSH_STR("\t\telse if (__bloom_f");
                             PUSH_INT(static_cast<intmax_t>(loop_idx)); PUSH_STR(" < 0xE0) {\n");
-                            push_tabs(); PUSH_STR("\t\t\t"); PUSH_STR(elem); PUSH_STR(".len = 2;\n");
+                            push_tabs(); PUSH_STR("\t\t\t"); PUSH_STR(*elem); PUSH_STR(".len = 2;\n");
                             push_tabs(); PUSH_STR("\t\t}\n");
                             push_tabs(); PUSH_STR("\t\telse if (__bloom_f");
                             PUSH_INT(static_cast<intmax_t>(loop_idx)); PUSH_STR(" < 0xF0) {\n");
-                            push_tabs(); PUSH_STR("\t\t\t"); PUSH_STR(elem); PUSH_STR(".len = 3;\n");
+                            push_tabs(); PUSH_STR("\t\t\t"); PUSH_STR(*elem); PUSH_STR(".len = 3;\n");
                             push_tabs(); PUSH_STR("\t\t}\n");
                             push_tabs(); PUSH_STR("\t\telse {\n");
-                            push_tabs(); PUSH_STR("\t\t\t"); PUSH_STR(elem); PUSH_STR(".len = 4;\n");
+                            push_tabs(); PUSH_STR("\t\t\t"); PUSH_STR(*elem); PUSH_STR(".len = 4;\n");
                             push_tabs(); PUSH_STR("\t\t}\n");
                             push_tabs(); PUSH_STR("\t\tfor (uint8_t __bloom_k");
                             PUSH_INT(static_cast<intmax_t>(loop_idx));
                             PUSH_STR(" = 0; __bloom_k");
                             PUSH_INT(static_cast<intmax_t>(loop_idx));
-                            PUSH_STR(" < "); PUSH_STR(elem); PUSH_STR(".len; __bloom_k");
+                            PUSH_STR(" < "); PUSH_STR(*elem); PUSH_STR(".len; __bloom_k");
                             PUSH_INT(static_cast<intmax_t>(loop_idx)); PUSH_STR("++) {\n");
-                            push_tabs(); PUSH_STR("\t\t\t"); PUSH_STR(elem); PUSH_STR(".bytes[__bloom_k");
+                            push_tabs(); PUSH_STR("\t\t\t"); PUSH_STR(*elem); PUSH_STR(".bytes[__bloom_k");
                             PUSH_INT(static_cast<intmax_t>(loop_idx));
-                            PUSH_STR("] = "); PUSH_STR(coll); PUSH_STR(".data[__bloom_i");
+                            PUSH_STR("] = "); PUSH_STR(*coll); PUSH_STR(".data[__bloom_i");
                             PUSH_INT(static_cast<intmax_t>(loop_idx));
                             PUSH_STR(" + __bloom_k");
                             PUSH_INT(static_cast<intmax_t>(loop_idx)); PUSH_STR("];\n");
                             push_tabs(); PUSH_STR("\t\t}\n");
                             push_tabs(); PUSH_STR("\t\t__bloom_i");
                             PUSH_INT(static_cast<intmax_t>(loop_idx));
-                            PUSH_STR(" += "); PUSH_STR(elem); PUSH_STR(".len;\n");
+                            PUSH_STR(" += "); PUSH_STR(*elem); PUSH_STR(".len;\n");
 
-                            for (auto &body_stmt : stmt->for_in_loop.body) {
-                                emit_stmt(&body_stmt, stmt, depth + 2);
+                            for (size_t bi = 0; bi < stmt->for_in_loop.body.length; bi++) {
+                                auto *body_stmt = &stmt->for_in_loop.body.data[bi];
+                                emit_stmt(body_stmt, stmt, depth + 2);
                             }
-                            if (idx.length > 0) {
-                                push_tabs(); PUSH_STR("\t\t"); PUSH_STR(idx); PUSH_STR("++;\n");
+                            if (idx->length > 0) {
+                                push_tabs(); PUSH_STR("\t\t"); PUSH_STR(*idx); PUSH_STR("++;\n");
                             }
 
                             push_tabs(); PUSH_STR("\t}\n");
@@ -676,23 +678,24 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
                         case ASTNodeType::FOR_COND_LOOP: {
                             push_tabs();
                             PUSH_STR("while (");
-                            auto &cond = stmt->for_cond_loop;
-                            if (cond.condition_left.is_identifier) {
-                                PUSH_STR(cond.condition_left.identifier);
+                            auto *cond = &stmt->for_cond_loop;
+                            if (cond->condition_left.is_identifier) {
+                                PUSH_STR(cond->condition_left.identifier);
                             }
                             else {
-                                PUSH_INT(cond.condition_left.integer_literal.value);
+                                PUSH_INT(cond->condition_left.integer_literal.value);
                             }
                             PUSH_STR(" < ");
-                            if (cond.condition_right.is_identifier) {
-                                PUSH_STR(cond.condition_right.identifier);
+                            if (cond->condition_right.is_identifier) {
+                                PUSH_STR(cond->condition_right.identifier);
                             }
                             else {
-                                PUSH_INT(cond.condition_right.integer_literal.value);
+                                PUSH_INT(cond->condition_right.integer_literal.value);
                             }
                             PUSH_STR(") {\n");
-                            for (auto &body_stmt : stmt->for_cond_loop.body) {
-                                emit_stmt(&body_stmt, stmt, depth + 1);
+                            for (size_t bi = 0; bi < stmt->for_cond_loop.body.length; bi++) {
+                                auto *body_stmt = &stmt->for_cond_loop.body.data[bi];
+                                emit_stmt(body_stmt, stmt, depth + 1);
                             }
                             push_tabs();
                             PUSH_STR("}\n");
@@ -701,30 +704,32 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
                         case ASTNodeType::FOR_LOOP: {
                             push_tabs();
                             PUSH_STR("while (1) {\n");
-                            for (auto &body_stmt : stmt->for_loop.body) {
-                                emit_stmt(&body_stmt, stmt, depth + 1);
+                            for (size_t bi = 0; bi < stmt->for_loop.body.length; bi++) {
+                                auto *body_stmt = &stmt->for_loop.body.data[bi];
+                                emit_stmt(body_stmt, stmt, depth + 1);
                             }
                             push_tabs();
                             PUSH_STR("}\n");
                             break;
                         }
                         case ASTNodeType::FOR_RANGE_LOOP: {
-                            Str const &elem = stmt->for_range_loop.element_name;
-                            register_var(elem, VarKind::INT);
+                            Str const *elem = &stmt->for_range_loop.element_name;
+                            register_var(*elem, VarKind::INT);
                             push_tabs();
                             PUSH_STR("for (int ");
-                            PUSH_STR(elem);
+                            PUSH_STR(*elem);
                             PUSH_STR(" = ");
                             PUSH_INT(stmt->for_range_loop.range_start);
                             PUSH_STR("; ");
-                            PUSH_STR(elem);
+                            PUSH_STR(*elem);
                             PUSH_STR(" < ");
                             PUSH_INT(stmt->for_range_loop.range_end);
                             PUSH_STR("; ");
-                            PUSH_STR(elem);
+                            PUSH_STR(*elem);
                             PUSH_STR("++) {\n");
-                            for (auto &body_stmt : stmt->for_range_loop.body) {
-                                emit_stmt(&body_stmt, stmt, depth + 1);
+                            for (size_t bi = 0; bi < stmt->for_range_loop.body.length; bi++) {
+                                auto *body_stmt = &stmt->for_range_loop.body.data[bi];
+                                emit_stmt(body_stmt, stmt, depth + 1);
                             }
                             push_tabs();
                             PUSH_STR("}\n");
@@ -732,20 +737,20 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
                         }
                         case ASTNodeType::IF_ELSE: {
                             auto emit_condition = [&](ASTNode *if_node) {
-                                auto &cond = if_node->if_else;
+                                auto *cond = &if_node->if_else;
                                 PUSH_STR("if (");
-                                if (cond.condition_left.is_identifier) {
-                                    PUSH_STR(cond.condition_left.identifier);
+                                if (cond->condition_left.is_identifier) {
+                                    PUSH_STR(cond->condition_left.identifier);
                                 }
                                 else {
-                                    PUSH_INT(cond.condition_left.integer_literal.value);
+                                    PUSH_INT(cond->condition_left.integer_literal.value);
                                 }
                                 PUSH_STR(" == ");
-                                if (cond.condition_right.is_identifier) {
-                                    PUSH_STR(cond.condition_right.identifier);
+                                if (cond->condition_right.is_identifier) {
+                                    PUSH_STR(cond->condition_right.identifier);
                                 }
                                 else {
-                                    PUSH_INT(cond.condition_right.integer_literal.value);
+                                    PUSH_INT(cond->condition_right.integer_literal.value);
                                 }
                                 PUSH_STR(") {\n");
                             };
@@ -755,21 +760,23 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
 
                             ASTNode *current_if = stmt;
                             while (true) {
-                                auto &cur = current_if->if_else;
-                                for (auto &body_stmt : cur.then_body) {
-                                    emit_stmt(&body_stmt, current_if, depth + 1);
+                                auto *cur = &current_if->if_else;
+                                for (size_t bi = 0; bi < cur->then_body.length; bi++) {
+                                    auto *body_stmt = &cur->then_body.data[bi];
+                                    emit_stmt(body_stmt, current_if, depth + 1);
                                 }
 
-                                if (cur.else_body.data == nullptr) {
+                                if (cur->else_body.data == nullptr) {
                                     push_tabs();
                                     PUSH_STR("}\n");
                                     break;
                                 }
 
                                 ASTNode *next_if = nullptr;
-                                for (auto &s : cur.else_body) {
-                                    if (s.parent == current_if && s.type == ASTNodeType::IF_ELSE) {
-                                        next_if = &s;
+                                for (size_t bi = 0; bi < cur->else_body.length; bi++) {
+                                    auto *s = &cur->else_body.data[bi];
+                                    if (s->parent == current_if && s->type == ASTNodeType::IF_ELSE) {
+                                        next_if = s;
                                         break;
                                     }
                                 }
@@ -783,8 +790,9 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
                                 else {
                                     push_tabs();
                                     PUSH_STR("} else {\n");
-                                    for (auto &body_stmt : cur.else_body) {
-                                        emit_stmt(&body_stmt, current_if, depth + 1);
+                                    for (size_t bi = 0; bi < cur->else_body.length; bi++) {
+                                        auto *body_stmt = &cur->else_body.data[bi];
+                                        emit_stmt(body_stmt, current_if, depth + 1);
                                     }
                                     push_tabs();
                                     PUSH_STR("}\n");
@@ -798,8 +806,9 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
                     }
                 };
 
-                for (auto &statement : node.proc_def.body) {
-                    emit_stmt(&statement, &node, 1);
+                for (size_t bi = 0; bi < node->proc_def.body.length; bi++) {
+                    auto *statement = &node->proc_def.body.data[bi];
+                    emit_stmt(statement, node, 1);
                 }
                 PUSH_STR("}\n\n");
                 break;

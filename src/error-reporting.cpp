@@ -84,6 +84,16 @@ static auto emit_source_context(
     }
 }
 
+static auto emit_error_location(Str filename, Str source_content, ParseError const *error) -> void {
+    fprintf(stderr, "\n%sLocation:%s\n", ANSI_CYAN, ANSI_RESET);
+    fprintf(stderr, "%s    In file %.*s, line %llu, column %llu:%s\n",
+        ANSI_CYAN, (int)filename.length, filename.data,
+        (unsigned long long)error->position.line,
+        (unsigned long long)(error->position.col - 1), ANSI_RESET);
+    emit_source_context(source_content, error->position.line, error->position.col,
+        error->size_token_width, error->brace_open_pos, error->brace_close_pos);
+}
+
 auto report_parse_errors(Array<ParseError> errors, bool *had_errors, Str source_content, Str filename) -> void {
     if (errors.length == 0) {
         return;
@@ -92,41 +102,30 @@ auto report_parse_errors(Array<ParseError> errors, bool *had_errors, Str source_
         *had_errors = true;
     }
     fprintf(stderr, "Compilation failed:\n");
-    for (auto &error : errors) {
-        if (error.code == ParseErrorCode::ARRAY_LENGTH_MISMATCH) {
+    for (size_t i = 0; i < errors.length; i++) {
+        auto const *error = &errors.data[i];
+        if (error->code == ParseErrorCode::ARRAY_LENGTH_MISMATCH) {
             fprintf(stderr, "\n%sError: Array length mismatch:%s\n", ANSI_RED, ANSI_RESET);
             fprintf(stderr,
                 "%s    An explicit length of %lld was given for an array initialization"
                 " but there's a total of %zu elements in the initialization.%s\n",
-                ANSI_RED, (long long)error.explicit_length, error.actual_count, ANSI_RESET);
-            fprintf(stderr, "\n%sLocation:%s\n", ANSI_CYAN, ANSI_RESET);
-            fprintf(stderr, "%s    In file %.*s, line %llu, column %llu:%s\n",
-                ANSI_CYAN, (int)filename.length, filename.data,
-                (unsigned long long)error.position.line,
-                (unsigned long long)(error.position.col - 1), ANSI_RESET);
-            emit_source_context(source_content, error.position.line, error.position.col,
-                error.size_token_width, error.brace_open_pos, error.brace_close_pos);
+                ANSI_RED, (long long)error->explicit_length, error->actual_count, ANSI_RESET);
+            emit_error_location(filename, source_content, error);
             fprintf(stderr, "\n%sHow to fix:%s\n", ANSI_BLUE, ANSI_RESET);
             fprintf(stderr,
                 "%s    - If the list of elements is correct, change the array length of %lld"
                 " to %zu to match the number of elements.%s\n",
-                ANSI_BLUE, (long long)error.explicit_length, error.actual_count, ANSI_RESET);
+                ANSI_BLUE, (long long)error->explicit_length, error->actual_count, ANSI_RESET);
             fprintf(stderr,
                 "%s    - If the array length of %lld is correct, change the number of"
                 " values to match the length of %lld.%s\n",
-                ANSI_BLUE, (long long)error.explicit_length, (long long)error.explicit_length, ANSI_RESET);
+                ANSI_BLUE, (long long)error->explicit_length, (long long)error->explicit_length, ANSI_RESET);
         }
-        else if (error.code == ParseErrorCode::BOOL_IN_ADDITION) {
+        else if (error->code == ParseErrorCode::BOOL_IN_ADDITION) {
             fprintf(stderr, "\n%sError: Type error in addition:%s\n", ANSI_RED, ANSI_RESET);
             fprintf(stderr, "%s    Adding an integer to a boolean is forbidden.%s\n",
                 ANSI_RED, ANSI_RESET);
-            fprintf(stderr, "\n%sLocation:%s\n", ANSI_CYAN, ANSI_RESET);
-            fprintf(stderr, "%s    In file %.*s, line %llu, column %llu:%s\n",
-                ANSI_CYAN, (int)filename.length, filename.data,
-                (unsigned long long)error.position.line,
-                (unsigned long long)(error.position.col - 1), ANSI_RESET);
-            emit_source_context(source_content, error.position.line, error.position.col,
-                error.size_token_width, {}, {});
+            emit_error_location(filename, source_content, error);
             fprintf(stderr, "\n%sHow to fix:%s\n", ANSI_BLUE, ANSI_RESET);
             fprintf(stderr,
                 "%s    - Ensure both values in an addition are of the same numeric type (integer).%s\n",
@@ -135,101 +134,83 @@ auto report_parse_errors(Array<ParseError> errors, bool *had_errors, Str source_
                 "%s    - If this is intentional, convert the boolean value to an integer (Int) before adding.%s\n",
                 ANSI_BLUE, ANSI_RESET);
         }
-        else if (error.code == ParseErrorCode::PROC_ARG_TYPE_MISMATCH) {
+        else if (error->code == ParseErrorCode::PROC_ARG_TYPE_MISMATCH) {
             fprintf(stderr, "\n%sError: Type mismatch in procedure call:%s\n", ANSI_RED, ANSI_RESET);
             fprintf(stderr,
                 "%s    Cannot pass a value of type '%.*s' to parameter '%.*s' which expects type '%.*s'.%s\n",
                 ANSI_RED,
-                (int)error.actual_type_name.length, error.actual_type_name.data,
-                (int)error.param_name.length, error.param_name.data,
-                (int)error.expected_type_name.length, error.expected_type_name.data,
+                (int)error->actual_type_name.length, error->actual_type_name.data,
+                (int)error->param_name.length, error->param_name.data,
+                (int)error->expected_type_name.length, error->expected_type_name.data,
                 ANSI_RESET);
-            fprintf(stderr, "\n%sLocation:%s\n", ANSI_CYAN, ANSI_RESET);
-            fprintf(stderr, "%s    In file %.*s, line %llu, column %llu:%s\n",
-                ANSI_CYAN, (int)filename.length, filename.data,
-                (unsigned long long)error.position.line,
-                (unsigned long long)(error.position.col - 1), ANSI_RESET);
-            emit_source_context(source_content, error.position.line, error.position.col,
-                error.size_token_width, {}, {});
+            emit_error_location(filename, source_content, error);
             fprintf(stderr, "\n%sHow to fix:%s\n", ANSI_BLUE, ANSI_RESET);
             fprintf(stderr,
                 "%s    - Change the argument to be of type '%.*s' to match the parameter '%.*s'.%s\n",
                 ANSI_BLUE,
-                (int)error.expected_type_name.length, error.expected_type_name.data,
-                (int)error.param_name.length, error.param_name.data,
+                (int)error->expected_type_name.length, error->expected_type_name.data,
+                (int)error->param_name.length, error->param_name.data,
                 ANSI_RESET);
             fprintf(stderr,
                 "%s    - If this is intentional, convert the value to '%.*s' before passing it.%s\n",
                 ANSI_BLUE,
-                (int)error.expected_type_name.length, error.expected_type_name.data,
+                (int)error->expected_type_name.length, error->expected_type_name.data,
                 ANSI_RESET);
         }
-        else if (error.code == ParseErrorCode::STRUCT_DUPLICATE_FIELD) {
+        else if (error->code == ParseErrorCode::STRUCT_DUPLICATE_FIELD) {
             fprintf(stderr, "\n%sError: Duplicate field in struct initialization:%s\n", ANSI_RED, ANSI_RESET);
             fprintf(stderr, "%s    Field '%.*s' is initialized more than once in %.*s.%s\n",
                 ANSI_RED,
-                (int)error.duplicate_field_name.length, error.duplicate_field_name.data,
-                (int)error.struct_type_name.length, error.struct_type_name.data,
+                (int)error->duplicate_field_name.length, error->duplicate_field_name.data,
+                (int)error->struct_type_name.length, error->struct_type_name.data,
                 ANSI_RESET);
-            fprintf(stderr, "\n%sLocation:%s\n", ANSI_CYAN, ANSI_RESET);
-            fprintf(stderr, "%s    In file %.*s, line %llu, column %llu:%s\n",
-                ANSI_CYAN, (int)filename.length, filename.data,
-                (unsigned long long)error.position.line,
-                (unsigned long long)(error.position.col - 1), ANSI_RESET);
-            emit_source_context(source_content, error.position.line, error.position.col,
-                error.size_token_width, {}, {});
+            emit_error_location(filename, source_content, error);
             fprintf(stderr, "\n%sHow to fix:%s\n", ANSI_BLUE, ANSI_RESET);
             fprintf(stderr,
                 "%s    - Remove the duplicate '%.*s' entry and keep only one initialization for this field.%s\n",
                 ANSI_BLUE,
-                (int)error.duplicate_field_name.length, error.duplicate_field_name.data,
+                (int)error->duplicate_field_name.length, error->duplicate_field_name.data,
                 ANSI_RESET);
         }
-        else if (error.code == ParseErrorCode::STRUCT_MISSING_FIELDS) {
+        else if (error->code == ParseErrorCode::STRUCT_MISSING_FIELDS) {
             size_t const missing_count = [&]() -> size_t {
                 size_t n = 0;
-                for (size_t i = 0; i < error.struct_field_count; i++) {
-                    if (error.struct_field_is_missing[i]) { n++; }
+                for (size_t i = 0; i < error->struct_field_count; i++) {
+                    if (error->struct_field_is_missing[i]) { n++; }
                 }
                 return n;
             }();
             fprintf(stderr, "\n%sError: Missing fields in struct initialization:%s\n", ANSI_RED, ANSI_RESET);
             fprintf(stderr, "%s    %.*s has %zu uninitialized field%s: ",
                 ANSI_RED,
-                (int)error.struct_type_name.length, error.struct_type_name.data,
+                (int)error->struct_type_name.length, error->struct_type_name.data,
                 missing_count,
                 missing_count == 1 ? "" : "s");
             bool first_missing = true;
-            for (size_t i = 0; i < error.struct_field_count; i++) {
-                if (!error.struct_field_is_missing[i]) { continue; }
+            for (size_t i = 0; i < error->struct_field_count; i++) {
+                if (!error->struct_field_is_missing[i]) { continue; }
                 if (!first_missing) { fprintf(stderr, ", "); }
                 fprintf(stderr, "%.*s",
-                    (int)error.struct_field_names[i].length, error.struct_field_names[i].data);
+                    (int)error->struct_field_names[i].length, error->struct_field_names[i].data);
                 first_missing = false;
             }
             fprintf(stderr, "%s\n", ANSI_RESET);
-            fprintf(stderr, "\n%sLocation:%s\n", ANSI_CYAN, ANSI_RESET);
-            fprintf(stderr, "%s    In file %.*s, line %llu, column %llu:%s\n",
-                ANSI_CYAN, (int)filename.length, filename.data,
-                (unsigned long long)error.position.line,
-                (unsigned long long)(error.position.col - 1), ANSI_RESET);
-            emit_source_context(source_content, error.position.line, error.position.col,
-                error.size_token_width, error.brace_open_pos, error.brace_close_pos);
+            emit_error_location(filename, source_content, error);
             fprintf(stderr, "\n%sStructure:%s %.*s :: struct ->\n",
                 ANSI_CYAN, ANSI_RESET,
-                (int)error.struct_type_name.length, error.struct_type_name.data);
-            for (size_t i = 0; i < error.struct_field_count; i++) {
-                if (error.struct_field_is_missing[i]) {
+                (int)error->struct_type_name.length, error->struct_type_name.data);
+            for (size_t i = 0; i < error->struct_field_count; i++) {
+                if (error->struct_field_is_missing[i]) {
                     fprintf(stderr, "%s    ^   %.*s: %.*s%s\n",
                         ANSI_ORANGE,
-                        (int)error.struct_field_names[i].length, error.struct_field_names[i].data,
-                        (int)error.struct_field_type_names[i].length, error.struct_field_type_names[i].data,
+                        (int)error->struct_field_names[i].length, error->struct_field_names[i].data,
+                        (int)error->struct_field_type_names[i].length, error->struct_field_type_names[i].data,
                         ANSI_RESET);
                 }
                 else {
                     fprintf(stderr, "        %.*s: %.*s\n",
-                        (int)error.struct_field_names[i].length, error.struct_field_names[i].data,
-                        (int)error.struct_field_type_names[i].length, error.struct_field_type_names[i].data);
+                        (int)error->struct_field_names[i].length, error->struct_field_names[i].data,
+                        (int)error->struct_field_type_names[i].length, error->struct_field_type_names[i].data);
                 }
             }
             fprintf(stderr, "\n%sHow to fix:%s\n", ANSI_BLUE, ANSI_RESET);
@@ -239,21 +220,15 @@ auto report_parse_errors(Array<ParseError> errors, bool *had_errors, Str source_
             fprintf(stderr,
                 "%s    - If default zero-initialization is desired, use %.*s {} instead.%s\n",
                 ANSI_BLUE,
-                (int)error.struct_type_name.length, error.struct_type_name.data,
+                (int)error->struct_type_name.length, error->struct_type_name.data,
                 ANSI_RESET);
         }
-        else if (error.code == ParseErrorCode::UNEXPECTED_TOKEN) {
-            Str const token_type_str = to_string(error.token_type);
+        else if (error->code == ParseErrorCode::UNEXPECTED_TOKEN) {
+            Str const token_type_str = to_string(error->token_type);
             fprintf(stderr, "\n%sError: Unexpected token:%s\n", ANSI_RED, ANSI_RESET);
             fprintf(stderr, "%s    Encountered an unexpected \"%.*s\" at this location.%s\n",
                 ANSI_RED, (int)token_type_str.length, token_type_str.data, ANSI_RESET);
-            fprintf(stderr, "\n%sLocation:%s\n", ANSI_CYAN, ANSI_RESET);
-            fprintf(stderr, "%s    In file %.*s, line %llu, column %llu:%s\n",
-                ANSI_CYAN, (int)filename.length, filename.data,
-                (unsigned long long)error.position.line,
-                (unsigned long long)(error.position.col - 1), ANSI_RESET);
-            emit_source_context(source_content, error.position.line, error.position.col,
-                0, {}, {});
+            emit_error_location(filename, source_content, error);
         }
     }
 }

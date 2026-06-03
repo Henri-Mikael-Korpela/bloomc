@@ -29,6 +29,6 @@ constexpr auto ok(T value) -> Result<T, E> {
 }
 
 template<typename T, typename E>
-constexpr auto is_ok(Result<T, E> const &result) -> bool {
-    return result.is_ok;
+constexpr auto is_ok(Result<T, E> const *result) -> bool {
+    return result->is_ok;
 }

@@ -154,24 +154,25 @@ auto transpile(char const *input_file_path_cstr, char const *output_file_path_cs
     Array<Token> tokens = tokenize(&input_file_content, &main_allocator);
     print("Tokenized % tokens\n", tokens.length);
 
-    for (auto &token : tokens) {
-        auto token_type = to_string(token.type);
-        print("Token %:% %", token.position.line, token.position.col, to_string(token.type));
-        switch (token.type) {
+    for (size_t i = 0; i < tokens.length; i++) {
+        auto const *token = &tokens.data[i];
+        auto token_type = to_string(token->type);
+        print("Token %:% %", token->position.line, token->position.col, to_string(token->type));
+        switch (token->type) {
             case TokenType::IDENTIFIER:
                 print(" | % (% chars)",
-                    token.identifier.content,
-                    token.identifier.content.length
+                    token->identifier.content,
+                    token->identifier.content.length
                 );
                 break;
             case TokenType::INDENT:
                 print(" | level: %",
-                    token.indent.level
+                    token->indent.level
                 );
                 break;
             case TokenType::INTEGER_LITERAL:
                 print(" | value: %",
-                    token.integer_literal.value
+                    token->integer_literal.value
                 );
                 break;
             case TokenType::KEYWORD_PROC:
@@ -179,7 +180,7 @@ auto transpile(char const *input_file_path_cstr, char const *output_file_path_cs
                 break;
             case TokenType::STRING_LITERAL:
                 print(" | content: %",
-                    token.string_literal.content
+                    token->string_literal.content
                 );
                 break;
         }
@@ -197,25 +198,26 @@ auto transpile(char const *input_file_path_cstr, char const *output_file_path_cs
 
     auto MISSING_TYPE = cstr_to_str("(none)");
 
-    for (auto &node : ast_nodes) {
-        if (node.parent != nullptr) {
+    for (size_t ni = 0; ni < ast_nodes.length; ni++) {
+        auto const *node = &ast_nodes.data[ni];
+        if (node->parent != nullptr) {
             continue;
         }
-        print("AST Node type: %\n", to_string(node.type));
-        switch (node.type) {
+        print("AST Node type: %\n", to_string(node->type));
+        switch (node->type) {
             case ASTNodeType::BINARY_ADD: {
-                auto &operands = node.binary_operation.operands;
-                print("\tBinary operation (% operands):", operands.length);
-                for (size_t i = 0; i < operands.length; i++) {
+                auto const *operands = &node->binary_operation.operands;
+                print("\tBinary operation (% operands):", operands->length);
+                for (size_t i = 0; i < operands->length; i++) {
                     if (i != 0) {
                         printf(" +");
                     }
-                    auto &op = operands[i];
-                    if (op.type == BinaryOperandType::IDENTIFIER) {
-                        print(" %", op.identifier);
+                    auto const *op = &operands->data[i];
+                    if (op->type == BinaryOperandType::IDENTIFIER) {
+                        print(" %", op->identifier);
                     }
-                    else if (op.type == BinaryOperandType::PROC_CALL) {
-                        print(" %(...)", op.proc_call.caller_identifier);
+                    else if (op->type == BinaryOperandType::PROC_CALL) {
+                        print(" %(...)", op->proc_call.caller_identifier);
                     }
                     else {
                         printf(" <literal>");
@@ -226,32 +228,33 @@ auto transpile(char const *input_file_path_cstr, char const *output_file_path_cs
             }
             case ASTNodeType::PROC_DEF:
                 print("\tProcedure name: % (% chars)\n",
-                    node.proc_def.name,
-                    node.proc_def.name.length
+                    node->proc_def.name,
+                    node->proc_def.name.length
                 );
-                print("\tProcedure parameters (%):\n", node.proc_def.parameters.length);
-                for (size_t i = 0; i < node.proc_def.parameters.length; i++) {
-                    auto &param = node.proc_def.parameters[i];
-                    print("\t\t%: % (% chars)\n", i, param.name, param.name.length);
+                print("\tProcedure parameters (%):\n", node->proc_def.parameters.length);
+                for (size_t i = 0; i < node->proc_def.parameters.length; i++) {
+                    auto const *param = &node->proc_def.parameters.data[i];
+                    print("\t\t%: % (% chars)\n", i, param->name, param->name.length);
                 }
                 Str return_type_name = MISSING_TYPE;
-                if (node.proc_def.return_type) {
-                    return_type_name = node.proc_def.return_type->name;
+                if (node->proc_def.return_type) {
+                    return_type_name = node->proc_def.return_type->name;
                 }
                 print("\tProcedure return type: %\n", return_type_name);
-                print("\tProcedure body (length %):\n", node.proc_def.body.length);
-                for (auto &statement : node.proc_def.body) {
-                    if (statement.parent != &node) {
+                print("\tProcedure body (length %):\n", node->proc_def.body.length);
+                for (size_t si = 0; si < node->proc_def.body.length; si++) {
+                    auto const *statement = &node->proc_def.body.data[si];
+                    if (statement->parent != node) {
                         continue;
                     }
-                    print("\t\tStatement: %\n", to_string(statement.type));
-                    if (statement.type == ASTNodeType::PROC_CALL) {
+                    print("\t\tStatement: %\n", to_string(statement->type));
+                    if (statement->type == ASTNodeType::PROC_CALL) {
                         print("\t\t\tArgument count: %\n",
-                            statement.proc_call.arguments.length);
+                            statement->proc_call.arguments.length);
                     }
-                    else if (statement.type == ASTNodeType::RETURN) {
+                    else if (statement->type == ASTNodeType::RETURN) {
                         print("\t\t\tReturn value node type: %\n",
-                            to_string(statement.return_value->type));
+                            to_string(statement->return_value->type));
                     }
                 }
                 break;

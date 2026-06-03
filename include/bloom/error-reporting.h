@@ -7,6 +7,7 @@
 
 enum class ParseErrorCode {
     UNEXPECTED_TOKEN,
+    ARRAY_INDEX_OUT_OF_BOUNDS,
     ARRAY_LENGTH_MISMATCH,
     BOOL_IN_ADDITION,
     PROC_ARG_TYPE_MISMATCH,
@@ -16,12 +17,13 @@ enum class ParseErrorCode {
 
 constexpr auto to_string(ParseErrorCode code) -> char const * {
     switch (code) {
-        case ParseErrorCode::UNEXPECTED_TOKEN:        return "unexpected token";
-        case ParseErrorCode::ARRAY_LENGTH_MISMATCH:   return "array length mismatch";
-        case ParseErrorCode::BOOL_IN_ADDITION:        return "bool in addition";
-        case ParseErrorCode::PROC_ARG_TYPE_MISMATCH:  return "proc arg type mismatch";
-        case ParseErrorCode::STRUCT_MISSING_FIELDS:   return "struct missing fields";
-        case ParseErrorCode::STRUCT_DUPLICATE_FIELD:  return "struct duplicate field";
+        case ParseErrorCode::UNEXPECTED_TOKEN:          return "unexpected token";
+        case ParseErrorCode::ARRAY_INDEX_OUT_OF_BOUNDS: return "array index out of bounds";
+        case ParseErrorCode::ARRAY_LENGTH_MISMATCH:     return "array length mismatch";
+        case ParseErrorCode::BOOL_IN_ADDITION:          return "bool in addition";
+        case ParseErrorCode::PROC_ARG_TYPE_MISMATCH:    return "proc arg type mismatch";
+        case ParseErrorCode::STRUCT_MISSING_FIELDS:     return "struct missing fields";
+        case ParseErrorCode::STRUCT_DUPLICATE_FIELD:    return "struct duplicate field";
     }
     return "unknown error";
 }
@@ -47,6 +49,10 @@ struct ParseError {
     bool struct_field_is_missing[8];
     // For STRUCT_DUPLICATE_FIELD
     Str duplicate_field_name;
+    // For ARRAY_INDEX_OUT_OF_BOUNDS
+    Str array_name;
+    int64_t array_index;
+    int64_t known_array_size;
 };
 
 auto report_parse_errors(Array<ParseError> errors, bool *had_errors, Str source_content, Str filename) -> void;

@@ -7,6 +7,7 @@
 enum class ASTNodeType : uint8_t {
     UNKNOWN = 0,
     ARRAY_ACCESS,
+    ARRAY_ELEMENT_ASSIGN,
     ARRAY_INIT,
     BINARY_ADD,
     BOOLEAN_LITERAL,
@@ -177,6 +178,11 @@ struct ASTNode {
             ASTNode *expr;
         } member_assign;
         struct {
+            Str variable_name;
+            int64_t index;
+            ASTNode *expr;
+        } array_element_assign;
+        struct {
             Str name;
             Array<ProcParameterASTNode> fields;
         } struct_def;
@@ -194,8 +200,9 @@ constexpr auto to_string(ASTNodeType type) -> Str {
     #define STR(x) cstr_to_str(x)
     switch (type) {
         case ASTNodeType::ADD_ASSIGN:          return STR("add_assign");
-        case ASTNodeType::ARRAY_ACCESS:        return STR("array_access");
-        case ASTNodeType::ARRAY_INIT:          return STR("array_init");
+        case ASTNodeType::ARRAY_ACCESS:          return STR("array_access");
+        case ASTNodeType::ARRAY_ELEMENT_ASSIGN: return STR("array_element_assign");
+        case ASTNodeType::ARRAY_INIT:           return STR("array_init");
         case ASTNodeType::BINARY_ADD:          return STR("binary_add");
         case ASTNodeType::BOOLEAN_LITERAL:     return STR("boolean_literal");
         case ASTNodeType::BREAK:               return STR("break");

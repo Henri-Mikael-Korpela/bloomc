@@ -185,6 +185,9 @@ struct Context {
     struct VarTypeEntry { Str name; bool is_bool; };
     VarTypeEntry var_types[128] = {};
     size_t var_type_count = 0;
+    struct ArraySizeEntry { Str name; int64_t size; };
+    ArraySizeEntry array_sizes[64] = {};
+    size_t array_size_count = 0;
 };
 
 // For debugging purposes
@@ -1692,6 +1695,15 @@ static auto parse_statement(
                     };
                 }
 
+                if (expr_node_ptr->type == ASTNodeType::ARRAY_INIT &&
+                    context->array_size_count < 64)
+                {
+                    context->array_sizes[context->array_size_count++] = {
+                        .name = next_token->identifier.content,
+                        .size = static_cast<int64_t>(expr_node_ptr->array_init.elements.length),
+                    };
+                }
+
                 (void)iter_append(nodes_block_iter, ASTNode {
                     .type = ASTNodeType::VARIABLE_DEFINITION,
                     .parent = parent_node,
@@ -1794,6 +1806,14 @@ static auto parse_statement(
                         return false;
                     }
                     auto *expr_node_ptr = iter_append(nodes_block_iter, std::move(expr_parse_result.ok));
+                    if (expr_node_ptr->type == ASTNodeType::ARRAY_INIT &&
+                        context->array_size_count < 64)
+                    {
+                        context->array_sizes[context->array_size_count++] = {
+                            .name = next_token->identifier.content,
+                            .size = static_cast<int64_t>(expr_node_ptr->array_init.elements.length),
+                        };
+                    }
                     (void)iter_append(nodes_block_iter, ASTNode {
                         .type = ASTNodeType::VARIABLE_DEFINITION,
                         .parent = parent_node,
@@ -1809,6 +1829,75 @@ static auto parse_statement(
                         "Expected newline or end token after constant expression definition");
                     (void)iter_next(tokens_iter);
                 }
+                break;
+            }
+            case TokenType::BRACKET_OPEN: {
+                (void)iter_next(tokens_iter); // consume [
+                auto *index_token = iter_next(tokens_iter);
+                if (index_token->type != TokenType::INTEGER_LITERAL) {
+                    append(errors, PARSE_ERROR_CREATE(UNEXPECTED_TOKEN, index_token));
+                    return false;
+                }
+                int64_t const index = index_token->integer_literal.value;
+                auto *bracket_close = iter_next(tokens_iter);
+                if (bracket_close->type != TokenType::BRACKET_CLOSE) {
+                    append(errors, PARSE_ERROR_CREATE(UNEXPECTED_TOKEN, bracket_close));
+                    return false;
+                }
+                if (expect_token_or_append_error(tokens_iter, TokenType::EQUALS, errors) == nullptr) {
+                    return false;
+                }
+                for (size_t ai = 0; ai < context->array_size_count; ai++) {
+                    Str const *aname = &context->array_sizes[ai].name;
+                    if (aname->length == next_token->identifier.content.length &&
+                        strncmp(aname->data, next_token->identifier.content.data, aname->length) == 0)
+                    {
+                        int64_t const known_size = context->array_sizes[ai].size;
+                        if (index < 0 || index >= known_size) {
+                            ParseError err = {};
+                            err.code = ParseErrorCode::ARRAY_INDEX_OUT_OF_BOUNDS;
+                            err.position = index_token->position;
+                            err.src_code_line = __LINE__;
+                            err.token_type = index_token->type;
+                            err.size_token_width = 1;
+                            err.array_name = next_token->identifier.content;
+                            err.array_index = index;
+                            err.known_array_size = known_size;
+                            append(errors, err);
+                            return false;
+                        }
+                        break;
+                    }
+                }
+                Iterator<Token> expr_tokens_iter;
+                if (!slice_expression_tokens(tokens_iter, errors, &expr_tokens_iter)) {
+                    return false;
+                }
+                auto expr_parse_result = parse_expression(
+                    &expr_tokens_iter, context, nodes_block_iter,
+                    proc_params_block, proc_params_iter, types_iter,
+                    operands_iter, array_elements_iter, errors
+                );
+                if (!is_ok(&expr_parse_result)) {
+                    append(errors, expr_parse_result.err);
+                    return false;
+                }
+                auto *expr_node_ptr = iter_append(nodes_block_iter, std::move(expr_parse_result.ok));
+                (void)iter_append(nodes_block_iter, ASTNode {
+                    .type = ASTNodeType::ARRAY_ELEMENT_ASSIGN,
+                    .parent = parent_node,
+                    .array_element_assign = {
+                        .variable_name = next_token->identifier.content,
+                        .index = index,
+                        .expr = expr_node_ptr,
+                    },
+                });
+                tokens_iter->current_index += expr_tokens_iter.current_index;
+                assert(
+                    iter_current(tokens_iter)->type == TokenType::NEWLINE ||
+                    iter_current(tokens_iter)->type == TokenType::END &&
+                    "Expected newline or end token after array element assignment");
+                (void)iter_next(tokens_iter);
                 break;
             }
         }

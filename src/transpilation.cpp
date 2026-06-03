@@ -602,6 +602,17 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
                             PUSH_STR(";\n");
                             break;
                         }
+                        case ASTNodeType::ARRAY_ELEMENT_ASSIGN: {
+                            push_tabs();
+                            PUSH_STR(stmt->array_element_assign.variable_name);
+                            PUSH_STR('[');
+                            PUSH_INT(stmt->array_element_assign.index);
+                            PUSH_STR(']');
+                            PUSH_STR(" = ");
+                            emit_expression(stmt->array_element_assign.expr);
+                            PUSH_STR(";\n");
+                            break;
+                        }
                         case ASTNodeType::BREAK: {
                             push_tabs();
                             PUSH_STR("break;\n");

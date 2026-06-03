@@ -104,7 +104,22 @@ auto report_parse_errors(Array<ParseError> errors, bool *had_errors, Str source_
     fprintf(stderr, "Compilation failed:\n");
     for (size_t i = 0; i < errors.length; i++) {
         auto const *error = &errors.data[i];
-        if (error->code == ParseErrorCode::ARRAY_LENGTH_MISMATCH) {
+        if (error->code == ParseErrorCode::ARRAY_INDEX_OUT_OF_BOUNDS) {
+            fprintf(stderr, "\n%sError: Array index out of bounds:%s\n", ANSI_RED, ANSI_RESET);
+            fprintf(stderr,
+                "%s    Index %lld is out of bounds for array '%.*s' of size %lld.%s\n",
+                ANSI_RED,
+                (long long)error->array_index,
+                (int)error->array_name.length, error->array_name.data,
+                (long long)error->known_array_size,
+                ANSI_RESET);
+            emit_error_location(filename, source_content, error);
+            fprintf(stderr, "\n%sHow to fix:%s\n", ANSI_BLUE, ANSI_RESET);
+            fprintf(stderr,
+                "%s    - Use an index between 0 and %lld (inclusive).%s\n",
+                ANSI_BLUE, (long long)(error->known_array_size - 1), ANSI_RESET);
+        }
+        else if (error->code == ParseErrorCode::ARRAY_LENGTH_MISMATCH) {
             fprintf(stderr, "\n%sError: Array length mismatch:%s\n", ANSI_RED, ANSI_RESET);
             fprintf(stderr,
                 "%s    An explicit length of %lld was given for an array initialization"

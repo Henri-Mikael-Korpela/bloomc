@@ -1,0 +1,6 @@
+main :: proc() ->
+    // Array initialization with
+    // deduced array length
+    a := [const]Int{ 2, 5, 9 }
+    a[0] = 3
+    a[3] = 4 // Fails, index out of bounds

@@ -481,6 +481,16 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
                             PUSH_STR(";\n");
                             break;
                         }
+                        case ASTNodeType::MEMBER_ASSIGN: {
+                            push_tabs();
+                            PUSH_STR(stmt->member_assign.object_name);
+                            PUSH_STR(".");
+                            PUSH_STR(stmt->member_assign.field_name);
+                            PUSH_STR(" = ");
+                            emit_expression(stmt->member_assign.expr);
+                            PUSH_STR(";\n");
+                            break;
+                        }
                         case ASTNodeType::BREAK: {
                             push_tabs();
                             PUSH_STR("break;\n");

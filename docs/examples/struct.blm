@@ -5,5 +5,5 @@ main :: proc() ->
     s :: MyStruct {}
     print("S years: {}\n", s.years)
 
-    s.years = 5
+    s.years = 5 + 10
     print("S years: {}\n", s.years)

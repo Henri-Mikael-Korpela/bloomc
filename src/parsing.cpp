@@ -1425,6 +1425,67 @@ static auto parse_statement(
                 (void)iter_next(tokens_iter);
                 break;
             }
+            case TokenType::DOT: {
+                (void)iter_next(tokens_iter); // consume .
+                auto *field_token = iter_next(tokens_iter);
+                if (field_token->type != TokenType::IDENTIFIER) {
+                    append(errors, PARSE_ERROR_CREATE(UNEXPECTED_TOKEN, field_token));
+                    return false;
+                }
+                auto *equals_token = iter_next(tokens_iter);
+                if (equals_token->type != TokenType::EQUALS) {
+                    append(errors, PARSE_ERROR_CREATE(UNEXPECTED_TOKEN, equals_token));
+                    return false;
+                }
+                int brace_depth = 0;
+                int64_t expr_end_token_index = iter_get_index_at_if<Token>(
+                    tokens_iter, [&brace_depth](auto *token) {
+                        if (token->type == TokenType::BRACE_OPEN) { brace_depth++; return false; }
+                        if (token->type == TokenType::BRACE_CLOSE && brace_depth > 0) { brace_depth--; return false; }
+                        return brace_depth == 0 && (
+                            token->type == TokenType::NEWLINE ||
+                            token->type == TokenType::END
+                        );
+                    }
+                );
+                if (expr_end_token_index == -1) {
+                    append(errors, PARSE_ERROR_CREATE(UNEXPECTED_TOKEN, iter_current(tokens_iter)));
+                    return false;
+                }
+                auto expr_tokens_iter = iter_slice_by_offset(
+                    tokens_iter, tokens_iter->current_index, expr_end_token_index
+                );
+                if (expr_tokens_iter.elements.length == 0) {
+                    append(errors, PARSE_ERROR_CREATE(UNEXPECTED_TOKEN, iter_current(tokens_iter)));
+                    return false;
+                }
+                auto expr_parse_result = parse_expression(
+                    &expr_tokens_iter, context, nodes_block_iter,
+                    proc_params_block, proc_params_iter, types_iter,
+                    operands_iter, array_elements_iter, errors
+                );
+                if (!is_ok(expr_parse_result)) {
+                    append(errors, expr_parse_result.err);
+                    return false;
+                }
+                auto *expr_node_ptr = iter_append(nodes_block_iter, std::move(expr_parse_result.ok));
+                (void)iter_append(nodes_block_iter, ASTNode {
+                    .type = ASTNodeType::MEMBER_ASSIGN,
+                    .parent = parent_node,
+                    .member_assign = {
+                        .object_name = next_token->identifier.content,
+                        .field_name = field_token->identifier.content,
+                        .expr = expr_node_ptr,
+                    },
+                });
+                tokens_iter->current_index += expr_tokens_iter.current_index;
+                assert(
+                    iter_current(tokens_iter)->type == TokenType::NEWLINE ||
+                    iter_current(tokens_iter)->type == TokenType::END &&
+                    "Expected newline or end token after member assignment");
+                (void)iter_next(tokens_iter);
+                break;
+            }
             case TokenType::CONST_DEF: {
                 (void)iter_next(tokens_iter); // consume ::
 

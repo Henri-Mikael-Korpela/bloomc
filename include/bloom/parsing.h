@@ -22,6 +22,7 @@ enum class ASTNodeType : uint8_t {
     IDENTIFIER,
     INTEGER_LITERAL,
     MEMBER_ACCESS,
+    MEMBER_ASSIGN,
     ADD_ASSIGN,
     PASS,
     PROC_CALL,
@@ -166,6 +167,11 @@ struct ASTNode {
             Str field_name;
         } member_access;
         struct {
+            Str object_name;
+            Str field_name;
+            ASTNode *expr;
+        } member_assign;
+        struct {
             Str name;
             Array<ProcParameterASTNode> fields;
         } struct_def;
@@ -197,6 +203,7 @@ constexpr auto to_string(ASTNodeType type) -> Str {
         case ASTNodeType::IDENTIFIER:          return STR("identifier");
         case ASTNodeType::INTEGER_LITERAL:     return STR("integer_literal");
         case ASTNodeType::MEMBER_ACCESS:       return STR("member_access");
+        case ASTNodeType::MEMBER_ASSIGN:       return STR("member_assign");
         case ASTNodeType::PASS:                return STR("pass");
         case ASTNodeType::PROC_CALL:           return STR("procedure call");
         case ASTNodeType::PROC_DEF:            return STR("procedure definition");

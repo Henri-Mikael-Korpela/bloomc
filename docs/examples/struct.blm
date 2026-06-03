@@ -14,3 +14,10 @@ main :: proc() ->
     // Initialization of structure with all values
     t :: MyStruct { days = 15, years = 2002 }
     print("Days: {}, Years: {}\n", t.days, t.years)
+
+    // Initialization spanning multiple lines with trailing comma
+    u :: MyStruct {
+        days = 15,
+        years = 2002,
+    }
+    print("Days: {}, Years: {}\n", u.days, u.years)

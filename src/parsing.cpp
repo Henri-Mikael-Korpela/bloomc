@@ -883,12 +883,34 @@ static auto parse_expression(
                 size_t const field_names_begin = proc_params_iter->current_index;
                 size_t const field_values_begin = array_elements_iter->current_index;
                 Token::Position brace_close_position = {};
+                size_t inner_indent_level = SIZE_MAX;
+                size_t prev_indent_level = SIZE_MAX;
+                bool last_was_indent = false;
                 while (true) {
                     auto *tok = iter_next(tokens_iter);
                     if (tok->type == TokenType::BRACE_CLOSE) {
+                        if (last_was_indent &&
+                            inner_indent_level != SIZE_MAX &&
+                            prev_indent_level >= inner_indent_level)
+                        {
+                            return err<ASTNode, ParseError>(PARSE_ERROR_CREATE(UNEXPECTED_TOKEN, tok));
+                        }
                         brace_close_position = tok->position;
                         break;
                     }
+                    if (tok->type == TokenType::NEWLINE) {
+                        last_was_indent = false;
+                        continue;
+                    }
+                    if (tok->type == TokenType::INDENT) {
+                        prev_indent_level = tok->indent.level;
+                        if (inner_indent_level == SIZE_MAX) {
+                            inner_indent_level = prev_indent_level;
+                        }
+                        last_was_indent = true;
+                        continue;
+                    }
+                    last_was_indent = false;
                     if (tok->type == TokenType::COMMA) {
                         continue;
                     }

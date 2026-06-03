@@ -56,6 +56,52 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
         return VarKind::INT;
     };
 
+    struct StructFieldDef { Str name; VarKind kind; };
+    struct StructDefEntry { Str name; StructFieldDef fields[16]; size_t field_count; };
+    StructDefEntry struct_defs[16] = {};
+    size_t struct_def_count = 0;
+
+    auto register_struct_def = [&](ASTNode const &node) {
+        if (struct_def_count >= 16) { return; }
+        auto &def = struct_defs[struct_def_count++];
+        def.name = node.struct_def.name;
+        def.field_count = 0;
+        for (size_t i = 0; i < node.struct_def.fields.length && i < 16; i++) {
+            auto &field = node.struct_def.fields.data[i];
+            VarKind kind = VarKind::INT;
+            if (field.type_name == "Bool") { kind = VarKind::BOOL; }
+            else if (field.type_name == "Str") { kind = VarKind::BLOOM_STR; }
+            def.fields[def.field_count++] = { .name = field.name, .kind = kind };
+        }
+    };
+
+    auto lookup_member_kind = [&](Str object_name, Str field_name) -> VarKind {
+        Str struct_type = {};
+        for (size_t i = 0; i < var_type_count; i++) {
+            if (var_types[i].name.length == object_name.length &&
+                strncmp(var_types[i].name.data, object_name.data, object_name.length) == 0)
+            {
+                if (var_types[i].kind == VarKind::STRUCT) {
+                    struct_type = var_types[i].struct_type_name;
+                }
+                break;
+            }
+        }
+        if (struct_type.length == 0) { return VarKind::INT; }
+        for (size_t i = 0; i < struct_def_count; i++) {
+            if (struct_defs[i].name.length != struct_type.length ||
+                strncmp(struct_defs[i].name.data, struct_type.data, struct_type.length) != 0) { continue; }
+            for (size_t j = 0; j < struct_defs[i].field_count; j++) {
+                if (struct_defs[i].fields[j].name.length == field_name.length &&
+                    strncmp(struct_defs[i].fields[j].name.data, field_name.data, field_name.length) == 0)
+                {
+                    return struct_defs[i].fields[j].kind;
+                }
+            }
+        }
+        return VarKind::INT;
+    };
+
     auto find_array_size = [&](Str var_name) -> size_t {
         for (size_t i = 0; i < array_var_count; i++) {
             Str const &name = array_vars[i].name;
@@ -107,6 +153,11 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
                     emit_proc_call_args(&arg->proc_call.arguments);
                     PUSH_STR(')');
                     break;
+                case ASTNodeType::MEMBER_ACCESS:
+                    PUSH_STR(arg->member_access.object_name);
+                    PUSH_STR('.');
+                    PUSH_STR(arg->member_access.field_name);
+                    break;
                 default:
                     assert(false && "Unsupported argument type in emit_proc_call_args");
             }
@@ -152,6 +203,11 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
             }
             case BinaryOperandType::INTEGER_LITERAL:
                 PUSH_INT(op.integer_literal.value);
+                break;
+            case BinaryOperandType::MEMBER_ACCESS:
+                PUSH_STR(op.member_access.object_name);
+                PUSH_STR('.');
+                PUSH_STR(op.member_access.field_name);
                 break;
         }
     };
@@ -222,6 +278,11 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
                 PUSH_STR("}");
                 break;
             }
+            case ASTNodeType::MEMBER_ACCESS:
+                PUSH_STR(expr->member_access.object_name);
+                PUSH_STR('.');
+                PUSH_STR(expr->member_access.field_name);
+                break;
             default:
                 assert(false && "Unsupported expression type in emit_expression");
         }
@@ -237,6 +298,7 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
     for (auto &node : *ast_nodes) {
         switch (node.type) {
             case ASTNodeType::STRUCT_DEF: {
+                register_struct_def(node);
                 PUSH_STR("typedef struct {\n");
                 for (size_t i = 0; i < node.struct_def.fields.length; i++) {
                     auto &field = node.struct_def.fields.data[i];
@@ -380,12 +442,45 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
                                                 PUSH_INT(arg.array_access.index);
                                                 PUSH_STR("]);\n");
                                             }
-                                            else if (arg.type == ASTNodeType::MEMBER_ACCESS) {
+                                            else if (arg.type == ASTNodeType::BINARY_ADD) {
                                                 PUSH_STR("printf(\"%d\", ");
-                                                PUSH_STR(arg.member_access.object_name);
-                                                PUSH_STR(".");
-                                                PUSH_STR(arg.member_access.field_name);
+                                                auto &ops = arg.binary_operation.operands;
+                                                for (size_t k = 0; k < ops.length; k++) {
+                                                    if (k != 0) { PUSH_STR(" + "); }
+                                                    emit_binary_operand(ops[k]);
+                                                }
                                                 PUSH_STR(");\n");
+                                            }
+                                            else if (arg.type == ASTNodeType::MEMBER_ACCESS) {
+                                                VarKind kind = lookup_member_kind(
+                                                    arg.member_access.object_name,
+                                                    arg.member_access.field_name
+                                                );
+                                                if (kind == VarKind::BOOL) {
+                                                    PUSH_STR("fputs(");
+                                                    PUSH_STR(arg.member_access.object_name);
+                                                    PUSH_STR(".");
+                                                    PUSH_STR(arg.member_access.field_name);
+                                                    PUSH_STR(" ? \"true\" : \"false\", stdout);\n");
+                                                }
+                                                else if (kind == VarKind::BLOOM_STR) {
+                                                    PUSH_STR("fwrite(");
+                                                    PUSH_STR(arg.member_access.object_name);
+                                                    PUSH_STR(".");
+                                                    PUSH_STR(arg.member_access.field_name);
+                                                    PUSH_STR(".data, 1, ");
+                                                    PUSH_STR(arg.member_access.object_name);
+                                                    PUSH_STR(".");
+                                                    PUSH_STR(arg.member_access.field_name);
+                                                    PUSH_STR(".length, stdout);\n");
+                                                }
+                                                else {
+                                                    PUSH_STR("printf(\"%d\", ");
+                                                    PUSH_STR(arg.member_access.object_name);
+                                                    PUSH_STR(".");
+                                                    PUSH_STR(arg.member_access.field_name);
+                                                    PUSH_STR(");\n");
+                                                }
                                             }
                                             arg_idx++;
                                         }
@@ -428,7 +523,22 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
                                 PUSH_STR(expr->struct_init.type_name);
                                 PUSH_STR(' ');
                                 PUSH_STR(stmt->variable_definition.name);
-                                PUSH_STR(" = {0};\n");
+                                PUSH_STR(" = ");
+                                if (expr->struct_init.field_names.length == 0) {
+                                    PUSH_STR("{0}");
+                                }
+                                else {
+                                    PUSH_STR("{");
+                                    for (size_t fi = 0; fi < expr->struct_init.field_names.length; fi++) {
+                                        if (fi != 0) { PUSH_STR(", "); }
+                                        PUSH_STR(".");
+                                        PUSH_STR(expr->struct_init.field_names.data[fi].name);
+                                        PUSH_STR(" = ");
+                                        PUSH_INT(expr->struct_init.field_values.data[fi]);
+                                    }
+                                    PUSH_STR("}");
+                                }
+                                PUSH_STR(";\n");
                                 break;
                             }
                             if (expr->type == ASTNodeType::ARRAY_INIT) {

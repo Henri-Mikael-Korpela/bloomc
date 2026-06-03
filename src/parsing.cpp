@@ -253,6 +253,7 @@ static auto parse_proc_call_arguments(
     ASTNode *proc_call_node,
     Iterator<ASTNode> *nodes_block_iter,
     Context *context,
+    Iterator<BinaryOperand> *operands_iter,
     DynamicArray<ParseError> *errors
 ) -> bool {
     assert(proc_call_node->type == ASTNodeType::PROC_CALL &&
@@ -273,6 +274,152 @@ static auto parse_proc_call_arguments(
 
     size_t const proc_call_nodes_begin_index = nodes_block_iter->current_index;
     size_t arg_count = 0;
+
+    // Parses one simple (non-proc-call) operand from the token stream.
+    auto parse_simple_operand = [&](Token *token) -> Result<BinaryOperand, ParseError> {
+        if (token->type == TokenType::IDENTIFIER) {
+            if (tokens_iter->current_index < tokens_iter->elements.length &&
+                iter_peek(tokens_iter)->type == TokenType::DOT)
+            {
+                (void)iter_next(tokens_iter); // consume .
+                auto *field_tok = iter_next(tokens_iter);
+                if (field_tok->type != TokenType::IDENTIFIER) {
+                    return err<BinaryOperand, ParseError>(ParseError {
+                        .code = ParseErrorCode::UNEXPECTED_TOKEN,
+                        .position = field_tok->position,
+                        .src_code_line = __LINE__,
+                        .token_type = field_tok->type,
+                    });
+                }
+                return ok<BinaryOperand, ParseError>(BinaryOperand {
+                    .type = BinaryOperandType::MEMBER_ACCESS,
+                    .member_access = {
+                        .object_name = token->identifier.content,
+                        .field_name = field_tok->identifier.content,
+                    },
+                });
+            }
+            if (tokens_iter->current_index < tokens_iter->elements.length &&
+                iter_peek(tokens_iter)->type == TokenType::BRACKET_OPEN)
+            {
+                (void)iter_next(tokens_iter); // consume [
+                auto *idx_tok = iter_next(tokens_iter);
+                if (idx_tok->type != TokenType::INTEGER_LITERAL) {
+                    return err<BinaryOperand, ParseError>(ParseError {
+                        .code = ParseErrorCode::UNEXPECTED_TOKEN,
+                        .position = idx_tok->position,
+                        .src_code_line = __LINE__,
+                        .token_type = idx_tok->type,
+                    });
+                }
+                auto *cl_tok = iter_next(tokens_iter);
+                if (cl_tok->type != TokenType::BRACKET_CLOSE) {
+                    return err<BinaryOperand, ParseError>(ParseError {
+                        .code = ParseErrorCode::UNEXPECTED_TOKEN,
+                        .position = cl_tok->position,
+                        .src_code_line = __LINE__,
+                        .token_type = cl_tok->type,
+                    });
+                }
+                return ok<BinaryOperand, ParseError>(BinaryOperand {
+                    .type = BinaryOperandType::ARRAY_ACCESS,
+                    .array_access = {
+                        .variable_name = token->identifier.content,
+                        .index = idx_tok->integer_literal.value,
+                    },
+                });
+            }
+            return ok<BinaryOperand, ParseError>(BinaryOperand {
+                .type = BinaryOperandType::IDENTIFIER,
+                .identifier = token->identifier.content,
+            });
+        }
+        if (token->type == TokenType::INTEGER_LITERAL) {
+            return ok<BinaryOperand, ParseError>(BinaryOperand {
+                .type = BinaryOperandType::INTEGER_LITERAL,
+                .integer_literal = IntegerLiteralASTNode { .value = token->integer_literal.value },
+            });
+        }
+        return err<BinaryOperand, ParseError>(ParseError {
+            .code = ParseErrorCode::UNEXPECTED_TOKEN,
+            .position = token->position,
+            .src_code_line = __LINE__,
+            .token_type = token->type,
+        });
+    };
+
+    // Given a first operand already parsed, checks for '+' and builds a BINARY_ADD
+    // argument node if found, otherwise converts the single operand to an ASTNode.
+    // Returns false on error.
+    auto emit_operand_or_binary_add = [&](BinaryOperand first_op) -> bool {
+        if (tokens_iter->current_index < tokens_iter->elements.length &&
+            iter_peek(tokens_iter)->type == TokenType::ADD)
+        {
+            size_t const operands_begin = operands_iter->current_index;
+            (void)iter_append(operands_iter, std::move(first_op));
+            while (tokens_iter->current_index < tokens_iter->elements.length &&
+                   iter_peek(tokens_iter)->type == TokenType::ADD)
+            {
+                (void)iter_next(tokens_iter); // consume +
+                auto *rhs_tok = iter_next(tokens_iter);
+                auto rhs = parse_simple_operand(rhs_tok);
+                if (!is_ok(rhs)) {
+                    append(errors, rhs.err);
+                    return false;
+                }
+                (void)iter_append(operands_iter, std::move(rhs.ok));
+            }
+            (void)iter_append(nodes_block_iter, ASTNode {
+                .type = ASTNodeType::BINARY_ADD,
+                .parent = proc_call_node,
+                .binary_operation = {
+                    .oprt = BinaryOperatorType::ADD,
+                    .operands = Array<BinaryOperand>(
+                        operands_iter->elements.data + operands_begin,
+                        operands_iter->current_index - operands_begin
+                    ),
+                },
+            });
+            return true;
+        }
+        switch (first_op.type) {
+            case BinaryOperandType::MEMBER_ACCESS:
+                (void)iter_append(nodes_block_iter, ASTNode {
+                    .type = ASTNodeType::MEMBER_ACCESS,
+                    .parent = proc_call_node,
+                    .member_access = {
+                        .object_name = first_op.member_access.object_name,
+                        .field_name = first_op.member_access.field_name,
+                    },
+                });
+                break;
+            case BinaryOperandType::ARRAY_ACCESS:
+                (void)iter_append(nodes_block_iter, ASTNode {
+                    .type = ASTNodeType::ARRAY_ACCESS,
+                    .parent = proc_call_node,
+                    .array_access = {
+                        .variable_name = first_op.array_access.variable_name,
+                        .index = first_op.array_access.index,
+                    },
+                });
+                break;
+            case BinaryOperandType::INTEGER_LITERAL:
+                (void)iter_append(nodes_block_iter, ASTNode {
+                    .type = ASTNodeType::INTEGER_LITERAL,
+                    .parent = proc_call_node,
+                    .integer_literal = { .value = first_op.integer_literal },
+                });
+                break;
+            default:
+                (void)iter_append(nodes_block_iter, ASTNode {
+                    .type = ASTNodeType::IDENTIFIER,
+                    .parent = proc_call_node,
+                    .identifier = first_op.identifier,
+                });
+                break;
+        }
+        return true;
+    };
 
     auto check_arg_type = [&](Token const *arg_token) -> bool {
         if (context == nullptr) { return true; }
@@ -394,71 +541,10 @@ static auto parse_proc_call_arguments(
                     tokens_iter->current_index = static_cast<size_t>(close_paren_idx) + 1;
                 }
             }
-            else if (tokens_iter->current_index < tokens_iter->elements.length &&
-                iter_peek(tokens_iter)->type == TokenType::BRACKET_OPEN)
-            {
-                (void)iter_next(tokens_iter); // consume [
-                auto *index_token = iter_next(tokens_iter);
-                if (index_token->type != TokenType::INTEGER_LITERAL) {
-                    append(errors, ParseError {
-                        .code = ParseErrorCode::UNEXPECTED_TOKEN,
-                        .position = index_token->position,
-                        .src_code_line = __LINE__,
-                        .token_type = index_token->type,
-                    });
-                    return false;
-                }
-                auto *close_token = iter_next(tokens_iter);
-                if (close_token->type != TokenType::BRACKET_CLOSE) {
-                    append(errors, ParseError {
-                        .code = ParseErrorCode::UNEXPECTED_TOKEN,
-                        .position = close_token->position,
-                        .src_code_line = __LINE__,
-                        .token_type = close_token->type,
-                    });
-                    return false;
-                }
-                (void)iter_append(nodes_block_iter, ASTNode {
-                    .type = ASTNodeType::ARRAY_ACCESS,
-                    .parent = proc_call_node,
-                    .array_access = {
-                        .variable_name = next_token->identifier.content,
-                        .index = index_token->integer_literal.value,
-                    },
-                });
-                if (!check_arg_type(next_token)) { return false; }
-                arg_count++;
-            }
-            else if (tokens_iter->current_index < tokens_iter->elements.length &&
-                iter_peek(tokens_iter)->type == TokenType::DOT)
-            {
-                (void)iter_next(tokens_iter); // consume .
-                auto *field_token = iter_next(tokens_iter);
-                if (field_token->type != TokenType::IDENTIFIER) {
-                    append(errors, ParseError {
-                        .code = ParseErrorCode::UNEXPECTED_TOKEN,
-                        .position = field_token->position,
-                        .src_code_line = __LINE__,
-                        .token_type = field_token->type,
-                    });
-                    return false;
-                }
-                (void)iter_append(nodes_block_iter, ASTNode {
-                    .type = ASTNodeType::MEMBER_ACCESS,
-                    .parent = proc_call_node,
-                    .member_access = {
-                        .object_name = next_token->identifier.content,
-                        .field_name = field_token->identifier.content,
-                    },
-                });
-                arg_count++;
-            }
             else {
-                (void)iter_append(nodes_block_iter, ASTNode {
-                    .type = ASTNodeType::IDENTIFIER,
-                    .parent = proc_call_node,
-                    .identifier = next_token->identifier.content,
-                });
+                auto first = parse_simple_operand(next_token);
+                if (!is_ok(first)) { append(errors, first.err); return false; }
+                if (!emit_operand_or_binary_add(std::move(first.ok))) { return false; }
                 if (!check_arg_type(next_token)) { return false; }
                 arg_count++;
             }
@@ -475,13 +561,9 @@ static auto parse_proc_call_arguments(
             arg_count++;
         }
         else if (next_token->type == TokenType::INTEGER_LITERAL) {
-            (void)iter_append(nodes_block_iter, ASTNode {
-                .type = ASTNodeType::INTEGER_LITERAL,
-                .parent = proc_call_node,
-                .integer_literal = {
-                    .value = IntegerLiteralASTNode { .value = next_token->integer_literal.value },
-                },
-            });
+            auto first = parse_simple_operand(next_token);
+            if (!is_ok(first)) { append(errors, first.err); return false; }
+            if (!emit_operand_or_binary_add(std::move(first.ok))) { return false; }
             if (!check_arg_type(next_token)) { return false; }
             arg_count++;
         }
@@ -518,7 +600,7 @@ static auto parse_proc_call_arguments(
             pending.token_begin,
             static_cast<int64_t>(pending.token_end)
         );
-        if (!parse_proc_call_arguments(&nested_args_iter, pending.node, nodes_block_iter, context, errors)) {
+        if (!parse_proc_call_arguments(&nested_args_iter, pending.node, nodes_block_iter, context, operands_iter, errors)) {
             return false;
         }
     }
@@ -791,21 +873,106 @@ static auto parse_expression(
         }
         case TokenType::IDENTIFIER:
         case TokenType::INTEGER_LITERAL: {
-            // Struct init: TypeName {}
+            // Struct init: TypeName {} or TypeName { field = value, ... }
             if (next_token->type == TokenType::IDENTIFIER &&
                 tokens_iter->current_index < tokens_iter->elements.length &&
                 iter_peek(tokens_iter)->type == TokenType::BRACE_OPEN)
             {
                 (void)iter_next(tokens_iter); // consume {
-                auto *brace_close = iter_next(tokens_iter);
-                if (brace_close->type != TokenType::BRACE_CLOSE) {
-                    return err<ASTNode, ParseError>(PARSE_ERROR_CREATE(UNEXPECTED_TOKEN, brace_close));
+                Token::Position const brace_open_position = iter_peek_prev(tokens_iter)->position;
+                size_t const field_names_begin = proc_params_iter->current_index;
+                size_t const field_values_begin = array_elements_iter->current_index;
+                Token::Position brace_close_position = {};
+                while (true) {
+                    auto *tok = iter_next(tokens_iter);
+                    if (tok->type == TokenType::BRACE_CLOSE) {
+                        brace_close_position = tok->position;
+                        break;
+                    }
+                    if (tok->type == TokenType::COMMA) {
+                        continue;
+                    }
+                    if (tok->type != TokenType::IDENTIFIER) {
+                        return err<ASTNode, ParseError>(PARSE_ERROR_CREATE(UNEXPECTED_TOKEN, tok));
+                    }
+                    Str const field_name = tok->identifier.content;
+                    auto *equals = iter_next(tokens_iter);
+                    if (equals->type != TokenType::EQUALS) {
+                        return err<ASTNode, ParseError>(PARSE_ERROR_CREATE(UNEXPECTED_TOKEN, equals));
+                    }
+                    auto *value_tok = iter_next(tokens_iter);
+                    if (value_tok->type != TokenType::INTEGER_LITERAL) {
+                        return err<ASTNode, ParseError>(PARSE_ERROR_CREATE(UNEXPECTED_TOKEN, value_tok));
+                    }
+                    (void)iter_append(proc_params_iter, ProcParameterASTNode {
+                        .name = field_name,
+                        .type_name = {},
+                    });
+                    int64_t field_value = value_tok->integer_literal.value;
+                    (void)iter_append(array_elements_iter, std::move(field_value));
                 }
+                size_t const field_count = proc_params_iter->current_index - field_names_begin;
+
+                // Check for missing fields when at least one field was explicitly provided
+                if (field_count > 0) {
+                    ASTNode const *struct_def_node = nullptr;
+                    for (size_t ni = 0; ni < nodes_block_iter->current_index; ni++) {
+                        auto const &n = nodes_block_iter->elements.data[ni];
+                        if (n.type == ASTNodeType::STRUCT_DEF &&
+                            str_equal(n.struct_def.name, next_token->identifier.content))
+                        {
+                            struct_def_node = &n;
+                            break;
+                        }
+                    }
+                    if (struct_def_node != nullptr &&
+                        field_count < struct_def_node->struct_def.fields.length)
+                    {
+                        ParseError missing_err = {};
+                        missing_err.code = ParseErrorCode::STRUCT_MISSING_FIELDS;
+                        missing_err.position = next_token->position;
+                        missing_err.src_code_line = __LINE__;
+                        missing_err.token_type = next_token->type;
+                        missing_err.size_token_width = next_token->identifier.content.length;
+                        missing_err.brace_open_pos = brace_open_position;
+                        missing_err.brace_close_pos = brace_close_position;
+                        missing_err.struct_type_name = next_token->identifier.content;
+
+                        size_t const def_count = struct_def_node->struct_def.fields.length;
+                        missing_err.struct_field_count = def_count < 8 ? def_count : 8;
+                        for (size_t di = 0; di < missing_err.struct_field_count; di++) {
+                            Str const &def_name = struct_def_node->struct_def.fields.data[di].name;
+                            missing_err.struct_field_names[di] = def_name;
+                            missing_err.struct_field_type_names[di] =
+                                struct_def_node->struct_def.fields.data[di].type_name;
+                            bool found = false;
+                            for (size_t fi = 0; fi < field_count; fi++) {
+                                Str const &init_name =
+                                    proc_params_iter->elements.data[field_names_begin + fi].name;
+                                if (str_equal(def_name, init_name)) {
+                                    found = true;
+                                    break;
+                                }
+                            }
+                            missing_err.struct_field_is_missing[di] = !found;
+                        }
+                        return err<ASTNode, ParseError>(missing_err);
+                    }
+                }
+
                 return ok<ASTNode, ParseError>(ASTNode {
                     .type = ASTNodeType::STRUCT_INIT,
                     .parent = nullptr,
                     .struct_init = {
                         .type_name = next_token->identifier.content,
+                        .field_names = Array<ProcParameterASTNode>(
+                            proc_params_iter->elements.data + field_names_begin,
+                            field_count
+                        ),
+                        .field_values = Array<int64_t>(
+                            array_elements_iter->elements.data + field_values_begin,
+                            field_count
+                        ),
                     },
                 });
             }
@@ -832,7 +999,7 @@ static auto parse_expression(
                         .parent = nullptr,
                         .proc_call = { .caller_identifier = token->identifier.content },
                     };
-                    if (!parse_proc_call_arguments(&arg_tokens_iter, &temp_node, nodes_block_iter, context, errors)) {
+                    if (!parse_proc_call_arguments(&arg_tokens_iter, &temp_node, nodes_block_iter, context, operands_iter, errors)) {
                         return err<BinaryOperand, ParseError>(PARSE_ERROR_CREATE(UNEXPECTED_TOKEN, token));
                     }
                     tokens_iter->current_index = close_paren_index + 1;
@@ -862,6 +1029,23 @@ static auto parse_expression(
                         .array_access = {
                             .variable_name = token->identifier.content,
                             .index = index_token->integer_literal.value,
+                        },
+                    });
+                }
+                if (token->type == TokenType::IDENTIFIER &&
+                    tokens_iter->current_index < tokens_iter->elements.length &&
+                    iter_peek(tokens_iter)->type == TokenType::DOT)
+                {
+                    (void)iter_next(tokens_iter); // consume .
+                    auto *field_token = iter_next(tokens_iter);
+                    if (field_token->type != TokenType::IDENTIFIER) {
+                        return err<BinaryOperand, ParseError>(PARSE_ERROR_CREATE(UNEXPECTED_TOKEN, field_token));
+                    }
+                    return ok<BinaryOperand, ParseError>(BinaryOperand {
+                        .type = BinaryOperandType::MEMBER_ACCESS,
+                        .member_access = {
+                            .object_name = token->identifier.content,
+                            .field_name = field_token->identifier.content,
                         },
                     });
                 }
@@ -991,6 +1175,16 @@ static auto parse_expression(
                     .type = ASTNodeType::IDENTIFIER,
                     .parent = nullptr,
                     .identifier = left_operand.identifier,
+                });
+            }
+            if (left_operand.type == BinaryOperandType::MEMBER_ACCESS) {
+                return ok<ASTNode, ParseError>(ASTNode {
+                    .type = ASTNodeType::MEMBER_ACCESS,
+                    .parent = nullptr,
+                    .member_access = {
+                        .object_name = left_operand.member_access.object_name,
+                        .field_name = left_operand.member_access.field_name,
+                    },
                 });
             }
             return ok<ASTNode, ParseError>(ASTNode {
@@ -1233,6 +1427,7 @@ static auto parse_statement(
                     proc_call_node,
                     nodes_block_iter,
                     context,
+                    operands_iter,
                     errors
                 );
                 if (!proc_call_args_parsed_ok) {
@@ -2095,6 +2290,12 @@ auto parse(Array<Token> *tokens, ArenaAllocator *allocator, Str source_content, 
                 node.array_init.elements.data =
                     new_array_elements_block.data +
                     (node.array_init.elements.data - orig_array_elements_data);
+            }
+            else if (node.type == ASTNodeType::STRUCT_INIT && node.struct_init.field_names.length > 0) {
+                node.struct_init.field_names.data =
+                    new_proc_params_block.data + (node.struct_init.field_names.data - orig_proc_params_data);
+                node.struct_init.field_values.data =
+                    new_array_elements_block.data + (node.struct_init.field_values.data - orig_array_elements_data);
             }
         }
 

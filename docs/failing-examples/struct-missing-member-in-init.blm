@@ -1,0 +1,6 @@
+MyStruct :: struct ->
+    days: Int
+    years: Int
+
+main :: proc() ->
+    s :: MyStruct { days = 10 } // Years left unitinialized

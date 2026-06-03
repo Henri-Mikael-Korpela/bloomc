@@ -1,9 +1,16 @@
 MyStruct :: struct ->
+    days: Int
     years: Int
 
 main :: proc() ->
+    // Default initialization of structure instance
     s :: MyStruct {}
-    print("S years: {}\n", s.years)
+    print("Days: {}, Years: {}\n", s.days, s.years)
 
+    // Modify struct member
     s.years = 5 + 10
-    print("S years: {}\n", s.years)
+    print("Days: {}, Years: {}\n", s.days, s.years + s.years)
+
+    // Initialization of structure with all values
+    t :: MyStruct { days = 15, years = 2002 }
+    print("Days: {}, Years: {}\n", t.days, t.years)

@@ -10,14 +10,16 @@ enum class ParseErrorCode {
     ARRAY_LENGTH_MISMATCH,
     BOOL_IN_ADDITION,
     PROC_ARG_TYPE_MISMATCH,
+    STRUCT_MISSING_FIELDS,
 };
 
 constexpr auto to_string(ParseErrorCode code) -> char const * {
     switch (code) {
-        case ParseErrorCode::UNEXPECTED_TOKEN:       return "unexpected token";
-        case ParseErrorCode::ARRAY_LENGTH_MISMATCH:  return "array length mismatch";
-        case ParseErrorCode::BOOL_IN_ADDITION:       return "bool in addition";
-        case ParseErrorCode::PROC_ARG_TYPE_MISMATCH: return "proc arg type mismatch";
+        case ParseErrorCode::UNEXPECTED_TOKEN:        return "unexpected token";
+        case ParseErrorCode::ARRAY_LENGTH_MISMATCH:   return "array length mismatch";
+        case ParseErrorCode::BOOL_IN_ADDITION:        return "bool in addition";
+        case ParseErrorCode::PROC_ARG_TYPE_MISMATCH:  return "proc arg type mismatch";
+        case ParseErrorCode::STRUCT_MISSING_FIELDS:   return "struct missing fields";
     }
     return "unknown error";
 }
@@ -35,6 +37,12 @@ struct ParseError {
     Str expected_type_name;
     Str actual_type_name;
     Str param_name;
+    // For STRUCT_MISSING_FIELDS (supports up to 8 struct fields)
+    Str struct_type_name;
+    Str struct_field_names[8];
+    Str struct_field_type_names[8];
+    size_t struct_field_count;
+    bool struct_field_is_missing[8];
 };
 
 auto report_parse_errors(Array<ParseError> errors, bool *had_errors, Str source_content, Str filename) -> void;

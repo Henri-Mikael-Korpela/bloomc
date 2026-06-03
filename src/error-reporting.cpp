@@ -164,6 +164,63 @@ auto report_parse_errors(Array<ParseError> errors, bool *had_errors, Str source_
                 (int)error.expected_type_name.length, error.expected_type_name.data,
                 ANSI_RESET);
         }
+        else if (error.code == ParseErrorCode::STRUCT_MISSING_FIELDS) {
+            size_t const missing_count = [&]() -> size_t {
+                size_t n = 0;
+                for (size_t i = 0; i < error.struct_field_count; i++) {
+                    if (error.struct_field_is_missing[i]) { n++; }
+                }
+                return n;
+            }();
+            fprintf(stderr, "\n%sError: Missing fields in struct initialization:%s\n", ANSI_RED, ANSI_RESET);
+            fprintf(stderr, "%s    %.*s has %zu uninitialized field%s: ",
+                ANSI_RED,
+                (int)error.struct_type_name.length, error.struct_type_name.data,
+                missing_count,
+                missing_count == 1 ? "" : "s");
+            bool first_missing = true;
+            for (size_t i = 0; i < error.struct_field_count; i++) {
+                if (!error.struct_field_is_missing[i]) { continue; }
+                if (!first_missing) { fprintf(stderr, ", "); }
+                fprintf(stderr, "%.*s",
+                    (int)error.struct_field_names[i].length, error.struct_field_names[i].data);
+                first_missing = false;
+            }
+            fprintf(stderr, "%s\n", ANSI_RESET);
+            fprintf(stderr, "\n%sLocation:%s\n", ANSI_CYAN, ANSI_RESET);
+            fprintf(stderr, "%s    In file %.*s, line %llu, column %llu:%s\n",
+                ANSI_CYAN, (int)filename.length, filename.data,
+                (unsigned long long)error.position.line,
+                (unsigned long long)(error.position.col - 1), ANSI_RESET);
+            emit_source_context(source_content, error.position.line, error.position.col,
+                error.size_token_width, error.brace_open_pos, error.brace_close_pos);
+            fprintf(stderr, "\n%sStructure:%s %.*s :: struct ->\n",
+                ANSI_CYAN, ANSI_RESET,
+                (int)error.struct_type_name.length, error.struct_type_name.data);
+            for (size_t i = 0; i < error.struct_field_count; i++) {
+                if (error.struct_field_is_missing[i]) {
+                    fprintf(stderr, "%s    ^   %.*s: %.*s%s\n",
+                        ANSI_ORANGE,
+                        (int)error.struct_field_names[i].length, error.struct_field_names[i].data,
+                        (int)error.struct_field_type_names[i].length, error.struct_field_type_names[i].data,
+                        ANSI_RESET);
+                }
+                else {
+                    fprintf(stderr, "        %.*s: %.*s\n",
+                        (int)error.struct_field_names[i].length, error.struct_field_names[i].data,
+                        (int)error.struct_field_type_names[i].length, error.struct_field_type_names[i].data);
+                }
+            }
+            fprintf(stderr, "\n%sHow to fix:%s\n", ANSI_BLUE, ANSI_RESET);
+            fprintf(stderr,
+                "%s    - Provide a value for each missing field in the initialization.%s\n",
+                ANSI_BLUE, ANSI_RESET);
+            fprintf(stderr,
+                "%s    - If default zero-initialization is desired, use %.*s {} instead.%s\n",
+                ANSI_BLUE,
+                (int)error.struct_type_name.length, error.struct_type_name.data,
+                ANSI_RESET);
+        }
         else if (error.code == ParseErrorCode::UNEXPECTED_TOKEN) {
             Str const token_type_str = to_string(error.token_type);
             fprintf(stderr, "\n%sError: Unexpected token:%s\n", ANSI_RED, ANSI_RESET);

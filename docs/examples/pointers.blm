@@ -1,6 +1,14 @@
+MyStruct :: struct ->
+    a: Int
+
 main :: proc() ->
     i := 4
 
     // Pointer to a primitive type (integer)
-    p := %i
-    print("I via p pointer: {}\n", p^)
+    p1 := %i
+    print("I via p pointer: {}\n", p1^)
+
+    // Pointer to a struct instance
+    s := MyStruct { a = 4 }
+    p2 := %s
+    print("S: name: {}\n", p2.a)

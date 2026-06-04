@@ -657,6 +657,25 @@ static auto parse_proc_call_arguments(
             if (!check_arg_type(next_token)) { return false; }
             arg_count++;
         }
+        else if (next_token->type == TokenType::ADDRESS_OF) {
+            auto *ident_tok = iter_next(tokens_iter);
+            if (ident_tok->type != TokenType::IDENTIFIER) {
+                append(errors, ParseError {
+                    .code = ParseErrorCode::UNEXPECTED_TOKEN,
+                    .position = ident_tok->position,
+                    .src_code_line = __LINE__,
+                    .token_type = ident_tok->type,
+                });
+                return false;
+            }
+            (void)iter_append(nodes_block_iter, ASTNode {
+                .type = ASTNodeType::ADDRESS_OF,
+                .parent = proc_call_node,
+                .identifier = ident_tok->identifier.content,
+            });
+            if (!check_arg_type(next_token)) { return false; }
+            arg_count++;
+        }
         else {
             append(errors, ParseError {
                 .code = ParseErrorCode::UNEXPECTED_TOKEN,
@@ -736,8 +755,15 @@ static auto parse_proc_params(
                     return false;
                 }
 
-                auto *type_token = iter_next(tokens_iter);
-                param_node->type_name = type_token->identifier.content;
+                auto *maybe_caret = iter_next(tokens_iter);
+                if (maybe_caret->type == TokenType::CARET) {
+                    param_node->is_pointer = true;
+                    auto *type_tok = iter_next(tokens_iter);
+                    param_node->type_name = type_tok->identifier.content;
+                }
+                else {
+                    param_node->type_name = maybe_caret->identifier.content;
+                }
                 break;
             }
             default:
@@ -1087,38 +1113,45 @@ static auto parse_expression(
                             break;
                         }
                     }
-                    if (struct_def_node != nullptr &&
-                        field_count < struct_def_node->struct_def.fields.length)
-                    {
-                        ParseError missing_err = {};
-                        missing_err.code = ParseErrorCode::STRUCT_MISSING_FIELDS;
-                        missing_err.position = next_token->position;
-                        missing_err.src_code_line = __LINE__;
-                        missing_err.token_type = next_token->type;
-                        missing_err.size_token_width = next_token->identifier.content.length;
-                        missing_err.brace_open_pos = brace_open_position;
-                        missing_err.brace_close_pos = brace_close_position;
-                        missing_err.struct_type_name = next_token->identifier.content;
-
-                        size_t const def_count = struct_def_node->struct_def.fields.length;
-                        missing_err.struct_field_count = def_count < 8 ? def_count : 8;
-                        for (size_t di = 0; di < missing_err.struct_field_count; di++) {
-                            Str const *def_name = &struct_def_node->struct_def.fields.data[di].name;
-                            missing_err.struct_field_names[di] = *def_name;
-                            missing_err.struct_field_type_names[di] =
-                                struct_def_node->struct_def.fields.data[di].type_name;
-                            bool found = false;
-                            for (size_t fi = 0; fi < field_count; fi++) {
-                                Str const *init_name =
-                                    &proc_params_iter->elements.data[field_names_begin + fi].name;
-                                if (str_equal(*def_name, *init_name)) {
-                                    found = true;
-                                    break;
-                                }
+                    if (struct_def_node != nullptr) {
+                        // Pointer-typed fields default to NULL and are not required
+                        size_t required_count = 0;
+                        for (size_t di = 0; di < struct_def_node->struct_def.fields.length; di++) {
+                            if (!struct_def_node->struct_def.fields.data[di].is_pointer) {
+                                required_count++;
                             }
-                            missing_err.struct_field_is_missing[di] = !found;
                         }
-                        return err<ASTNode, ParseError>(missing_err);
+                        if (field_count < required_count) {
+                            ParseError missing_err = {};
+                            missing_err.code = ParseErrorCode::STRUCT_MISSING_FIELDS;
+                            missing_err.position = next_token->position;
+                            missing_err.src_code_line = __LINE__;
+                            missing_err.token_type = next_token->type;
+                            missing_err.size_token_width = next_token->identifier.content.length;
+                            missing_err.brace_open_pos = brace_open_position;
+                            missing_err.brace_close_pos = brace_close_position;
+                            missing_err.struct_type_name = next_token->identifier.content;
+
+                            size_t const def_count = struct_def_node->struct_def.fields.length;
+                            missing_err.struct_field_count = def_count < 8 ? def_count : 8;
+                            for (size_t di = 0; di < missing_err.struct_field_count; di++) {
+                                auto const *def_field = &struct_def_node->struct_def.fields.data[di];
+                                Str const *def_name = &def_field->name;
+                                missing_err.struct_field_names[di] = *def_name;
+                                missing_err.struct_field_type_names[di] = def_field->type_name;
+                                bool found = false;
+                                for (size_t fi = 0; fi < field_count; fi++) {
+                                    Str const *init_name =
+                                        &proc_params_iter->elements.data[field_names_begin + fi].name;
+                                    if (str_equal(*def_name, *init_name)) {
+                                        found = true;
+                                        break;
+                                    }
+                                }
+                                missing_err.struct_field_is_missing[di] = !found && !def_field->is_pointer;
+                            }
+                            return err<ASTNode, ParseError>(missing_err);
+                        }
                     }
                 }
 
@@ -1529,13 +1562,23 @@ static auto parse_expression(
                 if (colon->type != TokenType::TYPE_SEPARATOR) {
                     return err<ASTNode, ParseError>(PARSE_ERROR_CREATE(UNEXPECTED_TOKEN, colon));
                 }
-                auto *type_token = iter_next(tokens_iter);
+                auto *maybe_caret = iter_next(tokens_iter);
+                bool field_is_ptr = false;
+                Token *type_token;
+                if (maybe_caret->type == TokenType::CARET) {
+                    field_is_ptr = true;
+                    type_token = iter_next(tokens_iter);
+                }
+                else {
+                    type_token = maybe_caret;
+                }
                 if (type_token->type != TokenType::IDENTIFIER) {
                     return err<ASTNode, ParseError>(PARSE_ERROR_CREATE(UNEXPECTED_TOKEN, type_token));
                 }
                 (void)iter_append(proc_params_iter, ProcParameterASTNode {
                     .name = field_name_token->identifier.content,
                     .type_name = type_token->identifier.content,
+                    .is_pointer = field_is_ptr,
                 });
                 if (tokens_iter->current_index < tokens_iter->elements.length) {
                     auto *nl = iter_peek(tokens_iter);
@@ -2383,9 +2426,8 @@ auto parse(Array<Token> *tokens, ArenaAllocator *allocator, Str source_content, 
         // to point to the new tightly packed block.
         for (auto &node : new_nodes_block) {
             if (node.type == ASTNodeType::PROC_DEF) {
-                node.proc_def.parameters.data =
-                    ptr_sub(node.proc_def.parameters.data,
-                        ptr_sub(node.proc_def.parameters.data, new_proc_params_block.data));
+                ptrdiff_t const offset = node.proc_def.parameters.data - orig_proc_params_data;
+                node.proc_def.parameters.data = new_proc_params_block.data + offset;
             }
             else if (node.type == ASTNodeType::STRUCT_DEF) {
                 ptrdiff_t const offset = node.struct_def.fields.data - orig_proc_params_data;

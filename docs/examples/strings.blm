@@ -1,9 +1,16 @@
 main :: proc() ->
+    // Create string and print its length
     s := "Hello, Абрам!"
-    printf("Length (in bytes): %zu", length_in_bytes(s))
+    printf("Length (in bytes): %zu\n", length_in_bytes(s))
 
+    // Iterate over each character
     for c in s ->
         print("Char: {}\n", c)
 
+    // Iterate over each character with index
     for c, i in s ->
         print("Char: {} at index {}\n", c, i)
+
+    // Conversion from Str to CStr with temporary allocation
+    s2 := clone_to_cstr(s, context.temp_allocator)
+    printf("S2: %s\n", s2)

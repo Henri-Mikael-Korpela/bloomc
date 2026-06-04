@@ -226,9 +226,15 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
                     PUSH_STR(arg->identifier);
                     break;
                 case ASTNodeType::MEMBER_ACCESS:
-                    PUSH_STR(arg->member_access.object_name);
-                    PUSH_STR(is_pointer_var(arg->member_access.object_name) ? "->" : ".");
-                    PUSH_STR(arg->member_access.field_name);
+                    if (arg->member_access.object_name == "context" &&
+                        arg->member_access.field_name == "temp_allocator") {
+                        PUSH_STR("&__bloom_context.temp_allocator");
+                    }
+                    else {
+                        PUSH_STR(arg->member_access.object_name);
+                        PUSH_STR(is_pointer_var(arg->member_access.object_name) ? "->" : ".");
+                        PUSH_STR(arg->member_access.field_name);
+                    }
                     break;
                 case ASTNodeType::DEREF:
                     PUSH_STR("*");
@@ -375,9 +381,19 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
     PUSH_STR("#include <stdbool.h>\n");
     PUSH_STR("#include <stddef.h>\n");
     PUSH_STR("#include <stdint.h>\n");
-    PUSH_STR("#include <stdio.h>\n\n");
+    PUSH_STR("#include <stdio.h>\n");
+    PUSH_STR("#include <string.h>\n\n");
     PUSH_STR("typedef struct { char const *data; size_t length; } BloomStr;\n");
-    PUSH_STR("typedef struct { char bytes[4]; uint8_t len; } BloomChar;\n\n");
+    PUSH_STR("typedef struct { char bytes[4]; uint8_t len; } BloomChar;\n");
+    PUSH_STR("typedef struct { char buf[4096]; size_t offset; } BloomTempAllocator;\n");
+    PUSH_STR("typedef struct { BloomTempAllocator temp_allocator; } BloomContext;\n");
+    PUSH_STR("static char* __bloom_clone_to_cstr(BloomStr s, BloomTempAllocator *alloc) {\n");
+    PUSH_STR("\tchar *p = alloc->buf + alloc->offset;\n");
+    PUSH_STR("\tmemcpy(p, s.data, s.length);\n");
+    PUSH_STR("\tp[s.length] = '\\0';\n");
+    PUSH_STR("\talloc->offset += s.length + 1;\n");
+    PUSH_STR("\treturn p;\n");
+    PUSH_STR("}\n\n");
 
     for (size_t ni = 0; ni < ast_nodes->length; ni++) {
         auto *node = &ast_nodes->data[ni];
@@ -469,6 +485,7 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
                 }
                 PUSH_STR(')');
                 PUSH_STR("{\n");
+                PUSH_STR("\tBloomContext __bloom_context = {0};\n");
 
                 // Register proc parameters so member access and pointer checks work inside the body
                 for (size_t pi = 0; pi < params->length; pi++) {
@@ -749,7 +766,12 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
                                 else {
                                     push_tabs();
                                     if (emit_as_return) { PUSH_STR("return "); }
-                                    PUSH_STR(stmt->proc_call.caller_identifier);
+                                    if (stmt->proc_call.caller_identifier == "clone_to_cstr") {
+                                        PUSH_STR("__bloom_clone_to_cstr");
+                                    }
+                                    else {
+                                        PUSH_STR(stmt->proc_call.caller_identifier);
+                                    }
                                     PUSH_STR('(');
                                     emit_proc_call_args(&stmt->proc_call.arguments, stmt->proc_call.caller_identifier);
                                     PUSH_STR(");\n");
@@ -836,6 +858,16 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
                                     PUSH_INT(elems->data[i]);
                                 }
                                 PUSH_STR("};\n");
+                                break;
+                            }
+                            if (expr->type == ASTNodeType::PROC_CALL &&
+                                expr->proc_call.caller_identifier == "clone_to_cstr") {
+                                register_var(stmt->variable_definition.name, VarKind::PTR);
+                                PUSH_STR("char *");
+                                PUSH_STR(stmt->variable_definition.name);
+                                PUSH_STR(" = __bloom_clone_to_cstr(");
+                                emit_proc_call_args(&expr->proc_call.arguments, expr->proc_call.caller_identifier);
+                                PUSH_STR(");\n");
                                 break;
                             }
                             if (expr->type == ASTNodeType::PROC_CALL) {

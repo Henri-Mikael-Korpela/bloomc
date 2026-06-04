@@ -62,6 +62,7 @@ enum class BinaryOperandType : uint8_t {
     PROC_CALL,
     ARRAY_ACCESS,
     MEMBER_ACCESS,
+    STRING_LITERAL,
 };
 
 struct BinaryOperand {
@@ -81,6 +82,7 @@ struct BinaryOperand {
             Str object_name;
             Str field_name;
         } member_access;
+        Str string_literal;
     };
 };
 
@@ -189,7 +191,7 @@ struct ASTNode {
         struct {
             Str type_name;
             Array<ProcParameterASTNode> field_names;
-            Array<int64_t> field_values;
+            Array<BinaryOperand> field_values;
         } struct_init;
     };
 };

@@ -968,7 +968,7 @@ static auto parse_expression(
                 (void)iter_next(tokens_iter); // consume {
                 Token::Position const brace_open_position = iter_peek_prev(tokens_iter)->position;
                 size_t const field_names_begin = proc_params_iter->current_index;
-                size_t const field_values_begin = array_elements_iter->current_index;
+                size_t const field_values_begin = operands_iter->current_index;
                 Token::Position brace_close_position = {};
                 size_t inner_indent_level = SIZE_MAX;
                 size_t prev_indent_level = SIZE_MAX;
@@ -1023,15 +1023,29 @@ static auto parse_expression(
                         return err<ASTNode, ParseError>(PARSE_ERROR_CREATE(UNEXPECTED_TOKEN, equals));
                     }
                     auto *value_tok = iter_next(tokens_iter);
-                    if (value_tok->type != TokenType::INTEGER_LITERAL) {
+                    if (value_tok->type == TokenType::INTEGER_LITERAL) {
+                        (void)iter_append(proc_params_iter, ProcParameterASTNode {
+                            .name = field_name,
+                            .type_name = {},
+                        });
+                        (void)iter_append(operands_iter, BinaryOperand {
+                            .type = BinaryOperandType::INTEGER_LITERAL,
+                            .integer_literal = IntegerLiteralASTNode { .value = value_tok->integer_literal.value },
+                        });
+                    }
+                    else if (value_tok->type == TokenType::STRING_LITERAL) {
+                        (void)iter_append(proc_params_iter, ProcParameterASTNode {
+                            .name = field_name,
+                            .type_name = {},
+                        });
+                        (void)iter_append(operands_iter, BinaryOperand {
+                            .type = BinaryOperandType::STRING_LITERAL,
+                            .string_literal = value_tok->string_literal.content,
+                        });
+                    }
+                    else {
                         return err<ASTNode, ParseError>(PARSE_ERROR_CREATE(UNEXPECTED_TOKEN, value_tok));
                     }
-                    (void)iter_append(proc_params_iter, ProcParameterASTNode {
-                        .name = field_name,
-                        .type_name = {},
-                    });
-                    int64_t field_value = value_tok->integer_literal.value;
-                    (void)iter_append(array_elements_iter, std::move(field_value));
                 }
                 size_t const field_count = proc_params_iter->current_index - field_names_begin;
 
@@ -1091,8 +1105,8 @@ static auto parse_expression(
                             proc_params_iter->elements.data + field_names_begin,
                             field_count
                         ),
-                        .field_values = Array<int64_t>(
-                            array_elements_iter->elements.data + field_values_begin,
+                        .field_values = Array<BinaryOperand>(
+                            operands_iter->elements.data + field_values_begin,
                             field_count
                         ),
                     },
@@ -2309,7 +2323,7 @@ auto parse(Array<Token> *tokens, ArenaAllocator *allocator, Str source_content, 
                 node.struct_init.field_names.data =
                     new_proc_params_block.data + (node.struct_init.field_names.data - orig_proc_params_data);
                 node.struct_init.field_values.data =
-                    new_array_elements_block.data + (node.struct_init.field_values.data - orig_array_elements_data);
+                    new_operands_block.data + (node.struct_init.field_values.data - orig_operands_data);
             }
         }
 

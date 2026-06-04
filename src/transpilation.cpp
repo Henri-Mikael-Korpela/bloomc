@@ -307,6 +307,12 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
                     if (field->type_name == "Int") {
                         PUSH_STR("int");
                     }
+                    else if (field->type_name == "Str") {
+                        PUSH_STR("BloomStr");
+                    }
+                    else if (field->type_name == "Bool") {
+                        PUSH_STR("bool");
+                    }
                     else {
                         PUSH_STR(field->type_name);
                     }
@@ -419,6 +425,52 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
                                                     PUSH_STR("fputs(");
                                                     PUSH_STR(arg->identifier);
                                                     PUSH_STR(" ? \"true\" : \"false\", stdout);\n");
+                                                }
+                                                else if (kind == VarKind::STRUCT) {
+                                                    Str struct_type_name = {};
+                                                    for (size_t vi = 0; vi < var_type_count; vi++) {
+                                                        if (var_types[vi].name.length == arg->identifier.length &&
+                                                            strncmp(var_types[vi].name.data, arg->identifier.data, arg->identifier.length) == 0)
+                                                        {
+                                                            struct_type_name = var_types[vi].struct_type_name;
+                                                            break;
+                                                        }
+                                                    }
+                                                    for (size_t di = 0; di < struct_def_count; di++) {
+                                                        auto *sdef = &struct_defs[di];
+                                                        if (sdef->name.length != struct_type_name.length ||
+                                                            strncmp(sdef->name.data, struct_type_name.data, struct_type_name.length) != 0) { continue; }
+                                                        for (size_t fi = 0; fi < sdef->field_count; fi++) {
+                                                            auto *sfield = &sdef->fields[fi];
+                                                            if (sfield->kind == VarKind::BLOOM_STR) {
+                                                                PUSH_STR("fwrite(");
+                                                                PUSH_STR(arg->identifier);
+                                                                PUSH_STR(".");
+                                                                PUSH_STR(sfield->name);
+                                                                PUSH_STR(".data, 1, ");
+                                                                PUSH_STR(arg->identifier);
+                                                                PUSH_STR(".");
+                                                                PUSH_STR(sfield->name);
+                                                                PUSH_STR(".length, stdout);\n");
+                                                            }
+                                                            else if (sfield->kind == VarKind::BOOL) {
+                                                                PUSH_STR("fputs(");
+                                                                PUSH_STR(arg->identifier);
+                                                                PUSH_STR(".");
+                                                                PUSH_STR(sfield->name);
+                                                                PUSH_STR(" ? \"true\" : \"false\", stdout);\n");
+                                                            }
+                                                            else {
+                                                                PUSH_STR("printf(\"%d\", ");
+                                                                PUSH_STR(arg->identifier);
+                                                                PUSH_STR(".");
+                                                                PUSH_STR(sfield->name);
+                                                                PUSH_STR(");\n");
+                                                            }
+                                                            if (fi + 1 < sdef->field_count) { push_tabs(); }
+                                                        }
+                                                        break;
+                                                    }
                                                 }
                                                 else {
                                                     PUSH_STR("printf(\"%d\", ");
@@ -535,7 +587,18 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
                                         PUSH_STR(".");
                                         PUSH_STR(expr->struct_init.field_names.data[fi].name);
                                         PUSH_STR(" = ");
-                                        PUSH_INT(expr->struct_init.field_values.data[fi]);
+                                        auto const *fv = &expr->struct_init.field_values.data[fi];
+                                        if (fv->type == BinaryOperandType::STRING_LITERAL) {
+                                            size_t const runtime_len = str_literal_runtime_length(fv->string_literal);
+                                            PUSH_STR("(BloomStr){.data = \"");
+                                            PUSH_STR(fv->string_literal);
+                                            PUSH_STR("\", .length = ");
+                                            PUSH_INT(static_cast<intmax_t>(runtime_len));
+                                            PUSH_STR("}");
+                                        }
+                                        else {
+                                            PUSH_INT(fv->integer_literal.value);
+                                        }
                                     }
                                     PUSH_STR("}");
                                 }

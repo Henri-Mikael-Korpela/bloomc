@@ -1,0 +1,6 @@
+main :: proc() ->
+    i := 4
+
+    // Pointer to a primitive type (integer)
+    p := %i
+    print("I via p pointer: {}\n", p^)

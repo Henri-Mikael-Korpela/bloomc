@@ -6,6 +6,7 @@
 
 enum class ASTNodeType : uint8_t {
     UNKNOWN = 0,
+    ADDRESS_OF,
     ARRAY_ACCESS,
     ARRAY_ELEMENT_ASSIGN,
     ARRAY_INIT,
@@ -15,6 +16,7 @@ enum class ASTNodeType : uint8_t {
     BUILTIN_LENGTH,
     CONSTANT_DEFINITION,
     BUILTIN_LENGTH_IN_BYTES,
+    DEREF,
     FOR_COND_LOOP,
     FOR_IN_LOOP,
     FOR_LOOP,
@@ -63,6 +65,7 @@ enum class BinaryOperandType : uint8_t {
     ARRAY_ACCESS,
     MEMBER_ACCESS,
     STRING_LITERAL,
+    DEREF,
 };
 
 struct BinaryOperand {
@@ -201,6 +204,7 @@ auto parse(Array<Token> *tokens, ArenaAllocator *allocator, Str source_content, 
 constexpr auto to_string(ASTNodeType type) -> Str {
     #define STR(x) cstr_to_str(x)
     switch (type) {
+        case ASTNodeType::ADDRESS_OF:          return STR("address_of");
         case ASTNodeType::ADD_ASSIGN:          return STR("add_assign");
         case ASTNodeType::ARRAY_ACCESS:          return STR("array_access");
         case ASTNodeType::ARRAY_ELEMENT_ASSIGN: return STR("array_element_assign");
@@ -211,6 +215,7 @@ constexpr auto to_string(ASTNodeType type) -> Str {
         case ASTNodeType::BUILTIN_LENGTH:          return STR("builtin_length");
         case ASTNodeType::CONSTANT_DEFINITION: return STR("constant_definition");
         case ASTNodeType::BUILTIN_LENGTH_IN_BYTES: return STR("builtin_length_in_bytes");
+        case ASTNodeType::DEREF:               return STR("deref");
         case ASTNodeType::FOR_COND_LOOP:       return STR("for_cond_loop");
         case ASTNodeType::FOR_IN_LOOP:         return STR("for_in_loop");
         case ASTNodeType::FOR_LOOP:            return STR("for_loop");

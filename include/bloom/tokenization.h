@@ -10,12 +10,14 @@ enum class TokenType : uint8_t {
 
     // Printable characters, ASCII code in ascending order
     NEWLINE           = '\n',
+    ADDRESS_OF        = '%',
     PARENTHESIS_OPEN  = '(',
     PARENTHESIS_CLOSE = ')',
     ADD               = '+',
     COMMA             = ',',
     BRACKET_OPEN      = '[',
     BRACKET_CLOSE     = ']',
+    CARET             = '^',
     BRACE_OPEN        = '{',
     BRACE_CLOSE       = '}',
 
@@ -89,12 +91,14 @@ constexpr auto to_string(TokenType type) -> Str {
     #define STR(x) cstr_to_str(x)
     switch (type) {
         case TokenType::ADD:               return STR("+");
+        case TokenType::ADDRESS_OF:        return STR("%");
         case TokenType::ADD_ASSIGN:        return STR("+=");
         case TokenType::ARROW:             return STR("->");
         case TokenType::BRACE_CLOSE:       return STR("}");
         case TokenType::BRACE_OPEN:        return STR("{");
         case TokenType::BRACKET_CLOSE:     return STR("]");
         case TokenType::BRACKET_OPEN:      return STR("[");
+        case TokenType::CARET:             return STR("^");
         case TokenType::COMMA:             return STR(",");
         case TokenType::CONST_DEF:         return STR("const_def");
         case TokenType::DOT:               return STR(".");

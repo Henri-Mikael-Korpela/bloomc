@@ -297,6 +297,14 @@ auto tokenize(Str *input, ArenaAllocator *allocator) -> Array<Token> {
                 current_position.col += 1;
             }
         }
+        else if (c == '%') {
+            append_token_of_type(TokenType::ADDRESS_OF);
+            current_position.col += 1;
+        }
+        else if (c == '^') {
+            append_token_of_type(TokenType::CARET);
+            current_position.col += 1;
+        }
         else if (c == '/') {
             if (char next_char = next_char_or_null_char(input, i); next_char == '/') {
                 while (i + 1 < input->length && str_char_at(input, i + 1) != '\n') {

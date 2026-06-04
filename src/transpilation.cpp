@@ -26,7 +26,7 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
     ArrayVarEntry array_vars[64];
     size_t array_var_count = 0;
 
-    enum class VarKind : uint8_t { INT, BOOL, BLOOM_STR, BLOOM_CHAR, SIZE_T, STRUCT };
+    enum class VarKind : uint8_t { INT, BOOL, BLOOM_STR, BLOOM_CHAR, SIZE_T, STRUCT, PTR };
     struct VarEntry {
         Str name;
         VarKind kind;
@@ -208,6 +208,10 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
                     PUSH_STR('.');
                     PUSH_STR(arg->member_access.field_name);
                     break;
+                case ASTNodeType::DEREF:
+                    PUSH_STR("*");
+                    PUSH_STR(arg->identifier);
+                    break;
                 default:
                     assert(false && "Unsupported argument type in emit_proc_call_args");
             }
@@ -268,6 +272,10 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
                 PUSH_STR("}");
                 break;
             }
+            case BinaryOperandType::DEREF:
+                PUSH_STR("*");
+                PUSH_STR(op->identifier);
+                break;
         }
     };
 
@@ -328,6 +336,14 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
                 PUSH_STR(expr->member_access.object_name);
                 PUSH_STR('.');
                 PUSH_STR(expr->member_access.field_name);
+                break;
+            case ASTNodeType::ADDRESS_OF:
+                PUSH_STR("&");
+                PUSH_STR(expr->identifier);
+                break;
+            case ASTNodeType::DEREF:
+                PUSH_STR("*");
+                PUSH_STR(expr->identifier);
                 break;
             default:
                 assert(false && "Unsupported expression type in emit_expression");
@@ -601,6 +617,11 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
                                                     PUSH_STR(");\n");
                                                 }
                                             }
+                                            else if (arg->type == ASTNodeType::DEREF) {
+                                                PUSH_STR("printf(\"%d\", *");
+                                                PUSH_STR(arg->identifier);
+                                                PUSH_STR(");\n");
+                                            }
                                             arg_idx++;
                                         }
                                         k++;
@@ -638,6 +659,15 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
                         case ASTNodeType::VARIABLE_DEFINITION: {
                             push_tabs();
                             ASTNode *expr = stmt->variable_definition.expr;
+                            if (expr->type == ASTNodeType::ADDRESS_OF) {
+                                register_var(stmt->variable_definition.name, VarKind::PTR);
+                                PUSH_STR("int *");
+                                PUSH_STR(stmt->variable_definition.name);
+                                PUSH_STR(" = &");
+                                PUSH_STR(expr->identifier);
+                                PUSH_STR(";\n");
+                                break;
+                            }
                             if (expr->type == ASTNodeType::STRUCT_INIT) {
                                 register_struct_var(stmt->variable_definition.name, expr->struct_init.type_name);
                                 PUSH_STR(expr->struct_init.type_name);

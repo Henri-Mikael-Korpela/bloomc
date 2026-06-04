@@ -390,6 +390,15 @@ static auto parse_proc_call_arguments(
                     },
                 });
             }
+            if (tokens_iter->current_index < tokens_iter->elements.length &&
+                iter_peek(tokens_iter)->type == TokenType::CARET)
+            {
+                (void)iter_next(tokens_iter); // consume ^
+                return ok<BinaryOperand, ParseError>(BinaryOperand {
+                    .type = BinaryOperandType::DEREF,
+                    .identifier = token->identifier.content,
+                });
+            }
             return ok<BinaryOperand, ParseError>(BinaryOperand {
                 .type = BinaryOperandType::IDENTIFIER,
                 .identifier = token->identifier.content,
@@ -469,6 +478,13 @@ static auto parse_proc_call_arguments(
                     .type = ASTNodeType::INTEGER_LITERAL,
                     .parent = proc_call_node,
                     .integer_literal = { .value = first_op.integer_literal },
+                });
+                break;
+            case BinaryOperandType::DEREF:
+                (void)iter_append(nodes_block_iter, ASTNode {
+                    .type = ASTNodeType::DEREF,
+                    .parent = proc_call_node,
+                    .identifier = first_op.identifier,
                 });
                 break;
             default:
@@ -1195,6 +1211,16 @@ static auto parse_expression(
                         },
                     });
                 }
+                if (token->type == TokenType::IDENTIFIER &&
+                    tokens_iter->current_index < tokens_iter->elements.length &&
+                    iter_peek(tokens_iter)->type == TokenType::CARET)
+                {
+                    (void)iter_next(tokens_iter); // consume ^
+                    return ok<BinaryOperand, ParseError>(BinaryOperand {
+                        .type = BinaryOperandType::DEREF,
+                        .identifier = token->identifier.content,
+                    });
+                }
                 if (token->type == TokenType::IDENTIFIER) {
                     return ok<BinaryOperand, ParseError>(BinaryOperand {
                         .type = BinaryOperandType::IDENTIFIER,
@@ -1296,6 +1322,13 @@ static auto parse_expression(
             }
 
             // No binary operator — return single-operand expression
+            if (left_operand.type == BinaryOperandType::DEREF) {
+                return ok<ASTNode, ParseError>(ASTNode {
+                    .type = ASTNodeType::DEREF,
+                    .parent = nullptr,
+                    .identifier = left_operand.identifier,
+                });
+            }
             if (left_operand.type == BinaryOperandType::ARRAY_ACCESS) {
                 return ok<ASTNode, ParseError>(ASTNode {
                     .type = ASTNodeType::ARRAY_ACCESS,
@@ -1460,6 +1493,17 @@ static auto parse_expression(
                 nodes_block_iter->elements[nodes_block_iter->current_index].type == ASTNodeType::UNKNOWN &&
                 "Next node after procedure body should be of UNKNOWN type");
             return ok<ASTNode, ParseError>(*proc_node);
+        }
+        case TokenType::ADDRESS_OF: {
+            auto *ident_tok = iter_next(tokens_iter);
+            if (ident_tok->type != TokenType::IDENTIFIER) {
+                return err<ASTNode, ParseError>(PARSE_ERROR_CREATE(UNEXPECTED_TOKEN, ident_tok));
+            }
+            return ok<ASTNode, ParseError>(ASTNode {
+                .type = ASTNodeType::ADDRESS_OF,
+                .parent = nullptr,
+                .identifier = ident_tok->identifier.content,
+            });
         }
         case TokenType::KEYWORD_STRUCT: {
             auto *arrow = iter_next(tokens_iter);

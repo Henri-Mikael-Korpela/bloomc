@@ -1419,11 +1419,28 @@ static auto parse_expression(
             //   then there is no return type.
             // - If the procedure params are followed by an identifier token before the
             //   arrow token, then that identifier token is the return type.
+            // - If the procedure params are followed by a caret token, then the return
+            //   type is a pointer to the following identifier.
             Token *proc_return_type_token = iter_next(tokens_iter);
             TypeASTNode *return_type_node = nullptr;
             if (proc_return_type_token->type == TokenType::ARROW) {
-                // Unneccessary, but for clarity
-                // return_type_node = nullptr;
+                // no return type
+            }
+            else if (proc_return_type_token->type == TokenType::CARET) {
+                auto *type_name_token = iter_next(tokens_iter);
+                if (type_name_token->type != TokenType::IDENTIFIER) {
+                    return err<ASTNode, ParseError>(PARSE_ERROR_CREATE(UNEXPECTED_TOKEN, type_name_token));
+                }
+                return_type_node = iter_append(types_iter, TypeASTNode {
+                    .name = type_name_token->identifier.content,
+                    .is_pointer = true,
+                });
+                if (
+                    auto *arrow_tok = iter_next(tokens_iter);
+                    arrow_tok->type != TokenType::ARROW
+                ) {
+                    return err<ASTNode, ParseError>(PARSE_ERROR_CREATE(UNEXPECTED_TOKEN, arrow_tok));
+                }
             }
             else if (proc_return_type_token->type == TokenType::IDENTIFIER) {
                 if (
@@ -1437,11 +1454,19 @@ static auto parse_expression(
                     .name = proc_return_type_token->identifier.content,
                 });
             }
-            if (
-                auto next_token = iter_next(tokens_iter);
-                next_token->type != TokenType::NEWLINE
-            ) {
-                return err<ASTNode, ParseError>(PARSE_ERROR_CREATE(UNEXPECTED_TOKEN, next_token));
+            bool is_foreign_proc = false;
+            {
+                auto *after_arrow = iter_next(tokens_iter);
+                if (after_arrow->type == TokenType::KEYWORD_FOREIGN) {
+                    is_foreign_proc = true;
+                    auto *nl = iter_next(tokens_iter);
+                    if (nl->type != TokenType::NEWLINE && nl->type != TokenType::END) {
+                        return err<ASTNode, ParseError>(PARSE_ERROR_CREATE(UNEXPECTED_TOKEN, nl));
+                    }
+                }
+                else if (after_arrow->type != TokenType::NEWLINE) {
+                    return err<ASTNode, ParseError>(PARSE_ERROR_CREATE(UNEXPECTED_TOKEN, after_arrow));
+                }
             }
 
             auto proc_node = iter_append(nodes_block_iter, ASTNode {
@@ -1458,8 +1483,13 @@ static auto parse_expression(
                         context->nodes_block->data + nodes_block_iter->current_index + 1,
                         0 // Will be updated later
                     ),
+                    .is_foreign = is_foreign_proc,
                 },
             });
+
+            if (is_foreign_proc) {
+                return ok<ASTNode, ParseError>(*proc_node);
+            }
 
             // Parse procedure body
             // - Expect each line to be indented and contain a single statement

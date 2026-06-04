@@ -1,0 +1,35 @@
+// Simple calendar keeping app
+fopen :: proc (path: CStr, mode: CStr) ^FILE -> foreign
+fwrite :: proc(content: CStr, size: Int, count: Int, stream: ^FILE) Int -> foreign
+
+File :: struct ->
+    _ptr: ^FILE
+    path: Str
+
+file_close :: proc(file: ^File) ->
+    fclose(file._ptr)
+
+file_open_for_write :: proc(path: Str) File ->
+    path_cstr := clone_to_cstr(path, context.temp_allocator)
+    mode := clone_to_cstr("w", context.temp_allocator)
+    fptr := fopen(path_cstr, mode)
+    File { path = path, _ptr = fptr }
+
+file_write :: proc(file: ^File, content: Str) ->
+    content_cstr := clone_to_cstr(content, context.temp_allocator)
+    fwrite(content_cstr, 1, length_in_bytes(content), file._ptr)
+
+Event :: struct ->
+    id: Int
+    name: Str
+
+main :: proc() ->
+    e1 := Event { id = 1, name = "My event" }
+    print("Event #1: {}\n", e1.name)
+
+    f := file_open_for_write("calendar-output.txt")
+    print("Output file path: {}\n", f.path)
+
+    file_write(%f, "Hello, world!")
+
+    file_close(%f)

@@ -37,6 +37,7 @@ enum class TokenType : uint8_t {
     KEYWORD_ELSE,
     KEYWORD_FALSE,
     KEYWORD_FOR,
+    KEYWORD_FOREIGN,
     KEYWORD_IF,
     KEYWORD_IN,
     KEYWORD_PASS,
@@ -49,17 +50,18 @@ enum class TokenType : uint8_t {
     VAR_DEF,
 };
 
-constexpr auto TOKEN_KEYWORD_BREAK  = "break";
-constexpr auto TOKEN_KEYWORD_CONST  = "const";
-constexpr auto TOKEN_KEYWORD_ELSE   = "else";
-constexpr auto TOKEN_KEYWORD_FALSE  = "false";
-constexpr auto TOKEN_KEYWORD_FOR    = "for";
-constexpr auto TOKEN_KEYWORD_IF     = "if";
-constexpr auto TOKEN_KEYWORD_IN     = "in";
-constexpr auto TOKEN_KEYWORD_PASS   = "pass";
-constexpr auto TOKEN_KEYWORD_PROC   = "proc";
-constexpr auto TOKEN_KEYWORD_STRUCT = "struct";
-constexpr auto TOKEN_KEYWORD_TRUE   = "true";
+constexpr auto TOKEN_KEYWORD_BREAK   = "break";
+constexpr auto TOKEN_KEYWORD_CONST   = "const";
+constexpr auto TOKEN_KEYWORD_ELSE    = "else";
+constexpr auto TOKEN_KEYWORD_FALSE   = "false";
+constexpr auto TOKEN_KEYWORD_FOR     = "for";
+constexpr auto TOKEN_KEYWORD_FOREIGN = "foreign";
+constexpr auto TOKEN_KEYWORD_IF      = "if";
+constexpr auto TOKEN_KEYWORD_IN      = "in";
+constexpr auto TOKEN_KEYWORD_PASS    = "pass";
+constexpr auto TOKEN_KEYWORD_PROC    = "proc";
+constexpr auto TOKEN_KEYWORD_STRUCT  = "struct";
+constexpr auto TOKEN_KEYWORD_TRUE    = "true";
 
 struct Token {
     TokenType type;
@@ -113,6 +115,7 @@ constexpr auto to_string(TokenType type) -> Str {
         case TokenType::KEYWORD_ELSE:      return STR(TOKEN_KEYWORD_ELSE);
         case TokenType::KEYWORD_FALSE:     return STR(TOKEN_KEYWORD_FALSE);
         case TokenType::KEYWORD_FOR:       return STR(TOKEN_KEYWORD_FOR);
+        case TokenType::KEYWORD_FOREIGN:   return STR(TOKEN_KEYWORD_FOREIGN);
         case TokenType::KEYWORD_IF:        return STR(TOKEN_KEYWORD_IF);
         case TokenType::KEYWORD_IN:        return STR(TOKEN_KEYWORD_IN);
         case TokenType::KEYWORD_PASS:      return STR(TOKEN_KEYWORD_PASS);

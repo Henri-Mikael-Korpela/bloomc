@@ -97,6 +97,7 @@ struct ProcParameterASTNode {
 
 struct TypeASTNode {
     Str name;
+    bool is_pointer;
 };
 
 struct ASTNode {
@@ -137,6 +138,7 @@ struct ASTNode {
             Array<ProcParameterASTNode> parameters;
             TypeASTNode *return_type;
             Array<ASTNode> body;
+            bool is_foreign;
         } proc_def;
         ASTNode *return_value;
         struct {

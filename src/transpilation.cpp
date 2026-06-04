@@ -173,7 +173,7 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
     };
 
     std::function<void(Array<ASTNode>*, Str)> emit_proc_call_args = [&](Array<ASTNode> *arguments, Str callee_name) {
-        bool const wrap_strings = is_user_proc(callee_name);
+        bool const wrap_strings = is_user_proc(callee_name) || callee_name == "clone_to_cstr";
         for (size_t i = 0; i < arguments->length; i++) {
             if (i != 0) { PUSH_STR(", "); }
             auto *arg = &(*arguments)[i];
@@ -431,6 +431,9 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
                 break;
             }
             case ASTNodeType::PROC_DEF: {
+                if (node->proc_def.is_foreign) {
+                    break;
+                }
                 array_var_count = 0;
                 var_type_count = 0;
                 size_t for_in_counter = 0;
@@ -471,6 +474,9 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
                     }
                     else if (param->type_name == "Str") {
                         PUSH_STR("BloomStr ");
+                    }
+                    else if (param->type_name == "CStr") {
+                        PUSH_STR("char *");
                     }
                     else {
                         PUSH_STR(param->type_name);
@@ -872,6 +878,16 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
                             }
                             if (expr->type == ASTNodeType::PROC_CALL) {
                                 TypeASTNode *ret_type = lookup_proc_return_type(expr->proc_call.caller_identifier);
+                                if (ret_type != nullptr && ret_type->is_pointer) {
+                                    register_var(stmt->variable_definition.name, VarKind::PTR);
+                                    PUSH_STR(ret_type->name);
+                                    PUSH_STR(" *");
+                                    PUSH_STR(stmt->variable_definition.name);
+                                    PUSH_STR(" = ");
+                                    emit_expression(expr);
+                                    PUSH_STR(";\n");
+                                    break;
+                                }
                                 if (ret_type != nullptr &&
                                     !(ret_type->name == "Int") &&
                                     !(ret_type->name == "Bool") &&

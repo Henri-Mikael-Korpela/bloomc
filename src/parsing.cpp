@@ -1043,6 +1043,16 @@ static auto parse_expression(
                             .string_literal = value_tok->string_literal.content,
                         });
                     }
+                    else if (value_tok->type == TokenType::IDENTIFIER) {
+                        (void)iter_append(proc_params_iter, ProcParameterASTNode {
+                            .name = field_name,
+                            .type_name = {},
+                        });
+                        (void)iter_append(operands_iter, BinaryOperand {
+                            .type = BinaryOperandType::IDENTIFIER,
+                            .identifier = value_tok->identifier.content,
+                        });
+                    }
                     else {
                         return err<ASTNode, ParseError>(PARSE_ERROR_CREATE(UNEXPECTED_TOKEN, value_tok));
                     }
@@ -1911,6 +1921,33 @@ static auto parse_statement(
                     iter_current(tokens_iter)->type == TokenType::NEWLINE ||
                     iter_current(tokens_iter)->type == TokenType::END &&
                     "Expected newline or end token after array element assignment");
+                (void)iter_next(tokens_iter);
+                break;
+            }
+            case TokenType::BRACE_OPEN: {
+                // Standalone struct init expression (e.g. last expression as return value)
+                // Back up so the identifier is re-read by parse_expression
+                tokens_iter->current_index -= 1;
+                Iterator<Token> expr_tokens_iter;
+                if (!slice_expression_tokens(tokens_iter, errors, &expr_tokens_iter)) {
+                    return false;
+                }
+                auto expr_parse_result = parse_expression(
+                    &expr_tokens_iter, context, nodes_block_iter,
+                    proc_params_block, proc_params_iter, types_iter,
+                    operands_iter, array_elements_iter, errors
+                );
+                if (!is_ok(&expr_parse_result)) {
+                    append(errors, expr_parse_result.err);
+                    return false;
+                }
+                auto *struct_init_ptr = iter_append(nodes_block_iter, std::move(expr_parse_result.ok));
+                struct_init_ptr->parent = parent_node;
+                tokens_iter->current_index += expr_tokens_iter.current_index;
+                assert(
+                    iter_current(tokens_iter)->type == TokenType::NEWLINE ||
+                    iter_current(tokens_iter)->type == TokenType::END &&
+                    "Expected newline or end token after struct init statement");
                 (void)iter_next(tokens_iter);
                 break;
             }

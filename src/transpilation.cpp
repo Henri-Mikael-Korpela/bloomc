@@ -115,7 +115,47 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
         return 0;
     };
 
-    std::function<void(Array<ASTNode>*)> emit_proc_call_args = [&](Array<ASTNode> *arguments) {
+    // Returns the runtime byte length of a string literal content,
+    // treating backslash-escape pairs as a single byte.
+    auto str_literal_runtime_length = [](Str content) -> size_t {
+        size_t len = 0;
+        for (size_t k = 0; k < content.length; k++) {
+            if (content.data[k] == '\\' && k + 1 < content.length) {
+                k++;
+            }
+            len++;
+        }
+        return len;
+    };
+
+    auto is_user_proc = [&](Str name) -> bool {
+        for (size_t ni = 0; ni < ast_nodes->length; ni++) {
+            auto *n = &ast_nodes->data[ni];
+            if (n->type == ASTNodeType::PROC_DEF &&
+                n->proc_def.name.length == name.length &&
+                strncmp(n->proc_def.name.data, name.data, name.length) == 0)
+            {
+                return true;
+            }
+        }
+        return false;
+    };
+
+    auto lookup_proc_return_type = [&](Str name) -> TypeASTNode * {
+        for (size_t ni = 0; ni < ast_nodes->length; ni++) {
+            auto *n = &ast_nodes->data[ni];
+            if (n->type == ASTNodeType::PROC_DEF &&
+                n->proc_def.name.length == name.length &&
+                strncmp(n->proc_def.name.data, name.data, name.length) == 0)
+            {
+                return n->proc_def.return_type;
+            }
+        }
+        return nullptr;
+    };
+
+    std::function<void(Array<ASTNode>*, Str)> emit_proc_call_args = [&](Array<ASTNode> *arguments, Str callee_name) {
+        bool const wrap_strings = is_user_proc(callee_name);
         for (size_t i = 0; i < arguments->length; i++) {
             if (i != 0) { PUSH_STR(", "); }
             auto *arg = &(*arguments)[i];
@@ -133,9 +173,19 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
                     PUSH_INT(arg->integer_literal.value.value);
                     break;
                 case ASTNodeType::STRING_LITERAL:
-                    PUSH_STR('"');
-                    PUSH_STR(arg->string_literal.value);
-                    PUSH_STR('"');
+                    if (wrap_strings) {
+                        size_t const runtime_len = str_literal_runtime_length(arg->string_literal.value);
+                        PUSH_STR("(BloomStr){.data = \"");
+                        PUSH_STR(arg->string_literal.value);
+                        PUSH_STR("\", .length = ");
+                        PUSH_INT(static_cast<intmax_t>(runtime_len));
+                        PUSH_STR("}");
+                    }
+                    else {
+                        PUSH_STR('"');
+                        PUSH_STR(arg->string_literal.value);
+                        PUSH_STR('"');
+                    }
                     break;
                 case ASTNodeType::BUILTIN_LENGTH:
                     PUSH_INT(static_cast<intmax_t>(find_array_size(arg->identifier)));
@@ -150,7 +200,7 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
                 case ASTNodeType::PROC_CALL:
                     PUSH_STR(arg->proc_call.caller_identifier);
                     PUSH_STR('(');
-                    emit_proc_call_args(&arg->proc_call.arguments);
+                    emit_proc_call_args(&arg->proc_call.arguments, arg->proc_call.caller_identifier);
                     PUSH_STR(')');
                     break;
                 case ASTNodeType::MEMBER_ACCESS:
@@ -184,7 +234,7 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
                 if (is_int_cast) {
                     assert(op->proc_call.arguments.length == 1 && "Int() cast requires exactly one argument");
                     PUSH_STR("(int)(");
-                    emit_proc_call_args(const_cast<Array<ASTNode>*>(&op->proc_call.arguments));
+                    emit_proc_call_args(const_cast<Array<ASTNode>*>(&op->proc_call.arguments), *callee);
                     PUSH_STR(")");
                 }
                 else if (is_length) {
@@ -196,7 +246,7 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
                 else {
                     PUSH_STR(op->proc_call.caller_identifier);
                     PUSH_STR('(');
-                    emit_proc_call_args(const_cast<Array<ASTNode>*>(&op->proc_call.arguments));
+                    emit_proc_call_args(const_cast<Array<ASTNode>*>(&op->proc_call.arguments), *callee);
                     PUSH_STR(')');
                 }
                 break;
@@ -209,20 +259,16 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
                 PUSH_STR('.');
                 PUSH_STR(op->member_access.field_name);
                 break;
-        }
-    };
-
-    // Returns the runtime byte length of a string literal content,
-    // treating backslash-escape pairs as a single byte.
-    auto str_literal_runtime_length = [](Str content) -> size_t {
-        size_t len = 0;
-        for (size_t k = 0; k < content.length; k++) {
-            if (content.data[k] == '\\' && k + 1 < content.length) {
-                k++;
+            case BinaryOperandType::STRING_LITERAL: {
+                size_t const runtime_len = str_literal_runtime_length(op->string_literal);
+                PUSH_STR("(BloomStr){.data = \"");
+                PUSH_STR(op->string_literal);
+                PUSH_STR("\", .length = ");
+                PUSH_INT(static_cast<intmax_t>(runtime_len));
+                PUSH_STR("}");
+                break;
             }
-            len++;
         }
-        return len;
     };
 
     auto emit_expression = [&](ASTNode *expr) {
@@ -246,7 +292,7 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
                 if (expr->proc_call.caller_identifier == "Int") {
                     assert(expr->proc_call.arguments.length == 1 && "Int() cast requires exactly one argument");
                     PUSH_STR("(int)(");
-                    emit_proc_call_args(&expr->proc_call.arguments);
+                    emit_proc_call_args(&expr->proc_call.arguments, expr->proc_call.caller_identifier);
                     PUSH_STR(")");
                 }
                 else if (expr->proc_call.caller_identifier == "length") {
@@ -256,7 +302,7 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
                 else {
                     PUSH_STR(expr->proc_call.caller_identifier);
                     PUSH_STR('(');
-                    emit_proc_call_args(&expr->proc_call.arguments);
+                    emit_proc_call_args(&expr->proc_call.arguments, expr->proc_call.caller_identifier);
                     PUSH_STR(')');
                 }
                 break;
@@ -329,17 +375,26 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
                 array_var_count = 0;
                 var_type_count = 0;
                 size_t for_in_counter = 0;
-                char const *return_type_name = nullptr;
-                if (node->proc_def.return_type != nullptr) {
+                bool const has_return_type = node->proc_def.return_type != nullptr;
+                Str return_type_c = {};
+                if (has_return_type) {
                     if (node->proc_def.return_type->name == "Int") {
-                        return_type_name = "int";
+                        return_type_c = cstr_to_str("int");
+                    }
+                    else if (node->proc_def.return_type->name == "Bool") {
+                        return_type_c = cstr_to_str("bool");
+                    }
+                    else if (node->proc_def.return_type->name == "Str") {
+                        return_type_c = cstr_to_str("BloomStr");
+                    }
+                    else {
+                        return_type_c = node->proc_def.return_type->name;
                     }
                 }
                 else {
-                    return_type_name = "void";
+                    return_type_c = cstr_to_str("void");
                 }
-                assert(return_type_name != nullptr && "Unsupported return type in transpilation");
-                PUSH_STR(return_type_name);
+                PUSH_STR(return_type_c);
                 PUSH_STR(' ');
                 PUSH_STR(node->proc_def.name);
                 PUSH_STR('(');
@@ -349,15 +404,26 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
                     if (i != 0) {
                         PUSH_STR(", ");
                     }
-                    // For simplicity, assume all parameters are of type int
-                    PUSH_STR("int ");
+                    if (param->type_name == "Int") {
+                        PUSH_STR("int ");
+                    }
+                    else if (param->type_name == "Bool") {
+                        PUSH_STR("bool ");
+                    }
+                    else if (param->type_name == "Str") {
+                        PUSH_STR("BloomStr ");
+                    }
+                    else {
+                        PUSH_STR(param->type_name);
+                        PUSH_STR(" ");
+                    }
                     PUSH_STR(param->name);
                 }
                 PUSH_STR(')');
                 PUSH_STR("{\n");
 
-                std::function<void(ASTNode*, ASTNode*, int)> emit_stmt;
-                emit_stmt = [&](ASTNode *stmt, ASTNode *owner, int depth) {
+                std::function<void(ASTNode*, ASTNode*, int, bool)> emit_stmt;
+                emit_stmt = [&](ASTNode *stmt, ASTNode *owner, int depth, bool emit_as_return) {
                     if (stmt->parent != owner) {
                         return;
                     }
@@ -367,7 +433,7 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
                     switch (stmt->type) {
                         case ASTNodeType::BINARY_ADD: {
                             push_tabs();
-                            PUSH_STR("return ");
+                            if (emit_as_return) { PUSH_STR("return "); }
                             auto *operands = &stmt->binary_operation.operands;
                             for (size_t i = 0; i < operands->length; i++) {
                                 if (i != 0) { PUSH_STR(" + "); }
@@ -551,9 +617,10 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
                             }
                             else {
                                 push_tabs();
+                                if (emit_as_return) { PUSH_STR("return "); }
                                 PUSH_STR(stmt->proc_call.caller_identifier);
                                 PUSH_STR('(');
-                                emit_proc_call_args(&stmt->proc_call.arguments);
+                                emit_proc_call_args(&stmt->proc_call.arguments, stmt->proc_call.caller_identifier);
                                 PUSH_STR(");\n");
                             }
                             break;
@@ -587,18 +654,7 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
                                         PUSH_STR(".");
                                         PUSH_STR(expr->struct_init.field_names.data[fi].name);
                                         PUSH_STR(" = ");
-                                        auto const *fv = &expr->struct_init.field_values.data[fi];
-                                        if (fv->type == BinaryOperandType::STRING_LITERAL) {
-                                            size_t const runtime_len = str_literal_runtime_length(fv->string_literal);
-                                            PUSH_STR("(BloomStr){.data = \"");
-                                            PUSH_STR(fv->string_literal);
-                                            PUSH_STR("\", .length = ");
-                                            PUSH_INT(static_cast<intmax_t>(runtime_len));
-                                            PUSH_STR("}");
-                                        }
-                                        else {
-                                            PUSH_INT(fv->integer_literal.value);
-                                        }
+                                        emit_binary_operand(&expr->struct_init.field_values.data[fi]);
                                     }
                                     PUSH_STR("}");
                                 }
@@ -624,6 +680,23 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
                                 PUSH_STR("};\n");
                                 break;
                             }
+                            if (expr->type == ASTNodeType::PROC_CALL) {
+                                TypeASTNode *ret_type = lookup_proc_return_type(expr->proc_call.caller_identifier);
+                                if (ret_type != nullptr &&
+                                    !(ret_type->name == "Int") &&
+                                    !(ret_type->name == "Bool") &&
+                                    !(ret_type->name == "Str"))
+                                {
+                                    register_struct_var(stmt->variable_definition.name, ret_type->name);
+                                    PUSH_STR(ret_type->name);
+                                    PUSH_STR(' ');
+                                    PUSH_STR(stmt->variable_definition.name);
+                                    PUSH_STR(" = ");
+                                    emit_expression(expr);
+                                    PUSH_STR(";\n");
+                                    break;
+                                }
+                            }
                             char const *c_type = nullptr;
                             VarKind var_kind = VarKind::INT;
                             if (expr->type == ASTNodeType::BOOLEAN_LITERAL) {
@@ -633,6 +706,27 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
                             else if (expr->type == ASTNodeType::STRING_LITERAL) {
                                 c_type = "BloomStr";
                                 var_kind = VarKind::BLOOM_STR;
+                            }
+                            else if (expr->type == ASTNodeType::PROC_CALL) {
+                                TypeASTNode *ret_type = lookup_proc_return_type(expr->proc_call.caller_identifier);
+                                if (ret_type != nullptr) {
+                                    if (ret_type->name == "Bool") {
+                                        c_type = "bool";
+                                        var_kind = VarKind::BOOL;
+                                    }
+                                    else if (ret_type->name == "Str") {
+                                        c_type = "BloomStr";
+                                        var_kind = VarKind::BLOOM_STR;
+                                    }
+                                    else {
+                                        c_type = "int";
+                                        var_kind = VarKind::INT;
+                                    }
+                                }
+                                else {
+                                    c_type = "int";
+                                    var_kind = VarKind::INT;
+                                }
                             }
                             else {
                                 c_type = "int";
@@ -645,6 +739,22 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
                             PUSH_STR(" = ");
                             emit_expression(expr);
                             PUSH_STR(";\n");
+                            break;
+                        }
+                        case ASTNodeType::STRUCT_INIT: {
+                            push_tabs();
+                            if (emit_as_return) { PUSH_STR("return "); }
+                            PUSH_STR("(");
+                            PUSH_STR(stmt->struct_init.type_name);
+                            PUSH_STR("){");
+                            for (size_t fi = 0; fi < stmt->struct_init.field_names.length; fi++) {
+                                if (fi != 0) { PUSH_STR(", "); }
+                                PUSH_STR(".");
+                                PUSH_STR(stmt->struct_init.field_names.data[fi].name);
+                                PUSH_STR(" = ");
+                                emit_binary_operand(&stmt->struct_init.field_values.data[fi]);
+                            }
+                            PUSH_STR("};\n");
                             break;
                         }
                         case ASTNodeType::ADD_ASSIGN: {
@@ -739,7 +849,7 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
 
                             for (size_t bi = 0; bi < stmt->for_in_loop.body.length; bi++) {
                                 auto *body_stmt = &stmt->for_in_loop.body.data[bi];
-                                emit_stmt(body_stmt, stmt, depth + 2);
+                                emit_stmt(body_stmt, stmt, depth + 2, false);
                             }
                             if (idx->length > 0) {
                                 push_tabs(); PUSH_STR("\t\t"); PUSH_STR(*idx); PUSH_STR("++;\n");
@@ -769,7 +879,7 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
                             PUSH_STR(") {\n");
                             for (size_t bi = 0; bi < stmt->for_cond_loop.body.length; bi++) {
                                 auto *body_stmt = &stmt->for_cond_loop.body.data[bi];
-                                emit_stmt(body_stmt, stmt, depth + 1);
+                                emit_stmt(body_stmt, stmt, depth + 1, false);
                             }
                             push_tabs();
                             PUSH_STR("}\n");
@@ -780,7 +890,7 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
                             PUSH_STR("while (1) {\n");
                             for (size_t bi = 0; bi < stmt->for_loop.body.length; bi++) {
                                 auto *body_stmt = &stmt->for_loop.body.data[bi];
-                                emit_stmt(body_stmt, stmt, depth + 1);
+                                emit_stmt(body_stmt, stmt, depth + 1, false);
                             }
                             push_tabs();
                             PUSH_STR("}\n");
@@ -803,7 +913,7 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
                             PUSH_STR("++) {\n");
                             for (size_t bi = 0; bi < stmt->for_range_loop.body.length; bi++) {
                                 auto *body_stmt = &stmt->for_range_loop.body.data[bi];
-                                emit_stmt(body_stmt, stmt, depth + 1);
+                                emit_stmt(body_stmt, stmt, depth + 1, false);
                             }
                             push_tabs();
                             PUSH_STR("}\n");
@@ -837,7 +947,7 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
                                 auto *cur = &current_if->if_else;
                                 for (size_t bi = 0; bi < cur->then_body.length; bi++) {
                                     auto *body_stmt = &cur->then_body.data[bi];
-                                    emit_stmt(body_stmt, current_if, depth + 1);
+                                    emit_stmt(body_stmt, current_if, depth + 1, false);
                                 }
 
                                 if (cur->else_body.data == nullptr) {
@@ -866,7 +976,7 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
                                     PUSH_STR("} else {\n");
                                     for (size_t bi = 0; bi < cur->else_body.length; bi++) {
                                         auto *body_stmt = &cur->else_body.data[bi];
-                                        emit_stmt(body_stmt, current_if, depth + 1);
+                                        emit_stmt(body_stmt, current_if, depth + 1, false);
                                     }
                                     push_tabs();
                                     PUSH_STR("}\n");
@@ -880,9 +990,11 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
                     }
                 };
 
-                for (size_t bi = 0; bi < node->proc_def.body.length; bi++) {
+                size_t const body_len = node->proc_def.body.length;
+                for (size_t bi = 0; bi < body_len; bi++) {
                     auto *statement = &node->proc_def.body.data[bi];
-                    emit_stmt(statement, node, 1);
+                    bool const is_last = (bi == body_len - 1);
+                    emit_stmt(statement, node, 1, is_last && has_return_type);
                 }
                 PUSH_STR("}\n\n");
                 break;

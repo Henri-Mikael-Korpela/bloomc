@@ -9,7 +9,7 @@
 - Do not use RTTI
 
 ## Control structures
-- If statements should be followed brackets. Do not use single line if bodies.
+- If statements should be followed by brackets. Do not use single line if bodies.
 - `else` should start on its own line
 - Do not use the ternary operator.
 

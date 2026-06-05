@@ -510,10 +510,22 @@ static auto parse_proc_call_arguments(
         Str actual_type = infer_arg_type_name(appended_arg, context);
         if (actual_type.length == 0 || str_equal(actual_type, param->type_name)) { return true; }
         size_t token_width = 1;
-        if (arg_token->type == TokenType::KEYWORD_TRUE) { token_width = 4; }
-        else if (arg_token->type == TokenType::KEYWORD_FALSE) { token_width = 5; }
-        else if (arg_token->type == TokenType::IDENTIFIER) { token_width = arg_token->identifier.content.length; }
-        else if (arg_token->type == TokenType::STRING_LITERAL) { token_width = arg_token->string_literal.content.length + 2; }
+        switch (arg_token->type) {
+            case TokenType::KEYWORD_TRUE:
+                token_width = 4;
+                break;
+            case TokenType::KEYWORD_FALSE:
+                token_width = 5;
+                break;
+            case TokenType::IDENTIFIER:
+                token_width = arg_token->identifier.content.length;
+                break;
+            case TokenType::STRING_LITERAL:
+                token_width = arg_token->string_literal.content.length + 2;
+                break;
+            default:
+                break;
+        }
         append(errors, ParseError {
             .code = ParseErrorCode::PROC_ARG_TYPE_MISMATCH,
             .position = arg_token->position,
@@ -537,153 +549,155 @@ static auto parse_proc_call_arguments(
             "Unexpected closing parenthesis while parsing procedure call arguments. "
             "Closing parenthesis should have been handled by the caller function."
         );
-        if (next_token->type == TokenType::COMMA) {
-            continue;
-        }
-        else if (next_token->type == TokenType::IDENTIFIER) {
-            if (tokens_iter->current_index < tokens_iter->elements.length &&
-                iter_peek(tokens_iter)->type == TokenType::PARENTHESIS_OPEN)
-            {
-                bool const is_builtin = (
-                    next_token->identifier.content == "length" ||
-                    next_token->identifier.content == "length_in_bytes"
-                );
-                (void)iter_next(tokens_iter); // consume (
-                if (is_builtin) {
-                    auto *inner_id_token = iter_next(tokens_iter);
-                    if (inner_id_token->type != TokenType::IDENTIFIER) {
-                        append(errors, ParseError {
-                            .code = ParseErrorCode::UNEXPECTED_TOKEN,
-                            .position = inner_id_token->position,
-                            .src_code_line = __LINE__,
-                            .token_type = inner_id_token->type,
-                        });
-                        return false;
-                    }
-                    auto *close_paren = iter_next(tokens_iter);
-                    if (close_paren->type != TokenType::PARENTHESIS_CLOSE) {
-                        append(errors, ParseError {
-                            .code = ParseErrorCode::UNEXPECTED_TOKEN,
-                            .position = close_paren->position,
-                            .src_code_line = __LINE__,
-                            .token_type = close_paren->type,
-                        });
-                        return false;
-                    }
-                    ASTNodeType const builtin_type =
-                        (next_token->identifier.content == "length_in_bytes")
-                        ? ASTNodeType::BUILTIN_LENGTH_IN_BYTES
-                        : ASTNodeType::BUILTIN_LENGTH;
-                    (void)iter_append(nodes_block_iter, ASTNode {
-                        .type = builtin_type,
-                        .parent = proc_call_node,
-                        .identifier = inner_id_token->identifier.content,
-                    });
-                    if (!check_arg_type(next_token)) { return false; }
-                    arg_count++;
-                }
-                else {
-                    // General nested proc call: append a placeholder node for phase 1,
-                    // defer sub-argument parsing to phase 2 so other top-level arguments
-                    // added after this call remain contiguous with the outer arg slice.
-                    assert(pending_nested_call_count < MAX_PENDING_NESTED_CALLS &&
-                        "Too many nested proc call arguments");
-                    size_t const nested_tokens_begin = tokens_iter->current_index;
-                    int paren_depth = 0;
-                    int64_t const close_paren_idx = iter_get_index_at_if<Token>(
-                        tokens_iter, [&paren_depth](Token const *t) {
-                            if (t->type == TokenType::PARENTHESIS_OPEN) {
-                                paren_depth++;
-                                return false;
-                            }
-                            if (t->type == TokenType::PARENTHESIS_CLOSE) {
-                                if (paren_depth == 0) return true;
-                                paren_depth--;
-                            }
+        switch (next_token->type) {
+            case TokenType::COMMA:
+                continue;
+            case TokenType::IDENTIFIER: {
+                if (tokens_iter->current_index < tokens_iter->elements.length &&
+                    iter_peek(tokens_iter)->type == TokenType::PARENTHESIS_OPEN)
+                {
+                    bool const is_builtin = (
+                        next_token->identifier.content == "length" ||
+                        next_token->identifier.content == "length_in_bytes"
+                    );
+                    (void)iter_next(tokens_iter); // consume (
+                    if (is_builtin) {
+                        auto *inner_id_token = iter_next(tokens_iter);
+                        if (inner_id_token->type != TokenType::IDENTIFIER) {
+                            append(errors, ParseError {
+                                .code = ParseErrorCode::UNEXPECTED_TOKEN,
+                                .position = inner_id_token->position,
+                                .src_code_line = __LINE__,
+                                .token_type = inner_id_token->type,
+                            });
                             return false;
                         }
-                    );
-                    auto *nested_node = iter_append(nodes_block_iter, ASTNode {
-                        .type = ASTNodeType::PROC_CALL,
-                        .parent = proc_call_node,
-                        .proc_call = { .caller_identifier = next_token->identifier.content },
-                    });
+                        auto *close_paren = iter_next(tokens_iter);
+                        if (close_paren->type != TokenType::PARENTHESIS_CLOSE) {
+                            append(errors, ParseError {
+                                .code = ParseErrorCode::UNEXPECTED_TOKEN,
+                                .position = close_paren->position,
+                                .src_code_line = __LINE__,
+                                .token_type = close_paren->type,
+                            });
+                            return false;
+                        }
+                        ASTNodeType const builtin_type =
+                            (next_token->identifier.content == "length_in_bytes")
+                            ? ASTNodeType::BUILTIN_LENGTH_IN_BYTES
+                            : ASTNodeType::BUILTIN_LENGTH;
+                        (void)iter_append(nodes_block_iter, ASTNode {
+                            .type = builtin_type,
+                            .parent = proc_call_node,
+                            .identifier = inner_id_token->identifier.content,
+                        });
+                        if (!check_arg_type(next_token)) { return false; }
+                        arg_count++;
+                    }
+                    else {
+                        // General nested proc call: append a placeholder node for phase 1,
+                        // defer sub-argument parsing to phase 2 so other top-level arguments
+                        // added after this call remain contiguous with the outer arg slice.
+                        assert(pending_nested_call_count < MAX_PENDING_NESTED_CALLS &&
+                            "Too many nested proc call arguments");
+                        size_t const nested_tokens_begin = tokens_iter->current_index;
+                        int paren_depth = 0;
+                        int64_t const close_paren_idx = iter_get_index_at_if<Token>(
+                            tokens_iter, [&paren_depth](Token const *t) {
+                                if (t->type == TokenType::PARENTHESIS_OPEN) {
+                                    paren_depth++;
+                                    return false;
+                                }
+                                if (t->type == TokenType::PARENTHESIS_CLOSE) {
+                                    if (paren_depth == 0) return true;
+                                    paren_depth--;
+                                }
+                                return false;
+                            }
+                        );
+                        auto *nested_node = iter_append(nodes_block_iter, ASTNode {
+                            .type = ASTNodeType::PROC_CALL,
+                            .parent = proc_call_node,
+                            .proc_call = { .caller_identifier = next_token->identifier.content },
+                        });
+                        if (!check_arg_type(next_token)) { return false; }
+                        arg_count++;
+                        pending_nested_calls[pending_nested_call_count++] = {
+                            nested_node,
+                            nested_tokens_begin,
+                            static_cast<size_t>(close_paren_idx),
+                        };
+                        tokens_iter->current_index = static_cast<size_t>(close_paren_idx) + 1;
+                    }
+                }
+                else {
+                    auto first = parse_simple_operand(next_token);
+                    if (!is_ok(&first)) { append(errors, first.err); return false; }
+                    if (!emit_operand_or_binary_add(std::move(first.ok))) { return false; }
                     if (!check_arg_type(next_token)) { return false; }
                     arg_count++;
-                    pending_nested_calls[pending_nested_call_count++] = {
-                        nested_node,
-                        nested_tokens_begin,
-                        static_cast<size_t>(close_paren_idx),
-                    };
-                    tokens_iter->current_index = static_cast<size_t>(close_paren_idx) + 1;
                 }
+                break;
             }
-            else {
+            case TokenType::STRING_LITERAL:
+                (void)iter_append(nodes_block_iter, ASTNode {
+                    .type = ASTNodeType::STRING_LITERAL,
+                    .parent = proc_call_node,
+                    .string_literal = {
+                        .value = next_token->string_literal.content,
+                    },
+                });
+                if (!check_arg_type(next_token)) { return false; }
+                arg_count++;
+                break;
+            case TokenType::INTEGER_LITERAL: {
                 auto first = parse_simple_operand(next_token);
                 if (!is_ok(&first)) { append(errors, first.err); return false; }
                 if (!emit_operand_or_binary_add(std::move(first.ok))) { return false; }
                 if (!check_arg_type(next_token)) { return false; }
                 arg_count++;
+                break;
             }
-        }
-        else if (next_token->type == TokenType::STRING_LITERAL) {
-            (void)iter_append(nodes_block_iter, ASTNode {
-                .type = ASTNodeType::STRING_LITERAL,
-                .parent = proc_call_node,
-                .string_literal = {
-                    .value = next_token->string_literal.content,
-                },
-            });
-            if (!check_arg_type(next_token)) { return false; }
-            arg_count++;
-        }
-        else if (next_token->type == TokenType::INTEGER_LITERAL) {
-            auto first = parse_simple_operand(next_token);
-            if (!is_ok(&first)) { append(errors, first.err); return false; }
-            if (!emit_operand_or_binary_add(std::move(first.ok))) { return false; }
-            if (!check_arg_type(next_token)) { return false; }
-            arg_count++;
-        }
-        else if (next_token->type == TokenType::KEYWORD_TRUE ||
-                 next_token->type == TokenType::KEYWORD_FALSE)
-        {
-            (void)iter_append(nodes_block_iter, ASTNode {
-                .type = ASTNodeType::BOOLEAN_LITERAL,
-                .parent = proc_call_node,
-                .boolean_literal = {
-                    .value = next_token->type == TokenType::KEYWORD_TRUE,
-                },
-            });
-            if (!check_arg_type(next_token)) { return false; }
-            arg_count++;
-        }
-        else if (next_token->type == TokenType::ADDRESS_OF) {
-            auto *ident_tok = iter_next(tokens_iter);
-            if (ident_tok->type != TokenType::IDENTIFIER) {
+            case TokenType::KEYWORD_TRUE:
+            case TokenType::KEYWORD_FALSE:
+                (void)iter_append(nodes_block_iter, ASTNode {
+                    .type = ASTNodeType::BOOLEAN_LITERAL,
+                    .parent = proc_call_node,
+                    .boolean_literal = {
+                        .value = next_token->type == TokenType::KEYWORD_TRUE,
+                    },
+                });
+                if (!check_arg_type(next_token)) { return false; }
+                arg_count++;
+                break;
+            case TokenType::ADDRESS_OF: {
+                auto *ident_tok = iter_next(tokens_iter);
+                if (ident_tok->type != TokenType::IDENTIFIER) {
+                    append(errors, ParseError {
+                        .code = ParseErrorCode::UNEXPECTED_TOKEN,
+                        .position = ident_tok->position,
+                        .src_code_line = __LINE__,
+                        .token_type = ident_tok->type,
+                    });
+                    return false;
+                }
+                (void)iter_append(nodes_block_iter, ASTNode {
+                    .type = ASTNodeType::ADDRESS_OF,
+                    .parent = proc_call_node,
+                    .identifier = ident_tok->identifier.content,
+                });
+                if (!check_arg_type(next_token)) { return false; }
+                arg_count++;
+                break;
+            }
+            default:
                 append(errors, ParseError {
                     .code = ParseErrorCode::UNEXPECTED_TOKEN,
-                    .position = ident_tok->position,
+                    .position = next_token->position,
                     .src_code_line = __LINE__,
-                    .token_type = ident_tok->type,
+                    .token_type = next_token->type,
                 });
                 return false;
-            }
-            (void)iter_append(nodes_block_iter, ASTNode {
-                .type = ASTNodeType::ADDRESS_OF,
-                .parent = proc_call_node,
-                .identifier = ident_tok->identifier.content,
-            });
-            if (!check_arg_type(next_token)) { return false; }
-            arg_count++;
-        }
-        else {
-            append(errors, ParseError {
-                .code = ParseErrorCode::UNEXPECTED_TOKEN,
-                .position = next_token->position,
-                .src_code_line = __LINE__,
-                .token_type = next_token->type,
-            });
-            return false;
         }
     }
 
@@ -1065,38 +1079,39 @@ static auto parse_expression(
                         return err<ASTNode, ParseError>(PARSE_ERROR_CREATE(UNEXPECTED_TOKEN, equals));
                     }
                     auto *value_tok = iter_next(tokens_iter);
-                    if (value_tok->type == TokenType::INTEGER_LITERAL) {
-                        (void)iter_append(proc_params_iter, ProcParameterASTNode {
-                            .name = field_name,
-                            .type_name = {},
-                        });
-                        (void)iter_append(operands_iter, BinaryOperand {
-                            .type = BinaryOperandType::INTEGER_LITERAL,
-                            .integer_literal = IntegerLiteralASTNode { .value = value_tok->integer_literal.value },
-                        });
-                    }
-                    else if (value_tok->type == TokenType::STRING_LITERAL) {
-                        (void)iter_append(proc_params_iter, ProcParameterASTNode {
-                            .name = field_name,
-                            .type_name = {},
-                        });
-                        (void)iter_append(operands_iter, BinaryOperand {
-                            .type = BinaryOperandType::STRING_LITERAL,
-                            .string_literal = value_tok->string_literal.content,
-                        });
-                    }
-                    else if (value_tok->type == TokenType::IDENTIFIER) {
-                        (void)iter_append(proc_params_iter, ProcParameterASTNode {
-                            .name = field_name,
-                            .type_name = {},
-                        });
-                        (void)iter_append(operands_iter, BinaryOperand {
-                            .type = BinaryOperandType::IDENTIFIER,
-                            .identifier = value_tok->identifier.content,
-                        });
-                    }
-                    else {
-                        return err<ASTNode, ParseError>(PARSE_ERROR_CREATE(UNEXPECTED_TOKEN, value_tok));
+                    switch (value_tok->type) {
+                        case TokenType::INTEGER_LITERAL:
+                            (void)iter_append(proc_params_iter, ProcParameterASTNode {
+                                .name = field_name,
+                                .type_name = {},
+                            });
+                            (void)iter_append(operands_iter, BinaryOperand {
+                                .type = BinaryOperandType::INTEGER_LITERAL,
+                                .integer_literal = IntegerLiteralASTNode { .value = value_tok->integer_literal.value },
+                            });
+                            break;
+                        case TokenType::STRING_LITERAL:
+                            (void)iter_append(proc_params_iter, ProcParameterASTNode {
+                                .name = field_name,
+                                .type_name = {},
+                            });
+                            (void)iter_append(operands_iter, BinaryOperand {
+                                .type = BinaryOperandType::STRING_LITERAL,
+                                .string_literal = value_tok->string_literal.content,
+                            });
+                            break;
+                        case TokenType::IDENTIFIER:
+                            (void)iter_append(proc_params_iter, ProcParameterASTNode {
+                                .name = field_name,
+                                .type_name = {},
+                            });
+                            (void)iter_append(operands_iter, BinaryOperand {
+                                .type = BinaryOperandType::IDENTIFIER,
+                                .identifier = value_tok->identifier.content,
+                            });
+                            break;
+                        default:
+                            return err<ASTNode, ParseError>(PARSE_ERROR_CREATE(UNEXPECTED_TOKEN, value_tok));
                     }
                 }
                 size_t const field_count = proc_params_iter->current_index - field_names_begin;
@@ -1355,55 +1370,53 @@ static auto parse_expression(
             }
 
             // No binary operator — return single-operand expression
-            if (left_operand.type == BinaryOperandType::DEREF) {
-                return ok<ASTNode, ParseError>(ASTNode {
-                    .type = ASTNodeType::DEREF,
-                    .parent = nullptr,
-                    .identifier = left_operand.identifier,
-                });
+            switch (left_operand.type) {
+                case BinaryOperandType::DEREF:
+                    return ok<ASTNode, ParseError>(ASTNode {
+                        .type = ASTNodeType::DEREF,
+                        .parent = nullptr,
+                        .identifier = left_operand.identifier,
+                    });
+                case BinaryOperandType::ARRAY_ACCESS:
+                    return ok<ASTNode, ParseError>(ASTNode {
+                        .type = ASTNodeType::ARRAY_ACCESS,
+                        .parent = nullptr,
+                        .array_access = {
+                            .variable_name = left_operand.array_access.variable_name,
+                            .index = left_operand.array_access.index,
+                        },
+                    });
+                case BinaryOperandType::PROC_CALL:
+                    return ok<ASTNode, ParseError>(ASTNode {
+                        .type = ASTNodeType::PROC_CALL,
+                        .parent = nullptr,
+                        .proc_call = {
+                            .arguments = left_operand.proc_call.arguments,
+                            .caller_identifier = left_operand.proc_call.caller_identifier,
+                        },
+                    });
+                case BinaryOperandType::IDENTIFIER:
+                    return ok<ASTNode, ParseError>(ASTNode {
+                        .type = ASTNodeType::IDENTIFIER,
+                        .parent = nullptr,
+                        .identifier = left_operand.identifier,
+                    });
+                case BinaryOperandType::MEMBER_ACCESS:
+                    return ok<ASTNode, ParseError>(ASTNode {
+                        .type = ASTNodeType::MEMBER_ACCESS,
+                        .parent = nullptr,
+                        .member_access = {
+                            .object_name = left_operand.member_access.object_name,
+                            .field_name = left_operand.member_access.field_name,
+                        },
+                    });
+                default:
+                    return ok<ASTNode, ParseError>(ASTNode {
+                        .type = ASTNodeType::INTEGER_LITERAL,
+                        .parent = nullptr,
+                        .integer_literal = { .value = left_operand.integer_literal },
+                    });
             }
-            if (left_operand.type == BinaryOperandType::ARRAY_ACCESS) {
-                return ok<ASTNode, ParseError>(ASTNode {
-                    .type = ASTNodeType::ARRAY_ACCESS,
-                    .parent = nullptr,
-                    .array_access = {
-                        .variable_name = left_operand.array_access.variable_name,
-                        .index = left_operand.array_access.index,
-                    },
-                });
-            }
-            if (left_operand.type == BinaryOperandType::PROC_CALL) {
-                return ok<ASTNode, ParseError>(ASTNode {
-                    .type = ASTNodeType::PROC_CALL,
-                    .parent = nullptr,
-                    .proc_call = {
-                        .arguments = left_operand.proc_call.arguments,
-                        .caller_identifier = left_operand.proc_call.caller_identifier,
-                    },
-                });
-            }
-            if (left_operand.type == BinaryOperandType::IDENTIFIER) {
-                return ok<ASTNode, ParseError>(ASTNode {
-                    .type = ASTNodeType::IDENTIFIER,
-                    .parent = nullptr,
-                    .identifier = left_operand.identifier,
-                });
-            }
-            if (left_operand.type == BinaryOperandType::MEMBER_ACCESS) {
-                return ok<ASTNode, ParseError>(ASTNode {
-                    .type = ASTNodeType::MEMBER_ACCESS,
-                    .parent = nullptr,
-                    .member_access = {
-                        .object_name = left_operand.member_access.object_name,
-                        .field_name = left_operand.member_access.field_name,
-                    },
-                });
-            }
-            return ok<ASTNode, ParseError>(ASTNode {
-                .type = ASTNodeType::INTEGER_LITERAL,
-                .parent = nullptr,
-                .integer_literal = { .value = left_operand.integer_literal },
-            });
         }
         case TokenType::KEYWORD_PROC: {
             // Expect procedure definition
@@ -1651,7 +1664,8 @@ static auto parse_statement(
     size_t current_indent_level
 ) -> bool {
     auto *next_token = iter_next(tokens_iter);
-    if (next_token->type == TokenType::IDENTIFIER) {
+    switch (next_token->type) {
+    case TokenType::IDENTIFIER: {
         switch (auto peeked_token = iter_peek(tokens_iter); peeked_token->type) {
             case TokenType::PARENTHESIS_OPEN: {
                 // Expect a procedure call
@@ -1724,20 +1738,21 @@ static auto parse_statement(
                 {
                     (void)iter_next(tokens_iter); // consume '+'
                     Token *operand_token = iter_next(tokens_iter);
-                    if (operand_token->type == TokenType::IDENTIFIER) {
-                        (void)iter_append(operands_iter, BinaryOperand {
-                            .type = BinaryOperandType::IDENTIFIER,
-                            .identifier = operand_token->identifier.content,
-                        });
-                    }
-                    else if (operand_token->type == TokenType::INTEGER_LITERAL) {
-                        (void)iter_append(operands_iter, BinaryOperand {
-                            .type = BinaryOperandType::INTEGER_LITERAL,
-                            .integer_literal = IntegerLiteralASTNode { .value = operand_token->integer_literal.value },
-                        });
-                    }
-                    else {
-                        return false;
+                    switch (operand_token->type) {
+                        case TokenType::IDENTIFIER:
+                            (void)iter_append(operands_iter, BinaryOperand {
+                                .type = BinaryOperandType::IDENTIFIER,
+                                .identifier = operand_token->identifier.content,
+                            });
+                            break;
+                        case TokenType::INTEGER_LITERAL:
+                            (void)iter_append(operands_iter, BinaryOperand {
+                                .type = BinaryOperandType::INTEGER_LITERAL,
+                                .integer_literal = IntegerLiteralASTNode { .value = operand_token->integer_literal.value },
+                            });
+                            break;
+                        default:
+                            return false;
                     }
                 }
 
@@ -1763,35 +1778,36 @@ static auto parse_statement(
                 (void)iter_next(tokens_iter); // consume +=
 
                 auto *rhs_token = iter_next(tokens_iter);
-                if (rhs_token->type == TokenType::INTEGER_LITERAL) {
-                    (void)iter_append(nodes_block_iter, ASTNode {
-                        .type = ASTNodeType::ADD_ASSIGN,
-                        .parent = parent_node,
-                        .add_assign = {
-                            .variable_name = next_token->identifier.content,
-                            .operand = BinaryOperand {
-                                .type = BinaryOperandType::INTEGER_LITERAL,
-                                .integer_literal = IntegerLiteralASTNode { .value = rhs_token->integer_literal.value },
+                switch (rhs_token->type) {
+                    case TokenType::INTEGER_LITERAL:
+                        (void)iter_append(nodes_block_iter, ASTNode {
+                            .type = ASTNodeType::ADD_ASSIGN,
+                            .parent = parent_node,
+                            .add_assign = {
+                                .variable_name = next_token->identifier.content,
+                                .operand = BinaryOperand {
+                                    .type = BinaryOperandType::INTEGER_LITERAL,
+                                    .integer_literal = IntegerLiteralASTNode { .value = rhs_token->integer_literal.value },
+                                },
                             },
-                        },
-                    });
-                }
-                else if (rhs_token->type == TokenType::IDENTIFIER) {
-                    (void)iter_append(nodes_block_iter, ASTNode {
-                        .type = ASTNodeType::ADD_ASSIGN,
-                        .parent = parent_node,
-                        .add_assign = {
-                            .variable_name = next_token->identifier.content,
-                            .operand = BinaryOperand {
-                                .type = BinaryOperandType::IDENTIFIER,
-                                .identifier = rhs_token->identifier.content,
+                        });
+                        break;
+                    case TokenType::IDENTIFIER:
+                        (void)iter_append(nodes_block_iter, ASTNode {
+                            .type = ASTNodeType::ADD_ASSIGN,
+                            .parent = parent_node,
+                            .add_assign = {
+                                .variable_name = next_token->identifier.content,
+                                .operand = BinaryOperand {
+                                    .type = BinaryOperandType::IDENTIFIER,
+                                    .identifier = rhs_token->identifier.content,
+                                },
                             },
-                        },
-                    });
-                }
-                else {
-                    append(errors, PARSE_ERROR_CREATE(UNEXPECTED_TOKEN, rhs_token));
-                    return false;
+                        });
+                        break;
+                    default:
+                        append(errors, PARSE_ERROR_CREATE(UNEXPECTED_TOKEN, rhs_token));
+                        return false;
                 }
 
                 assert(
@@ -2069,8 +2085,9 @@ static auto parse_statement(
                 break;
             }
         }
+        break;
     }
-    else if (next_token->type == TokenType::KEYWORD_FOR) {
+    case TokenType::KEYWORD_FOR: {
         if (tokens_iter->current_index < tokens_iter->elements.length &&
             iter_peek(tokens_iter)->type == TokenType::KEYWORD_IF)
         {
@@ -2084,21 +2101,22 @@ static auto parse_statement(
                 .identifier = lhs_token->identifier.content,
             };
             ConditionOperand cond_right;
-            if (rhs_token->type == TokenType::IDENTIFIER) {
-                cond_right = {
-                    .is_identifier = true,
-                    .identifier = rhs_token->identifier.content,
-                };
-            }
-            else if (rhs_token->type == TokenType::INTEGER_LITERAL) {
-                cond_right = {
-                    .is_identifier = false,
-                    .integer_literal = IntegerLiteralASTNode { .value = rhs_token->integer_literal.value },
-                };
-            }
-            else {
-                append(errors, PARSE_ERROR_CREATE(UNEXPECTED_TOKEN, rhs_token));
-                return false;
+            switch (rhs_token->type) {
+                case TokenType::IDENTIFIER:
+                    cond_right = {
+                        .is_identifier = true,
+                        .identifier = rhs_token->identifier.content,
+                    };
+                    break;
+                case TokenType::INTEGER_LITERAL:
+                    cond_right = {
+                        .is_identifier = false,
+                        .integer_literal = IntegerLiteralASTNode { .value = rhs_token->integer_literal.value },
+                    };
+                    break;
+                default:
+                    append(errors, PARSE_ERROR_CREATE(UNEXPECTED_TOKEN, rhs_token));
+                    return false;
             }
             if (!expect_arrow_newline(tokens_iter, errors)) { return false; }
 
@@ -2223,8 +2241,9 @@ static auto parse_statement(
                 return false;
             }
         }
+        break;
     }
-    else if (next_token->type == TokenType::KEYWORD_BREAK) {
+    case TokenType::KEYWORD_BREAK:
         (void)iter_append(nodes_block_iter, ASTNode {
             .type = ASTNodeType::BREAK,
             .parent = parent_node,
@@ -2234,21 +2253,22 @@ static auto parse_statement(
             iter_current(tokens_iter)->type == TokenType::END &&
             "Expected newline or end token after break statement");
         (void)iter_next(tokens_iter);
-    }
-    else if (next_token->type == TokenType::KEYWORD_IF) {
+        break;
+    case TokenType::KEYWORD_IF: {
         auto parse_cond_operand = [&](Token *token, ConditionOperand *out) -> bool {
-            if (token->type == TokenType::IDENTIFIER) {
-                out->is_identifier = true;
-                out->identifier = token->identifier.content;
-                return true;
+            switch (token->type) {
+                case TokenType::IDENTIFIER:
+                    out->is_identifier = true;
+                    out->identifier = token->identifier.content;
+                    return true;
+                case TokenType::INTEGER_LITERAL:
+                    out->is_identifier = false;
+                    out->integer_literal = IntegerLiteralASTNode { .value = token->integer_literal.value };
+                    return true;
+                default:
+                    append(errors, PARSE_ERROR_CREATE(UNEXPECTED_TOKEN, token));
+                    return false;
             }
-            if (token->type == TokenType::INTEGER_LITERAL) {
-                out->is_identifier = false;
-                out->integer_literal = IntegerLiteralASTNode { .value = token->integer_literal.value };
-                return true;
-            }
-            append(errors, PARSE_ERROR_CREATE(UNEXPECTED_TOKEN, token));
-            return false;
         };
 
         ConditionOperand cond_left;
@@ -2324,6 +2344,10 @@ static auto parse_statement(
                 }
             }
         }
+        break;
+    }
+    default:
+        break;
     }
     return true;
 }
@@ -2455,28 +2479,36 @@ auto parse(Array<Token> *tokens, ArenaAllocator *allocator, Str source_content, 
         // Update the proc parameters and struct field pointers in the AST nodes
         // to point to the new tightly packed block.
         for (auto &node : new_nodes_block) {
-            if (node.type == ASTNodeType::PROC_DEF) {
-                ptrdiff_t const offset = node.proc_def.parameters.data - orig_proc_params_data;
-                node.proc_def.parameters.data = new_proc_params_block.data + offset;
-            }
-            else if (node.type == ASTNodeType::STRUCT_DEF) {
-                ptrdiff_t const offset = node.struct_def.fields.data - orig_proc_params_data;
-                node.struct_def.fields.data = new_proc_params_block.data + offset;
-            }
-            else if (node.type == ASTNodeType::BINARY_ADD) {
-                node.binary_operation.operands.data =
-                    new_operands_block.data + (node.binary_operation.operands.data - orig_operands_data);
-            }
-            else if (node.type == ASTNodeType::ARRAY_INIT) {
-                node.array_init.elements.data =
-                    new_array_elements_block.data +
-                    (node.array_init.elements.data - orig_array_elements_data);
-            }
-            else if (node.type == ASTNodeType::STRUCT_INIT && node.struct_init.field_names.length > 0) {
-                node.struct_init.field_names.data =
-                    new_proc_params_block.data + (node.struct_init.field_names.data - orig_proc_params_data);
-                node.struct_init.field_values.data =
-                    new_operands_block.data + (node.struct_init.field_values.data - orig_operands_data);
+            switch (node.type) {
+                case ASTNodeType::PROC_DEF: {
+                    ptrdiff_t const offset = node.proc_def.parameters.data - orig_proc_params_data;
+                    node.proc_def.parameters.data = new_proc_params_block.data + offset;
+                    break;
+                }
+                case ASTNodeType::STRUCT_DEF: {
+                    ptrdiff_t const offset = node.struct_def.fields.data - orig_proc_params_data;
+                    node.struct_def.fields.data = new_proc_params_block.data + offset;
+                    break;
+                }
+                case ASTNodeType::BINARY_ADD:
+                    node.binary_operation.operands.data =
+                        new_operands_block.data + (node.binary_operation.operands.data - orig_operands_data);
+                    break;
+                case ASTNodeType::ARRAY_INIT:
+                    node.array_init.elements.data =
+                        new_array_elements_block.data +
+                        (node.array_init.elements.data - orig_array_elements_data);
+                    break;
+                case ASTNodeType::STRUCT_INIT:
+                    if (node.struct_init.field_names.length > 0) {
+                        node.struct_init.field_names.data =
+                            new_proc_params_block.data + (node.struct_init.field_names.data - orig_proc_params_data);
+                        node.struct_init.field_values.data =
+                            new_operands_block.data + (node.struct_init.field_values.data - orig_operands_data);
+                    }
+                    break;
+                default:
+                    break;
             }
         }
 

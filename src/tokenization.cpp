@@ -140,34 +140,41 @@ auto tokenize(Str *input, ArenaAllocator *allocator) -> Array<Token> {
             current_position.col = COL_BEGIN;
         }
         else if (c == ' ') {
-            if (char next_char = next_char_or_null_char(input, i); next_char == ' ') {
-                i++;
-                // 2 for the number of spaces that were consumed already
-                size_t space_begin = i - 2;
-                do {
+            bool const at_line_start = (current_token_index == 0 ||
+                result[current_token_index - 1].type == TokenType::NEWLINE);
+            if (at_line_start) {
+                if (char next_char = next_char_or_null_char(input, i); next_char == ' ') {
                     i++;
-                    next_char = next_char_or_null_char(input, i);
-                } while (next_char == ' ');
+                    // 2 for the number of spaces that were consumed already
+                    size_t space_begin = i - 2;
+                    do {
+                        i++;
+                        next_char = next_char_or_null_char(input, i);
+                    } while (next_char == ' ');
 
-                size_t indentation = i - space_begin;
-                if (first_indentation_space_count == 0) {
-                    first_indentation_space_count = indentation;
-                }
-                size_t level = indentation / first_indentation_space_count;
-
-                // Ensure the indentation is not inconsistent. If it is, create an error
-                if ((indentation % first_indentation_space_count) != 0) {
-                    eprint("Inconsistent indentation\n");
-                    exit(1);
-                }
-
-                append_token({
-                    .type = TokenType::INDENT,
-                    .indent = {
-                        .level = level,
+                    size_t indentation = i - space_begin;
+                    if (first_indentation_space_count == 0) {
+                        first_indentation_space_count = indentation;
                     }
-                });
-                current_position.col += indentation;
+                    size_t level = indentation / first_indentation_space_count;
+
+                    // Ensure the indentation is not inconsistent. If it is, create an error
+                    if ((indentation % first_indentation_space_count) != 0) {
+                        eprint("Inconsistent indentation\n");
+                        exit(1);
+                    }
+
+                    append_token({
+                        .type = TokenType::INDENT,
+                        .indent = {
+                            .level = level,
+                        }
+                    });
+                    current_position.col += indentation;
+                }
+                else {
+                    current_position.col += 1;
+                }
             }
             else {
                 current_position.col += 1;

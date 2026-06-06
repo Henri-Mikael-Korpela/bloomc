@@ -150,25 +150,29 @@ auto report_parse_errors(Array<ParseError> errors, bool *had_errors, Str source_
                 ANSI_BLUE, ANSI_RESET);
         }
         else if (error->code == ParseErrorCode::PROC_ARG_TYPE_MISMATCH) {
+            char const *ptr_prefix = error->expected_type_is_pointer ? "^" : "";
             fprintf(stderr, "\n%sError: Type mismatch in procedure call:%s\n", ANSI_RED, ANSI_RESET);
             fprintf(stderr,
-                "%s    Cannot pass a value of type '%.*s' to parameter '%.*s' which expects type '%.*s'.%s\n",
+                "%s    Cannot pass a value of type '%.*s' to parameter '%.*s' which expects type '%s%.*s'.%s\n",
                 ANSI_RED,
                 (int)error->actual_type_name.length, error->actual_type_name.data,
                 (int)error->param_name.length, error->param_name.data,
+                ptr_prefix,
                 (int)error->expected_type_name.length, error->expected_type_name.data,
                 ANSI_RESET);
             emit_error_location(filename, source_content, error);
             fprintf(stderr, "\n%sHow to fix:%s\n", ANSI_BLUE, ANSI_RESET);
             fprintf(stderr,
-                "%s    - Change the argument to be of type '%.*s' to match the parameter '%.*s'.%s\n",
+                "%s    - Change the argument to be of type '%s%.*s' to match the parameter '%.*s'.%s\n",
                 ANSI_BLUE,
+                ptr_prefix,
                 (int)error->expected_type_name.length, error->expected_type_name.data,
                 (int)error->param_name.length, error->param_name.data,
                 ANSI_RESET);
             fprintf(stderr,
-                "%s    - If this is intentional, convert the value to '%.*s' before passing it.%s\n",
+                "%s    - If this is intentional, convert the value to '%s%.*s' before passing it.%s\n",
                 ANSI_BLUE,
+                ptr_prefix,
                 (int)error->expected_type_name.length, error->expected_type_name.data,
                 ANSI_RESET);
         }

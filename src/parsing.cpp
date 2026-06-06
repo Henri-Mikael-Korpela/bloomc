@@ -507,32 +507,50 @@ static auto parse_proc_call_arguments(
         ProcParameterASTNode const *param = &proc_def->proc_def.parameters.data[arg_count];
         if (param->type_name.length == 0) { return true; }
         ASTNode const *appended_arg = &nodes_block_iter->elements.data[nodes_block_iter->current_index - 1];
+
+        auto compute_token_width = [&]() -> size_t {
+            switch (arg_token->type) {
+                case TokenType::KEYWORD_TRUE:
+                    return 4;
+                case TokenType::KEYWORD_FALSE:
+                    return 5;
+                case TokenType::IDENTIFIER:
+                    return arg_token->identifier.content.length;
+                case TokenType::STRING_LITERAL:
+                    return arg_token->string_literal.content.length + 2;
+                default:
+                    return 1;
+            }
+        };
+
+        if (param->is_pointer) {
+            if (appended_arg->type == ASTNodeType::ADDRESS_OF) { return true; }
+            Str actual_type = infer_arg_type_name(appended_arg, context);
+            if (actual_type.length == 0) { return true; }
+            append(errors, ParseError {
+                .code = ParseErrorCode::PROC_ARG_TYPE_MISMATCH,
+                .position = arg_token->position,
+                .src_code_line = __LINE__,
+                .token_type = arg_token->type,
+                .size_token_width = compute_token_width(),
+                .expected_type_name = param->type_name,
+                .expected_type_is_pointer = true,
+                .actual_type_name = actual_type,
+                .param_name = param->name,
+            });
+            return false;
+        }
+
         Str actual_type = infer_arg_type_name(appended_arg, context);
         if (actual_type.length == 0 || str_equal(actual_type, param->type_name)) { return true; }
-        size_t token_width = 1;
-        switch (arg_token->type) {
-            case TokenType::KEYWORD_TRUE:
-                token_width = 4;
-                break;
-            case TokenType::KEYWORD_FALSE:
-                token_width = 5;
-                break;
-            case TokenType::IDENTIFIER:
-                token_width = arg_token->identifier.content.length;
-                break;
-            case TokenType::STRING_LITERAL:
-                token_width = arg_token->string_literal.content.length + 2;
-                break;
-            default:
-                break;
-        }
         append(errors, ParseError {
             .code = ParseErrorCode::PROC_ARG_TYPE_MISMATCH,
             .position = arg_token->position,
             .src_code_line = __LINE__,
             .token_type = arg_token->type,
-            .size_token_width = token_width,
+            .size_token_width = compute_token_width(),
             .expected_type_name = param->type_name,
+            .expected_type_is_pointer = false,
             .actual_type_name = actual_type,
             .param_name = param->name,
         });

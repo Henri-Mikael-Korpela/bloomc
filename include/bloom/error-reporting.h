@@ -39,6 +39,7 @@ struct ParseError {
     Token::Position brace_open_pos;
     Token::Position brace_close_pos;
     Str expected_type_name;
+    bool expected_type_is_pointer;
     Str actual_type_name;
     Str param_name;
     // For STRUCT_MISSING_FIELDS (supports up to 8 struct fields)

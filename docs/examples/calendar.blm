@@ -1,6 +1,6 @@
 // Simple calendar keeping app
 fclose :: proc(stream: ^FILE) -> foreign
-fopen :: proc (path: CStr, mode: CStr) ^FILE -> foreign
+fopen  :: proc(path: CStr, mode: CStr) ^FILE -> foreign
 fwrite :: proc(content: CStr, size: Int, count: Int, stream: ^FILE) Int -> foreign
 
 File :: struct ->
@@ -31,6 +31,6 @@ main :: proc() ->
     f := file_open_for_write("calendar-output.txt")
     print("Output file path: {}\n", f.path)
 
-    file_write(%f, "Hello, world!")
+    file_write(%f, e1.name)
 
     file_close(%f)

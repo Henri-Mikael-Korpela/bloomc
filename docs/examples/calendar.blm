@@ -1,4 +1,5 @@
 // Simple calendar keeping app
+fclose :: proc(stream: ^FILE) -> foreign
 fopen :: proc (path: CStr, mode: CStr) ^FILE -> foreign
 fwrite :: proc(content: CStr, size: Int, count: Int, stream: ^FILE) Int -> foreign
 

@@ -40,29 +40,38 @@ my_var := true
 
 Bloom has the following operators:
 
-|Operator|Name             |
-|--------|-----------------|
-|`+`     |Addition         |
-|`==`    |Equality         |
-|`..<`   |Range (exclusive)|
+|Operator|Name            |
+|--------|----------------|
+|`+`     |Addition        |
+|`==`    |Equality        |
+|`..<`   |Exclusive range |
+|`..+`   |Counted range   |
 
 And here are the operators by precendence (from highest to lowest):
 
-|Level|Operators|Notes                          |
-|-----|---------|-------------------------------|
-|1    |`+`      |                               |
-|2    |`..<`    |                               |
-|3    |`==`, `<`|Comparison, all non-associative|
+|Level|Operators    |Notes                          |
+|-----|-------------|-------------------------------|
+|1    |`+`          |                               |
+|2    |`..<`, `..+` |                               |
+|3    |`==`, `<`    |Comparison, all non-associative|
 
 ## Loops
 
 There's only one loop statement in Bloom: `for`. It is used for a variety of loops already familiar from languages like C and Python.
 
-Loops can iterate over a given range like this:
+Loops can iterate over a range of integers. Two range types are supported:
+
+| Syntax  | Name            | Description                                                  |
+|---------|-----------------|--------------------------------------------------------------|
+| `a..<b` | Exclusive range | Iterates from `a` up to, but not including, `b`              |
+| `a..+n` | Counted range   | Iterates from `a` through `a + n` inclusive (`n + 1` values) |
 
 ```
 for i in 0..<10 ->
-    ...
+    ...  // i = 0, 1, 2, ..., 9
+
+for i in 2..+5 ->
+    ...  // i = 2, 3, 4, 5, 6, 7
 ```
 
 C-style `while` can be repreented with `for if` statement:

@@ -17,6 +17,7 @@ Identifiers are used for names for types and variables.
 ```
 break
 const
+defer
 else
 for
 foreign
@@ -93,6 +94,17 @@ You can create an infinite loop this way:
 ```
 for ->
     ...
+```
+
+## Defer
+
+The `defer` statement schedules a procedure call to run at the end of the current scope, regardless of how the scope exits. Multiple deferred calls in the same scope run in last-in, first-out order.
+
+```
+f := file_open_for_write("output.txt")
+defer file_close(%f)
+
+file_write(%f, "hello")  // file_close runs after this, at end of scope
 ```
 
 ## Arrays

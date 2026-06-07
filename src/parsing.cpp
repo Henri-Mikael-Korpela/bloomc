@@ -2293,6 +2293,60 @@ static auto parse_statement(
             "Expected newline or end token after break statement");
         (void)iter_next(tokens_iter);
         break;
+    case TokenType::KEYWORD_DEFER: {
+        auto *proc_name_token = expect_token_or_append_error(tokens_iter, TokenType::IDENTIFIER, errors);
+        if (proc_name_token == nullptr) { return false; }
+
+        int paren_depth = 0;
+        int64_t proc_call_end_token_index = iter_get_index_at_if<Token>(
+            tokens_iter, [&paren_depth](auto *token) {
+                if (token->type == TokenType::PARENTHESIS_OPEN) {
+                    paren_depth++;
+                    return false;
+                }
+                if (token->type == TokenType::PARENTHESIS_CLOSE) {
+                    if (paren_depth == 1) { return true; }
+                    paren_depth--;
+                }
+                return false;
+            }
+        );
+
+        auto arg_tokens_iter = iter_slice_by_offset(
+            tokens_iter,
+            tokens_iter->current_index + 1,
+            proc_call_end_token_index
+        );
+
+        ASTNode temp_node = {
+            .type = ASTNodeType::PROC_CALL,
+            .parent = parent_node,
+            .proc_call = { .caller_identifier = proc_name_token->identifier.content },
+        };
+        if (!parse_proc_call_arguments(&arg_tokens_iter, &temp_node, nodes_block_iter, context, operands_iter, errors)) {
+            if (errors->length == 0) {
+                append(errors, PARSE_ERROR_CREATE(UNEXPECTED_TOKEN, iter_current(tokens_iter)));
+            }
+            return false;
+        }
+
+        (void)iter_append(nodes_block_iter, ASTNode {
+            .type = ASTNodeType::DEFER,
+            .parent = parent_node,
+            .defer_stmt = {
+                .arguments = temp_node.proc_call.arguments,
+                .caller_identifier = temp_node.proc_call.caller_identifier,
+            },
+        });
+
+        tokens_iter->current_index = proc_call_end_token_index + 1;
+        assert(
+            iter_current(tokens_iter)->type == TokenType::NEWLINE ||
+            iter_current(tokens_iter)->type == TokenType::END &&
+            "Expected newline or end token after defer statement");
+        (void)iter_next(tokens_iter);
+        break;
+    }
     case TokenType::KEYWORD_IF: {
         auto parse_cond_operand = [&](Token *token, ConditionOperand *out) -> bool {
             switch (token->type) {

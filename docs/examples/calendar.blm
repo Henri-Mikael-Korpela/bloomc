@@ -29,8 +29,8 @@ main :: proc() ->
     print("Event #1: {}\n", e1.name)
 
     f := file_open_for_write("calendar-output.txt")
+    defer file_close(%f)
+
     print("Output file path: {}\n", f.path)
 
     file_write(%f, e1.name)
-
-    file_close(%f)

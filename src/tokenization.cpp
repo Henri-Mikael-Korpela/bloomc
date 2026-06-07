@@ -76,6 +76,10 @@ auto tokenize(Str *input, ArenaAllocator *allocator) -> Array<Token> {
                 append_token_of_type(TokenType::KEYWORD_BREAK);
                 continue;
             }
+            if (word == TOKEN_KEYWORD_DEFER) {
+                append_token_of_type(TokenType::KEYWORD_DEFER);
+                continue;
+            }
             if (word == TOKEN_KEYWORD_CONST) {
                 append_token_of_type(TokenType::KEYWORD_CONST);
                 continue;

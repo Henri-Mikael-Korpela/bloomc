@@ -16,6 +16,7 @@ enum class ASTNodeType : uint8_t {
     BUILTIN_LENGTH,
     CONSTANT_DEFINITION,
     BUILTIN_LENGTH_IN_BYTES,
+    DEFER,
     DEREF,
     FOR_COND_LOOP,
     FOR_IN_LOOP,
@@ -173,6 +174,10 @@ struct ASTNode {
             Array<ASTNode> body;
         } for_range_loop;
         struct {
+            Array<ASTNode> arguments;
+            Str caller_identifier;
+        } defer_stmt;
+        struct {
             Str variable_name;
             BinaryOperand operand;
         } add_assign;
@@ -218,6 +223,7 @@ constexpr auto to_string(ASTNodeType type) -> Str {
         case ASTNodeType::BUILTIN_LENGTH:          return STR("builtin_length");
         case ASTNodeType::CONSTANT_DEFINITION: return STR("constant_definition");
         case ASTNodeType::BUILTIN_LENGTH_IN_BYTES: return STR("builtin_length_in_bytes");
+        case ASTNodeType::DEFER:               return STR("defer");
         case ASTNodeType::DEREF:               return STR("deref");
         case ASTNodeType::FOR_COND_LOOP:       return STR("for_cond_loop");
         case ASTNodeType::FOR_IN_LOOP:         return STR("for_in_loop");

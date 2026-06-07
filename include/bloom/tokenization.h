@@ -24,6 +24,7 @@ enum class TokenType : uint8_t {
     ADD_ASSIGN,
     ARROW,
     CONST_DEF,
+    KEYWORD_DEFER,
     RANGE_COUNTED,
     RANGE_EXCLUSIVE,
     RANGE_INCLUSIVE,
@@ -53,6 +54,7 @@ enum class TokenType : uint8_t {
 };
 
 constexpr auto TOKEN_KEYWORD_BREAK   = "break";
+constexpr auto TOKEN_KEYWORD_DEFER   = "defer";
 constexpr auto TOKEN_KEYWORD_CONST   = "const";
 constexpr auto TOKEN_KEYWORD_ELSE    = "else";
 constexpr auto TOKEN_KEYWORD_FALSE   = "false";
@@ -105,6 +107,7 @@ constexpr auto to_string(TokenType type) -> Str {
         case TokenType::CARET:             return STR("^");
         case TokenType::COMMA:             return STR(",");
         case TokenType::CONST_DEF:         return STR("const_def");
+        case TokenType::KEYWORD_DEFER:     return STR(TOKEN_KEYWORD_DEFER);
         case TokenType::DOT:               return STR(".");
         case TokenType::END:               return STR("end");
         case TokenType::EQUAL_EQUAL:       return STR("==");

@@ -539,6 +539,29 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
                 }
 
                 std::function<void(ASTNode*, ASTNode*, int, bool)> emit_stmt;
+                std::function<void(Array<ASTNode>*, ASTNode*, int, bool)> emit_body;
+
+                emit_body = [&](Array<ASTNode> *body, ASTNode *owner, int depth, bool last_as_return) {
+                    size_t last_non_defer_bi = body->length;
+                    if (last_as_return) {
+                        for (size_t bi = 0; bi < body->length; bi++) {
+                            if (body->data[bi].type != ASTNodeType::DEFER) {
+                                last_non_defer_bi = bi;
+                            }
+                        }
+                    }
+                    for (size_t bi = 0; bi < body->length; bi++) {
+                        auto *s = &body->data[bi];
+                        if (s->type == ASTNodeType::DEFER) { continue; }
+                        emit_stmt(s, owner, depth, last_as_return && bi == last_non_defer_bi);
+                    }
+                    for (size_t bi = body->length; bi-- > 0; ) {
+                        auto *s = &body->data[bi];
+                        if (s->type != ASTNodeType::DEFER) { continue; }
+                        emit_stmt(s, owner, depth, false);
+                    }
+                };
+
                 emit_stmt = [&](ASTNode *stmt, ASTNode *owner, int depth, bool emit_as_return) {
                     if (stmt->parent != owner) {
                         return;
@@ -1053,10 +1076,7 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
                             PUSH_INT(static_cast<intmax_t>(loop_idx));
                             PUSH_STR(" += "); PUSH_STR(*elem); PUSH_STR(".len;\n");
 
-                            for (size_t bi = 0; bi < stmt->for_in_loop.body.length; bi++) {
-                                auto *body_stmt = &stmt->for_in_loop.body.data[bi];
-                                emit_stmt(body_stmt, stmt, depth + 2, false);
-                            }
+                            emit_body(&stmt->for_in_loop.body, stmt, depth + 2, false);
                             if (idx->length > 0) {
                                 push_tabs(); PUSH_STR("\t\t"); PUSH_STR(*idx); PUSH_STR("++;\n");
                             }
@@ -1083,10 +1103,7 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
                                 PUSH_INT(cond->condition_right.integer_literal.value);
                             }
                             PUSH_STR(") {\n");
-                            for (size_t bi = 0; bi < stmt->for_cond_loop.body.length; bi++) {
-                                auto *body_stmt = &stmt->for_cond_loop.body.data[bi];
-                                emit_stmt(body_stmt, stmt, depth + 1, false);
-                            }
+                            emit_body(&stmt->for_cond_loop.body, stmt, depth + 1, false);
                             push_tabs();
                             PUSH_STR("}\n");
                             break;
@@ -1094,10 +1111,7 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
                         case ASTNodeType::FOR_LOOP: {
                             push_tabs();
                             PUSH_STR("while (1) {\n");
-                            for (size_t bi = 0; bi < stmt->for_loop.body.length; bi++) {
-                                auto *body_stmt = &stmt->for_loop.body.data[bi];
-                                emit_stmt(body_stmt, stmt, depth + 1, false);
-                            }
+                            emit_body(&stmt->for_loop.body, stmt, depth + 1, false);
                             push_tabs();
                             PUSH_STR("}\n");
                             break;
@@ -1117,10 +1131,7 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
                             PUSH_STR("; ");
                             PUSH_STR(*elem);
                             PUSH_STR("++) {\n");
-                            for (size_t bi = 0; bi < stmt->for_range_loop.body.length; bi++) {
-                                auto *body_stmt = &stmt->for_range_loop.body.data[bi];
-                                emit_stmt(body_stmt, stmt, depth + 1, false);
-                            }
+                            emit_body(&stmt->for_range_loop.body, stmt, depth + 1, false);
                             push_tabs();
                             PUSH_STR("}\n");
                             break;
@@ -1151,10 +1162,7 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
                             ASTNode *current_if = stmt;
                             while (true) {
                                 auto *cur = &current_if->if_else;
-                                for (size_t bi = 0; bi < cur->then_body.length; bi++) {
-                                    auto *body_stmt = &cur->then_body.data[bi];
-                                    emit_stmt(body_stmt, current_if, depth + 1, false);
-                                }
+                                emit_body(&cur->then_body, current_if, depth + 1, false);
 
                                 if (cur->else_body.data == nullptr) {
                                     push_tabs();
@@ -1180,10 +1188,7 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
                                 else {
                                     push_tabs();
                                     PUSH_STR("} else {\n");
-                                    for (size_t bi = 0; bi < cur->else_body.length; bi++) {
-                                        auto *body_stmt = &cur->else_body.data[bi];
-                                        emit_stmt(body_stmt, current_if, depth + 1, false);
-                                    }
+                                    emit_body(&cur->else_body, current_if, depth + 1, false);
                                     push_tabs();
                                     PUSH_STR("}\n");
                                     break;
@@ -1191,17 +1196,24 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
                             }
                             break;
                         }
+                        case ASTNodeType::DEFER: {
+                            ASTNode deferred_call = {
+                                .type = ASTNodeType::PROC_CALL,
+                                .parent = stmt->parent,
+                                .proc_call = {
+                                    .arguments = stmt->defer_stmt.arguments,
+                                    .caller_identifier = stmt->defer_stmt.caller_identifier,
+                                },
+                            };
+                            emit_stmt(&deferred_call, owner, depth, false);
+                            break;
+                        }
                         default:
                             break;
                     }
                 };
 
-                size_t const body_len = node->proc_def.body.length;
-                for (size_t bi = 0; bi < body_len; bi++) {
-                    auto *statement = &node->proc_def.body.data[bi];
-                    bool const is_last = (bi == body_len - 1);
-                    emit_stmt(statement, node, 1, is_last && has_return_type);
-                }
+                emit_body(&node->proc_def.body, node, 1, has_return_type);
                 PUSH_STR("}\n\n");
                 break;
             }

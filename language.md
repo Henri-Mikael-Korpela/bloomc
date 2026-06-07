@@ -45,15 +45,16 @@ Bloom has the following operators:
 |`+`     |Addition        |
 |`==`    |Equality        |
 |`..<`   |Exclusive range |
+|`..=`   |Inclusive range |
 |`..+`   |Counted range   |
 
 And here are the operators by precendence (from highest to lowest):
 
-|Level|Operators    |Notes                          |
-|-----|-------------|-------------------------------|
-|1    |`+`          |                               |
-|2    |`..<`, `..+` |                               |
-|3    |`==`, `<`    |Comparison, all non-associative|
+|Level|Operators           |Notes                          |
+|-----|--------------------|-------------------------------|
+|1    |`+`                 |                               |
+|2    |`..<`, `..=`, `..+` |                               |
+|3    |`==`, `<`           |Comparison, all non-associative|
 
 ## Loops
 
@@ -64,11 +65,15 @@ Loops can iterate over a range of integers. Two range types are supported:
 | Syntax  | Name            | Description                                                  |
 |---------|-----------------|--------------------------------------------------------------|
 | `a..<b` | Exclusive range | Iterates from `a` up to, but not including, `b`              |
+| `a..=b` | Inclusive range | Iterates from `a` through `b` inclusive                      |
 | `a..+n` | Counted range   | Iterates from `a` through `a + n` inclusive (`n + 1` values) |
 
 ```
 for i in 0..<10 ->
     ...  // i = 0, 1, 2, ..., 9
+
+for i in 0..=10 ->
+    ...  // i = 0, 1, 2, ..., 10
 
 for i in 2..+5 ->
     ...  // i = 2, 3, 4, 5, 6, 7

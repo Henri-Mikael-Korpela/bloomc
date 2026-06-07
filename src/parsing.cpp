@@ -2189,6 +2189,11 @@ static auto parse_statement(
                         if (end_token == nullptr) { return false; }
                         range_end = end_token->integer_literal.value;
                     }
+                    else if (range_op_token->type == TokenType::RANGE_INCLUSIVE) {
+                        auto *end_token = expect_token_or_append_error(tokens_iter, TokenType::INTEGER_LITERAL, errors);
+                        if (end_token == nullptr) { return false; }
+                        range_end = end_token->integer_literal.value + 1;
+                    }
                     else {
                         append(errors, ParseError {
                             .code = ParseErrorCode::UNEXPECTED_TOKEN,

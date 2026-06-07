@@ -289,6 +289,14 @@ auto tokenize(Str *input, ArenaAllocator *allocator) -> Array<Token> {
                 append_token_of_type(TokenType::RANGE_COUNTED);
                 current_position.col += 3;
             }
+            else if (i + 2 < input->length &&
+                str_char_at(input, i + 1) == '.' &&
+                str_char_at(input, i + 2) == '=')
+            {
+                i += 2;
+                append_token_of_type(TokenType::RANGE_INCLUSIVE);
+                current_position.col += 3;
+            }
             else {
                 append_token_of_type(TokenType::DOT);
                 current_position.col += 1;

@@ -26,6 +26,7 @@ enum class TokenType : uint8_t {
     CONST_DEF,
     RANGE_COUNTED,
     RANGE_EXCLUSIVE,
+    RANGE_INCLUSIVE,
     DOT,
     END,
     EQUAL_EQUAL,
@@ -129,6 +130,7 @@ constexpr auto to_string(TokenType type) -> Str {
         case TokenType::PARENTHESIS_OPEN:  return STR("(");
         case TokenType::RANGE_COUNTED:     return STR("..+");
         case TokenType::RANGE_EXCLUSIVE:   return STR("..<");
+        case TokenType::RANGE_INCLUSIVE:   return STR("..=");
         case TokenType::STRING_LITERAL:    return STR("string_literal");
         case TokenType::TYPE_SEPARATOR:    return STR(":");
         case TokenType::VAR_DEF:           return STR("var_def");

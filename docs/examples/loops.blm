@@ -11,6 +11,10 @@ main :: proc() ->
     for i in 0..<10 ->
         print("Exclusive range, index: {}\n", i)
 
+    // For loop with inclusive range
+    for i in 0..=10 ->
+        print("Inclusive range, index: {}\n", i)
+
     // For loop with counted range
     for i in 2..+5 ->
         print("Counted range, index: {}\n", i)

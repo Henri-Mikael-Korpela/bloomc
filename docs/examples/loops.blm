@@ -1,4 +1,5 @@
 main :: proc() ->
+    // Infinite loop with break statement
     i := 0
     for ->
         if i == 5 ->
@@ -6,10 +7,16 @@ main :: proc() ->
         i += 1
     printf("First loop passed!\n")
 
+    // For loop with exclusive range
     for i in 0..<10 ->
-        printf("Index: %i\n", i)
+        print("Exclusive range, index: {}\n", i)
+
+    // For loop with counted range
+    for i in 2..+5 ->
+        print("Counted range, index: {}\n", i)
     
+    // For if loop which is like while loop in C
     j := 0
     for if j < 10 ->
-        printf("j = %i\n", j)
+        print("For if, j = {}\n", j)
         j += 1

@@ -2177,11 +2177,27 @@ static auto parse_statement(
                     auto *start_token = iter_next(tokens_iter);
                     int64_t range_start = start_token->integer_literal.value;
 
-                    if (expect_token_or_append_error(tokens_iter, TokenType::RANGE_EXCLUSIVE, errors) == nullptr) { return false; }
-
-                    auto *end_token = expect_token_or_append_error(tokens_iter, TokenType::INTEGER_LITERAL, errors);
-                    if (end_token == nullptr) { return false; }
-                    int64_t range_end = end_token->integer_literal.value;
+                    auto *range_op_token = iter_next(tokens_iter);
+                    int64_t range_end;
+                    if (range_op_token->type == TokenType::RANGE_COUNTED) {
+                        auto *count_token = expect_token_or_append_error(tokens_iter, TokenType::INTEGER_LITERAL, errors);
+                        if (count_token == nullptr) { return false; }
+                        range_end = range_start + count_token->integer_literal.value + 1;
+                    }
+                    else if (range_op_token->type == TokenType::RANGE_EXCLUSIVE) {
+                        auto *end_token = expect_token_or_append_error(tokens_iter, TokenType::INTEGER_LITERAL, errors);
+                        if (end_token == nullptr) { return false; }
+                        range_end = end_token->integer_literal.value;
+                    }
+                    else {
+                        append(errors, ParseError {
+                            .code = ParseErrorCode::UNEXPECTED_TOKEN,
+                            .position = range_op_token->position,
+                            .src_code_line = __LINE__,
+                            .token_type = range_op_token->type,
+                        });
+                        return false;
+                    }
 
                     if (!expect_arrow_newline(tokens_iter, errors)) { return false; }
 

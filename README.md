@@ -60,3 +60,22 @@ There's an example Bloom source code in `docs/examples/sum.blm`, which you can r
 ```bash
 ./build/bloomc run docs/examples/sum.blm
 ```
+
+## Language Reference
+
+### Ranges
+
+Ranges are used in `for` loops to iterate over a sequence of integers. Two range types are supported:
+
+| Syntax      | Name            | Description                                              | Example values for `2..<8` / `2..+5` |
+|-------------|-----------------|----------------------------------------------------------|---------------------------------------|
+| `a..<b`     | Exclusive range | Iterates from `a` up to, but not including, `b`          | `2, 3, 4, 5, 6, 7`                   |
+| `a..+n`     | Counted range   | Iterates from `a` through `a + n` (inclusive, `n+1` values) | `2, 3, 4, 5, 6, 7`                   |
+
+```
+for i in 0..<10 ->
+    printf("Index: %i\n", i)  // prints 0 through 9
+
+for i in 2..+5 ->
+    printf("Index: %i\n", i)  // prints 2 through 7
+```

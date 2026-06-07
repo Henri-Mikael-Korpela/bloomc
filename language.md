@@ -19,6 +19,7 @@ break
 const
 else
 for
+foreign
 if
 in
 proc

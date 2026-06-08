@@ -1,2 +1,6 @@
 #!/bin/bash
+echo "C++ source code:"
 find ./include/bloom ./src -name '*.h' -or -name '*.cpp' | xargs wc -l | sort -n
+
+printf "\nBloom source code:\n"
+find ./docs/examples -name '*.blm' | xargs wc -l | sort -n

@@ -26,7 +26,7 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
     ArrayVarEntry array_vars[64];
     size_t array_var_count = 0;
 
-    enum class VarKind : uint8_t { INT, BOOL, BLOOM_STR, BLOOM_CHAR, SIZE_T, STRUCT, PTR, PTR_STRUCT };
+    enum class VarKind : uint8_t { INT, BOOL, BLOOM_STR, BLOOM_CHAR, SIZE_T, STRUCT, PTR, PTR_STRUCT, SLICE_U8 };
     struct VarEntry {
         Str name;
         VarKind kind;
@@ -206,7 +206,13 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
                     }
                     break;
                 case ASTNodeType::BUILTIN_LENGTH:
-                    PUSH_INT(static_cast<intmax_t>(find_array_size(arg->identifier)));
+                    if (lookup_var_kind(arg->identifier) == VarKind::SLICE_U8) {
+                        PUSH_STR(arg->identifier);
+                        PUSH_STR(".length");
+                    }
+                    else {
+                        PUSH_INT(static_cast<intmax_t>(find_array_size(arg->identifier)));
+                    }
                     break;
                 case ASTNodeType::BUILTIN_LENGTH_IN_BYTES:
                     PUSH_STR(arg->identifier);
@@ -240,6 +246,13 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
                     PUSH_STR("*");
                     PUSH_STR(arg->identifier);
                     break;
+                case ASTNodeType::ARRAY_SLICE:
+                    PUSH_STR("(BloomSliceU8){.data = (uint8_t*)");
+                    PUSH_STR(arg->array_slice.variable_name);
+                    PUSH_STR(", .length = sizeof(");
+                    PUSH_STR(arg->array_slice.variable_name);
+                    PUSH_STR(")}");
+                    break;
                 default:
                     assert(false && "Unsupported argument type in emit_proc_call_args");
             }
@@ -267,6 +280,35 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
                 PUSH_INT(expr->array_access.index);
                 PUSH_STR(']');
                 break;
+            case ASTNodeType::ARRAY_SLICE:
+                PUSH_STR("(BloomSliceU8){.data = (uint8_t*)");
+                PUSH_STR(expr->array_slice.variable_name);
+                PUSH_STR(", .length = sizeof(");
+                PUSH_STR(expr->array_slice.variable_name);
+                PUSH_STR(")}");
+                break;
+            case ASTNodeType::SLICE_CAST: {
+                ASTNode *inner = expr->slice_cast.expr;
+                PUSH_STR("(BloomSliceU8){.data = (uint8_t*)");
+                if (inner->type == ASTNodeType::MEMBER_ACCESS) {
+                    char const *acc = is_pointer_var(inner->member_access.object_name) ? "->" : ".";
+                    PUSH_STR(inner->member_access.object_name);
+                    PUSH_STR(acc);
+                    PUSH_STR(inner->member_access.field_name);
+                    PUSH_STR(".data, .length = ");
+                    PUSH_STR(inner->member_access.object_name);
+                    PUSH_STR(acc);
+                    PUSH_STR(inner->member_access.field_name);
+                    PUSH_STR(".length}");
+                }
+                else {
+                    PUSH_STR(inner->identifier);
+                    PUSH_STR(".data, .length = ");
+                    PUSH_STR(inner->identifier);
+                    PUSH_STR(".length}");
+                }
+                break;
+            }
             case ASTNodeType::PROC_CALL:
                 if (expr->proc_call.caller_identifier == "Int") {
                     assert(expr->proc_call.arguments.length == 1 && "Int() cast requires exactly one argument");
@@ -276,7 +318,26 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
                 }
                 else if (expr->proc_call.caller_identifier == "length") {
                     assert(expr->proc_call.arguments.length > 0 && "length() requires an argument");
-                    PUSH_INT(static_cast<intmax_t>(find_array_size(expr->proc_call.arguments[0].identifier)));
+                    if (lookup_var_kind(expr->proc_call.arguments[0].identifier) == VarKind::SLICE_U8) {
+                        PUSH_STR(expr->proc_call.arguments[0].identifier);
+                        PUSH_STR(".length");
+                    }
+                    else {
+                        PUSH_INT(static_cast<intmax_t>(find_array_size(expr->proc_call.arguments[0].identifier)));
+                    }
+                }
+                else if (expr->proc_call.caller_identifier == "length_in_bytes") {
+                    assert(expr->proc_call.arguments.length == 1 && "length_in_bytes() requires exactly one argument");
+                    auto *arg = &expr->proc_call.arguments.data[0];
+                    if (arg->type == ASTNodeType::MEMBER_ACCESS) {
+                        PUSH_STR(arg->member_access.object_name);
+                        PUSH_STR(is_pointer_var(arg->member_access.object_name) ? "->" : ".");
+                        PUSH_STR(arg->member_access.field_name);
+                    }
+                    else {
+                        PUSH_STR(arg->identifier);
+                    }
+                    PUSH_STR(".length");
                 }
                 else {
                     PUSH_STR(expr->proc_call.caller_identifier);
@@ -367,6 +428,8 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
                 Str const *callee = &op->proc_call.caller_identifier;
                 bool const is_length = callee->length == 6 &&
                     strncmp(callee->data, "length", 6) == 0;
+                bool const is_length_in_bytes = callee->length == 15 &&
+                    strncmp(callee->data, "length_in_bytes", 15) == 0;
                 bool const is_int_cast = callee->length == 3 &&
                     strncmp(callee->data, "Int", 3) == 0;
                 if (is_int_cast) {
@@ -380,6 +443,19 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
                     PUSH_INT(static_cast<intmax_t>(
                         find_array_size(op->proc_call.arguments.data[0].identifier)
                     ));
+                }
+                else if (is_length_in_bytes) {
+                    assert(op->proc_call.arguments.length == 1 && "length_in_bytes() requires exactly one argument");
+                    auto *arg = &op->proc_call.arguments.data[0];
+                    if (arg->type == ASTNodeType::MEMBER_ACCESS) {
+                        PUSH_STR(arg->member_access.object_name);
+                        PUSH_STR(is_pointer_var(arg->member_access.object_name) ? "->" : ".");
+                        PUSH_STR(arg->member_access.field_name);
+                    }
+                    else {
+                        PUSH_STR(arg->identifier);
+                    }
+                    PUSH_STR(".length");
                 }
                 else {
                     PUSH_STR(op->proc_call.caller_identifier);
@@ -422,6 +498,7 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
     PUSH_STR("#include <stdio.h>\n");
     PUSH_STR("#include <string.h>\n\n");
     PUSH_STR("typedef struct { char const *data; size_t length; } BloomStr;\n");
+    PUSH_STR("typedef struct { uint8_t *data; size_t length; } BloomSliceU8;\n");
     PUSH_STR("typedef struct { char bytes[4]; uint8_t len; } BloomChar;\n");
     PUSH_STR("typedef struct { char buf[4096]; size_t offset; } BloomTempAllocator;\n");
     PUSH_STR("typedef struct { BloomTempAllocator temp_allocator; } BloomContext;\n");
@@ -444,6 +521,9 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
                     PUSH_STR("\t");
                     if (field->type_name == "Int") {
                         PUSH_STR("int");
+                    }
+                    else if (field->type_name == "U8") {
+                        PUSH_STR("uint8_t");
                     }
                     else if (field->type_name == "Str") {
                         PUSH_STR("BloomStr");
@@ -481,6 +561,9 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
                     if (node->proc_def.return_type->name == "Int") {
                         return_type_c = cstr_to_str("int");
                     }
+                    else if (node->proc_def.return_type->name == "U8") {
+                        return_type_c = cstr_to_str("uint8_t");
+                    }
                     else if (node->proc_def.return_type->name == "Bool") {
                         return_type_c = cstr_to_str("bool");
                     }
@@ -504,8 +587,14 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
                     if (i != 0) {
                         PUSH_STR(", ");
                     }
-                    if (param->type_name == "Int") {
+                    if (param->is_slice) {
+                        PUSH_STR("BloomSliceU8 ");
+                    }
+                    else if (param->type_name == "Int") {
                         PUSH_STR("int ");
+                    }
+                    else if (param->type_name == "U8") {
+                        PUSH_STR("uint8_t ");
                     }
                     else if (param->type_name == "Bool") {
                         PUSH_STR("bool ");
@@ -530,10 +619,24 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
                 PUSH_STR(')');
                 PUSH_STR("{\n");
                 PUSH_STR("\tBloomContext __bloom_context = {0};\n");
+                for (size_t pi = 0; pi < params->length; pi++) {
+                    auto *param = &params->data[pi];
+                    if (param->is_slice) {
+                        PUSH_STR("\tuint8_t *");
+                        PUSH_STR(param->name);
+                        PUSH_STR("_cstr = (uint8_t*)");
+                        PUSH_STR(param->name);
+                        PUSH_STR(".data;\n");
+                    }
+                }
 
                 // Register proc parameters so member access and pointer checks work inside the body
                 for (size_t pi = 0; pi < params->length; pi++) {
                     auto *param = &params->data[pi];
+                    if (param->is_slice) {
+                        register_var(param->name, VarKind::SLICE_U8);
+                        continue;
+                    }
                     if (param->is_pointer) {
                         bool param_is_struct = false;
                         for (size_t si = 0; si < struct_def_count; si++) {
@@ -1029,8 +1132,9 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
                                         .count = expr->array_init.elements.length,
                                     };
                                 }
+                                bool const is_u8_array = expr->array_init.element_type == "U8";
                                 register_var(stmt->variable_definition.name, VarKind::INT);
-                                PUSH_STR("int ");
+                                PUSH_STR(is_u8_array ? "uint8_t " : "int ");
                                 PUSH_STR(stmt->variable_definition.name);
                                 PUSH_STR("[] = {");
                                 auto *elems = &expr->array_init.elements;
@@ -1165,6 +1269,34 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
                             PUSH_STR(" = ");
                             emit_expression(stmt->array_element_assign.expr);
                             PUSH_STR(";\n");
+                            break;
+                        }
+                        case ASTNodeType::ARRAY_RANGE_ASSIGN: {
+                            push_tabs();
+                            ASTNode *val = stmt->array_range_assign.value_expr;
+                            ASTNode *inner = (val->type == ASTNodeType::SLICE_CAST) ? val->slice_cast.expr : val;
+                            PUSH_STR("memcpy((uint8_t*)");
+                            PUSH_STR(stmt->array_range_assign.variable_name);
+                            PUSH_STR(" + ");
+                            PUSH_INT(stmt->array_range_assign.start_index);
+                            PUSH_STR(", ");
+                            if (inner->type == ASTNodeType::MEMBER_ACCESS) {
+                                char const *acc = is_pointer_var(inner->member_access.object_name) ? "->" : ".";
+                                PUSH_STR(inner->member_access.object_name);
+                                PUSH_STR(acc);
+                                PUSH_STR(inner->member_access.field_name);
+                                PUSH_STR(".data, ");
+                                PUSH_STR(inner->member_access.object_name);
+                                PUSH_STR(acc);
+                                PUSH_STR(inner->member_access.field_name);
+                                PUSH_STR(".length);\n");
+                            }
+                            else {
+                                PUSH_STR(inner->identifier);
+                                PUSH_STR(".data, ");
+                                PUSH_STR(inner->identifier);
+                                PUSH_STR(".length);\n");
+                            }
                             break;
                         }
                         case ASTNodeType::BREAK: {

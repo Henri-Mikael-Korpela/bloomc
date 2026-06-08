@@ -28,6 +28,7 @@ enum class TokenType : uint8_t {
     ARROW,
     CONST_DEF,
     KEYWORD_DEFER,
+    RANGE,
     RANGE_COUNTED,
     RANGE_EXCLUSIVE,
     RANGE_INCLUSIVE,
@@ -137,6 +138,7 @@ constexpr auto to_string(TokenType type) -> Str {
         case TokenType::NEWLINE:           return STR("newline");
         case TokenType::PARENTHESIS_CLOSE: return STR(")");
         case TokenType::PARENTHESIS_OPEN:  return STR("(");
+        case TokenType::RANGE:             return STR("..");
         case TokenType::RANGE_COUNTED:     return STR("..+");
         case TokenType::RANGE_EXCLUSIVE:   return STR("..<");
         case TokenType::RANGE_INCLUSIVE:   return STR("..=");

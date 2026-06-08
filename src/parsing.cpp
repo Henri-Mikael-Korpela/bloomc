@@ -365,6 +365,26 @@ static auto parse_proc_call_arguments(
             {
                 (void)iter_next(tokens_iter); // consume [
                 auto *idx_tok = iter_next(tokens_iter);
+                if (idx_tok->type == TokenType::RANGE) {
+                    auto *cl_tok = iter_next(tokens_iter);
+                    if (cl_tok->type != TokenType::BRACKET_CLOSE) {
+                        return err<BinaryOperand, ParseError>(ParseError {
+                            .code = ParseErrorCode::UNEXPECTED_TOKEN,
+                            .position = cl_tok->position,
+                            .src_code_line = __LINE__,
+                            .token_type = cl_tok->type,
+                        });
+                    }
+                    ASTNode *slice_node = iter_append(nodes_block_iter, ASTNode {
+                        .type = ASTNodeType::ARRAY_SLICE,
+                        .parent = proc_call_node,
+                        .array_slice = { .variable_name = token->identifier.content },
+                    });
+                    return ok<BinaryOperand, ParseError>(BinaryOperand {
+                        .type = BinaryOperandType::EXPR_NODE,
+                        .expr_node = slice_node,
+                    });
+                }
                 if (idx_tok->type != TokenType::INTEGER_LITERAL) {
                     return err<BinaryOperand, ParseError>(ParseError {
                         .code = ParseErrorCode::UNEXPECTED_TOKEN,
@@ -852,6 +872,30 @@ static auto parse_proc_params(
                     auto *type_tok = iter_next(tokens_iter);
                     param_node->type_name = type_tok->identifier.content;
                 }
+                else if (maybe_caret->type == TokenType::BRACKET_OPEN) {
+                    auto *bracket_close = iter_next(tokens_iter);
+                    if (bracket_close->type != TokenType::BRACKET_CLOSE) {
+                        append(errors, ParseError {
+                            .code = ParseErrorCode::UNEXPECTED_TOKEN,
+                            .position = bracket_close->position,
+                            .src_code_line = __LINE__,
+                            .token_type = bracket_close->type,
+                        });
+                        return false;
+                    }
+                    auto *type_tok = iter_next(tokens_iter);
+                    if (type_tok->type != TokenType::IDENTIFIER) {
+                        append(errors, ParseError {
+                            .code = ParseErrorCode::UNEXPECTED_TOKEN,
+                            .position = type_tok->position,
+                            .src_code_line = __LINE__,
+                            .token_type = type_tok->type,
+                        });
+                        return false;
+                    }
+                    param_node->is_slice = true;
+                    param_node->type_name = type_tok->identifier.content;
+                }
                 else {
                     param_node->type_name = maybe_caret->identifier.content;
                 }
@@ -944,8 +988,60 @@ static auto parse_expression(
         "Next token should not be null when parsing an expression");
     switch(next_token->type) {
         case TokenType::BRACKET_OPEN: {
-            // Parse [const]ElementType{ ... } or [N]ElementType{ ... }
+            // Parse [const]ElementType{ ... } or [N]ElementType{ ... } or []Type(expr) slice cast
             auto *size_token = iter_next(tokens_iter);
+            if (size_token->type == TokenType::BRACKET_CLOSE) {
+                auto *type_tok = iter_next(tokens_iter);
+                if (type_tok->type != TokenType::IDENTIFIER) {
+                    return err<ASTNode, ParseError>(PARSE_ERROR_CREATE(UNEXPECTED_TOKEN, type_tok));
+                }
+                Str const elem_type = type_tok->identifier.content;
+                if (expect_token_or_append_error(tokens_iter, TokenType::PARENTHESIS_OPEN, errors) == nullptr) {
+                    return err<ASTNode, ParseError>(PARSE_ERROR_CREATE(UNEXPECTED_TOKEN, type_tok));
+                }
+                auto *inner_tok = iter_next(tokens_iter);
+                ASTNode inner_node = {};
+                if (inner_tok->type == TokenType::IDENTIFIER &&
+                    tokens_iter->current_index < tokens_iter->elements.length &&
+                    iter_peek(tokens_iter)->type == TokenType::DOT)
+                {
+                    (void)iter_next(tokens_iter);
+                    auto *field_tok = iter_next(tokens_iter);
+                    if (field_tok->type != TokenType::IDENTIFIER) {
+                        return err<ASTNode, ParseError>(PARSE_ERROR_CREATE(UNEXPECTED_TOKEN, field_tok));
+                    }
+                    inner_node = ASTNode {
+                        .type = ASTNodeType::MEMBER_ACCESS,
+                        .parent = nullptr,
+                        .member_access = {
+                            .object_name = inner_tok->identifier.content,
+                            .field_name = field_tok->identifier.content,
+                        },
+                    };
+                }
+                else if (inner_tok->type == TokenType::IDENTIFIER) {
+                    inner_node = ASTNode {
+                        .type = ASTNodeType::IDENTIFIER,
+                        .parent = nullptr,
+                        .identifier = inner_tok->identifier.content,
+                    };
+                }
+                else {
+                    return err<ASTNode, ParseError>(PARSE_ERROR_CREATE(UNEXPECTED_TOKEN, inner_tok));
+                }
+                if (expect_token_or_append_error(tokens_iter, TokenType::PARENTHESIS_CLOSE, errors) == nullptr) {
+                    return err<ASTNode, ParseError>(PARSE_ERROR_CREATE(UNEXPECTED_TOKEN, inner_tok));
+                }
+                ASTNode *inner_ptr = iter_append(nodes_block_iter, std::move(inner_node));
+                return ok<ASTNode, ParseError>(ASTNode {
+                    .type = ASTNodeType::SLICE_CAST,
+                    .parent = nullptr,
+                    .slice_cast = {
+                        .element_type = elem_type,
+                        .expr = inner_ptr,
+                    },
+                });
+            }
             int64_t explicit_length = -1;
             if (size_token->type == TokenType::KEYWORD_CONST) {
                 // no explicit length check
@@ -1049,6 +1145,12 @@ static auto parse_expression(
                     }
                     int64_t element_value = elem_token->integer_literal.value;
                     (void)iter_append(array_elements_iter, std::move(element_value));
+                }
+            }
+            if (array_elements_iter->current_index == elements_begin && explicit_length > 0) {
+                for (int64_t i = 0; i < explicit_length; i++) {
+                    int64_t zero = 0;
+                    (void)iter_append(array_elements_iter, std::move(zero));
                 }
             }
             size_t const actual_count = array_elements_iter->current_index - elements_begin;
@@ -2111,6 +2213,58 @@ static auto parse_statement(
                     return false;
                 }
                 int64_t const index = index_token->integer_literal.value;
+
+                if (tokens_iter->current_index < tokens_iter->elements.length && (
+                    iter_peek(tokens_iter)->type == TokenType::RANGE ||
+                    iter_peek(tokens_iter)->type == TokenType::RANGE_COUNTED ||
+                    iter_peek(tokens_iter)->type == TokenType::RANGE_EXCLUSIVE ||
+                    iter_peek(tokens_iter)->type == TokenType::RANGE_INCLUSIVE))
+                {
+                    (void)iter_next(tokens_iter); // consume range operator
+                    // Consume end expression tokens (scan forward to ])
+                    while (tokens_iter->current_index < tokens_iter->elements.length &&
+                           iter_peek(tokens_iter)->type != TokenType::BRACKET_CLOSE)
+                    {
+                        (void)iter_next(tokens_iter);
+                    }
+                    if (expect_token_or_append_error(tokens_iter, TokenType::BRACKET_CLOSE, errors) == nullptr) {
+                        return false;
+                    }
+                    if (expect_token_or_append_error(tokens_iter, TokenType::EQUALS, errors) == nullptr) {
+                        return false;
+                    }
+                    Iterator<Token> expr_tokens_iter;
+                    if (!slice_expression_tokens(tokens_iter, errors, &expr_tokens_iter)) {
+                        return false;
+                    }
+                    auto expr_parse_result = parse_expression(
+                        &expr_tokens_iter, context, nodes_block_iter,
+                        proc_params_block, proc_params_iter, types_iter,
+                        operands_iter, array_elements_iter, errors
+                    );
+                    if (!is_ok(&expr_parse_result)) {
+                        append(errors, expr_parse_result.err);
+                        return false;
+                    }
+                    ASTNode *value_expr = iter_append(nodes_block_iter, std::move(expr_parse_result.ok));
+                    (void)iter_append(nodes_block_iter, ASTNode {
+                        .type = ASTNodeType::ARRAY_RANGE_ASSIGN,
+                        .parent = parent_node,
+                        .array_range_assign = {
+                            .variable_name = next_token->identifier.content,
+                            .start_index = index,
+                            .value_expr = value_expr,
+                        },
+                    });
+                    tokens_iter->current_index += expr_tokens_iter.current_index;
+                    assert(
+                        iter_current(tokens_iter)->type == TokenType::NEWLINE ||
+                        iter_current(tokens_iter)->type == TokenType::END &&
+                        "Expected newline or end token after array range assign");
+                    (void)iter_next(tokens_iter);
+                    break;
+                }
+
                 auto *bracket_close = iter_next(tokens_iter);
                 if (bracket_close->type != TokenType::BRACKET_CLOSE) {
                     append(errors, PARSE_ERROR_CREATE(UNEXPECTED_TOKEN, bracket_close));

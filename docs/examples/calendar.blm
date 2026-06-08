@@ -16,9 +16,8 @@ file_open_for_write :: proc(path: Str) File ->
     fptr := fopen(path_cstr, mode)
     File { path = path, _ptr = fptr }
 
-file_write :: proc(file: ^File, content: Str) ->
-    content_cstr := clone_to_cstr(content, context.temp_allocator)
-    fwrite(content_cstr, 1, length_in_bytes(content), file._ptr)
+file_write :: proc(file: ^File, content: []U8) ->
+    fwrite(content_cstr, 1, length(content), file._ptr)
 
 Event :: struct ->
     id: Int
@@ -28,9 +27,12 @@ main :: proc() ->
     e1 := Event { id = 1, name = "My event" }
     print("Event #1: {}\n", e1.name)
 
-    f := file_open_for_write("calendar-output.txt")
+    f := file_open_for_write("calendar-db")
     defer file_close(%f)
 
     print("Output file path: {}\n", f.path)
 
-    file_write(%f, e1.name)
+    buffer := [9]U8{}
+    buffer[0] = length_in_bytes(e1.name)
+    buffer[1..+length_in_bytes(e1.name)] = []U8(e1.name)
+    file_write(%f, buffer[..])

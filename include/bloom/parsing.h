@@ -10,6 +10,8 @@ enum class ASTNodeType : uint8_t {
     ARRAY_ACCESS,
     ARRAY_ELEMENT_ASSIGN,
     ARRAY_INIT,
+    ARRAY_RANGE_ASSIGN,
+    ARRAY_SLICE,
     BINARY_ADD,
     BINARY_DIV,
     BINARY_MUL,
@@ -38,6 +40,7 @@ enum class ASTNodeType : uint8_t {
     PROC_DEF,
     RETURN,
     STRING_LITERAL,
+    SLICE_CAST,
     STRUCT_DEF,
     STRUCT_INIT,
     VARIABLE_DEFINITION,
@@ -104,6 +107,7 @@ struct ProcParameterASTNode {
     Str name;
     Str type_name;
     bool is_pointer;
+    bool is_slice;
 };
 
 struct TypeASTNode {
@@ -209,6 +213,18 @@ struct ASTNode {
             ASTNode *expr;
         } array_element_assign;
         struct {
+            Str variable_name;
+            int64_t start_index;
+            ASTNode *value_expr;
+        } array_range_assign;
+        struct {
+            Str variable_name;
+        } array_slice;
+        struct {
+            Str element_type;
+            ASTNode *expr;
+        } slice_cast;
+        struct {
             Str name;
             Array<ProcParameterASTNode> fields;
         } struct_def;
@@ -225,11 +241,13 @@ auto parse(Array<Token> *tokens, ArenaAllocator *allocator, Str source_content, 
 constexpr auto to_string(ASTNodeType type) -> Str {
     #define STR(x) cstr_to_str(x)
     switch (type) {
-        case ASTNodeType::ADDRESS_OF:          return STR("address_of");
-        case ASTNodeType::ADD_ASSIGN:          return STR("add_assign");
-        case ASTNodeType::ARRAY_ACCESS:          return STR("array_access");
+        case ASTNodeType::ADDRESS_OF:           return STR("address_of");
+        case ASTNodeType::ADD_ASSIGN:           return STR("add_assign");
+        case ASTNodeType::ARRAY_ACCESS:         return STR("array_access");
         case ASTNodeType::ARRAY_ELEMENT_ASSIGN: return STR("array_element_assign");
         case ASTNodeType::ARRAY_INIT:           return STR("array_init");
+        case ASTNodeType::ARRAY_RANGE_ASSIGN:   return STR("array_range_assign");
+        case ASTNodeType::ARRAY_SLICE:          return STR("array_slice");
         case ASTNodeType::BINARY_ADD:          return STR("binary_add");
         case ASTNodeType::BINARY_DIV:          return STR("binary_div");
         case ASTNodeType::BINARY_MUL:          return STR("binary_mul");
@@ -257,6 +275,7 @@ constexpr auto to_string(ASTNodeType type) -> Str {
         case ASTNodeType::PROC_DEF:            return STR("procedure definition");
         case ASTNodeType::RETURN:              return STR("return");
         case ASTNodeType::STRING_LITERAL:      return STR("string_literal");
+        case ASTNodeType::SLICE_CAST:          return STR("slice_cast");
         case ASTNodeType::STRUCT_DEF:          return STR("struct_def");
         case ASTNodeType::STRUCT_INIT:         return STR("struct_init");
         case ASTNodeType::VARIABLE_DEFINITION: return STR("variable_definition");

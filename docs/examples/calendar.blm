@@ -33,6 +33,7 @@ main :: proc() ->
     print("Output file path: {}\n", f.path)
 
     buffer := [9]U8{}
-    buffer[0] = length_in_bytes(e1.name)
-    buffer[1..+length_in_bytes(e1.name)] = []U8(e1.name)
+    name_len := length_in_bytes(e1.name)
+    buffer[0] = name_len
+    buffer[1..+name_len] = []U8(e1.name)
     file_write(%f, buffer[..])

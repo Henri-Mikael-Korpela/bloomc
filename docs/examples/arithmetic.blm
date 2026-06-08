@@ -26,3 +26,8 @@ main :: proc() ->
         y := 10 - x - 2
         z := x - y
         print("Substraction: X: {}, Y: {}, Z: {}\n", x, y, z)
+
+    // Mixed calculations
+    print("Result: {}\n", 1 + 1 - 2 == 0)
+    print("Result: {}\n", 1 * 2 - 2 == 0)
+    print("Result: {}\n", 1 + 2 * 2 - 5 == 0)

@@ -246,66 +246,9 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
         }
     };
 
-    auto emit_binary_operand = [&](BinaryOperand const *op) {
-        switch (op->type) {
-            case BinaryOperandType::IDENTIFIER:
-                PUSH_STR(op->identifier);
-                break;
-            case BinaryOperandType::ARRAY_ACCESS:
-                PUSH_STR(op->array_access.variable_name);
-                PUSH_STR('[');
-                PUSH_INT(op->array_access.index);
-                PUSH_STR(']');
-                break;
-            case BinaryOperandType::PROC_CALL: {
-                Str const *callee = &op->proc_call.caller_identifier;
-                bool const is_length = callee->length == 6 &&
-                    strncmp(callee->data, "length", 6) == 0;
-                bool const is_int_cast = callee->length == 3 &&
-                    strncmp(callee->data, "Int", 3) == 0;
-                if (is_int_cast) {
-                    assert(op->proc_call.arguments.length == 1 && "Int() cast requires exactly one argument");
-                    PUSH_STR("(int)(");
-                    emit_proc_call_args(const_cast<Array<ASTNode>*>(&op->proc_call.arguments), *callee);
-                    PUSH_STR(")");
-                }
-                else if (is_length) {
-                    assert(op->proc_call.arguments.length > 0 && "length() requires an argument");
-                    PUSH_INT(static_cast<intmax_t>(
-                        find_array_size(op->proc_call.arguments.data[0].identifier)
-                    ));
-                }
-                else {
-                    PUSH_STR(op->proc_call.caller_identifier);
-                    PUSH_STR('(');
-                    emit_proc_call_args(const_cast<Array<ASTNode>*>(&op->proc_call.arguments), *callee);
-                    PUSH_STR(')');
-                }
-                break;
-            }
-            case BinaryOperandType::INTEGER_LITERAL:
-                PUSH_INT(op->integer_literal.value);
-                break;
-            case BinaryOperandType::MEMBER_ACCESS:
-                PUSH_STR(op->member_access.object_name);
-                PUSH_STR(is_pointer_var(op->member_access.object_name) ? "->" : ".");
-                PUSH_STR(op->member_access.field_name);
-                break;
-            case BinaryOperandType::STRING_LITERAL: {
-                size_t const runtime_len = str_literal_runtime_length(op->string_literal);
-                PUSH_STR("(BloomStr){.data = \"");
-                PUSH_STR(op->string_literal);
-                PUSH_STR("\", .length = ");
-                PUSH_INT(static_cast<intmax_t>(runtime_len));
-                PUSH_STR("}");
-                break;
-            }
-            case BinaryOperandType::DEREF:
-                PUSH_STR("*");
-                PUSH_STR(op->identifier);
-                break;
-        }
-    };
+    // Forward-declare as std::function so emit_expression and emit_binary_operand
+    // can call each other (EXPR_NODE operands recursively call emit_expression).
+    std::function<void(BinaryOperand const *)> emit_binary_operand;
 
     auto emit_expression = [&](ASTNode *expr) {
         switch (expr->type) {
@@ -374,6 +317,13 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
                 }
                 break;
             }
+            case ASTNodeType::COMPARISON: {
+                auto *operands = &expr->binary_operation.operands;
+                emit_binary_operand(&operands->data[0]);
+                PUSH_STR(" == ");
+                emit_binary_operand(&operands->data[1]);
+                break;
+            }
             case ASTNodeType::STRING_LITERAL: {
                 Str const *content = &expr->string_literal.value;
                 size_t const runtime_len = str_literal_runtime_length(*content);
@@ -399,6 +349,70 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
                 break;
             default:
                 assert(false && "Unsupported expression type in emit_expression");
+        }
+    };
+
+    emit_binary_operand = [&](BinaryOperand const *op) {
+        switch (op->type) {
+            case BinaryOperandType::IDENTIFIER:
+                PUSH_STR(op->identifier);
+                break;
+            case BinaryOperandType::ARRAY_ACCESS:
+                PUSH_STR(op->array_access.variable_name);
+                PUSH_STR('[');
+                PUSH_INT(op->array_access.index);
+                PUSH_STR(']');
+                break;
+            case BinaryOperandType::PROC_CALL: {
+                Str const *callee = &op->proc_call.caller_identifier;
+                bool const is_length = callee->length == 6 &&
+                    strncmp(callee->data, "length", 6) == 0;
+                bool const is_int_cast = callee->length == 3 &&
+                    strncmp(callee->data, "Int", 3) == 0;
+                if (is_int_cast) {
+                    assert(op->proc_call.arguments.length == 1 && "Int() cast requires exactly one argument");
+                    PUSH_STR("(int)(");
+                    emit_proc_call_args(const_cast<Array<ASTNode>*>(&op->proc_call.arguments), *callee);
+                    PUSH_STR(")");
+                }
+                else if (is_length) {
+                    assert(op->proc_call.arguments.length > 0 && "length() requires an argument");
+                    PUSH_INT(static_cast<intmax_t>(
+                        find_array_size(op->proc_call.arguments.data[0].identifier)
+                    ));
+                }
+                else {
+                    PUSH_STR(op->proc_call.caller_identifier);
+                    PUSH_STR('(');
+                    emit_proc_call_args(const_cast<Array<ASTNode>*>(&op->proc_call.arguments), *callee);
+                    PUSH_STR(')');
+                }
+                break;
+            }
+            case BinaryOperandType::INTEGER_LITERAL:
+                PUSH_INT(op->integer_literal.value);
+                break;
+            case BinaryOperandType::MEMBER_ACCESS:
+                PUSH_STR(op->member_access.object_name);
+                PUSH_STR(is_pointer_var(op->member_access.object_name) ? "->" : ".");
+                PUSH_STR(op->member_access.field_name);
+                break;
+            case BinaryOperandType::STRING_LITERAL: {
+                size_t const runtime_len = str_literal_runtime_length(op->string_literal);
+                PUSH_STR("(BloomStr){.data = \"");
+                PUSH_STR(op->string_literal);
+                PUSH_STR("\", .length = ");
+                PUSH_INT(static_cast<intmax_t>(runtime_len));
+                PUSH_STR("}");
+                break;
+            }
+            case BinaryOperandType::DEREF:
+                PUSH_STR("*");
+                PUSH_STR(op->identifier);
+                break;
+            case BinaryOperandType::EXPR_NODE:
+                emit_expression(op->expr_node);
+                break;
         }
     };
 
@@ -875,6 +889,14 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
                                                 PUSH_STR("printf(\"%d\", *");
                                                 PUSH_STR(arg->identifier);
                                                 PUSH_STR(");\n");
+                                            }
+                                            else if (arg->type == ASTNodeType::COMPARISON) {
+                                                PUSH_STR("fputs((");
+                                                auto *ops = &arg->binary_operation.operands;
+                                                emit_binary_operand(&ops->data[0]);
+                                                PUSH_STR(" == ");
+                                                emit_binary_operand(&ops->data[1]);
+                                                PUSH_STR(") ? \"true\" : \"false\", stdout);\n");
                                             }
                                             arg_idx++;
                                         }

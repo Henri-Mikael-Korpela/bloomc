@@ -418,96 +418,145 @@ static auto parse_proc_call_arguments(
         });
     };
 
-    // Given a first operand already parsed, checks for '+' or '*' and builds a
-    // BINARY_ADD or BINARY_MUL argument node if found, otherwise converts the
-    // single operand to an ASTNode. Returns false on error.
-    auto emit_operand_or_binary_add = [&](BinaryOperand first_op) -> bool {
-        auto const peek_type = (tokens_iter->current_index < tokens_iter->elements.length)
-            ? iter_peek(tokens_iter)->type
-            : TokenType::UNKNOWN;
-        if (peek_type == TokenType::ADD      || peek_type == TokenType::SUBTRACT ||
-            peek_type == TokenType::MULTIPLY || peek_type == TokenType::DIVIDE)
-        {
-            TokenType const op_type = peek_type;
-            size_t const operands_begin = operands_iter->current_index;
-            (void)iter_append(operands_iter, std::move(first_op));
-            while (tokens_iter->current_index < tokens_iter->elements.length &&
-                   iter_peek(tokens_iter)->type == op_type)
-            {
-                (void)iter_next(tokens_iter); // consume operator
-                auto *rhs_tok = iter_next(tokens_iter);
-                auto rhs = parse_simple_operand(rhs_tok);
-                if (!is_ok(&rhs)) {
-                    append(errors, rhs.err);
-                    return false;
-                }
-                (void)iter_append(operands_iter, std::move(rhs.ok));
-            }
-            ASTNodeType const node_type =
-                (op_type == TokenType::MULTIPLY) ? ASTNodeType::BINARY_MUL :
-                (op_type == TokenType::DIVIDE)   ? ASTNodeType::BINARY_DIV :
-                (op_type == TokenType::SUBTRACT) ? ASTNodeType::BINARY_SUB :
-                                                   ASTNodeType::BINARY_ADD;
-            BinaryOperatorType const op =
-                (op_type == TokenType::MULTIPLY) ? BinaryOperatorType::MUL :
-                (op_type == TokenType::DIVIDE)   ? BinaryOperatorType::DIV :
-                (op_type == TokenType::SUBTRACT) ? BinaryOperatorType::SUB :
-                                                   BinaryOperatorType::ADD;
-            (void)iter_append(nodes_block_iter, ASTNode {
+    // Parses a multiplicative expression (handles * and /) starting from tok.
+    // Builds binary tree nodes in nodes_block_iter; returns the root as a BinaryOperand.
+    auto parse_multiplicative = [&](Token *tok) -> Result<BinaryOperand, ParseError> {
+        auto left_result = parse_simple_operand(tok);
+        if (!is_ok(&left_result)) { return left_result; }
+        BinaryOperand left = std::move(left_result.ok);
+
+        while (tokens_iter->current_index < tokens_iter->elements.length) {
+            TokenType const op_type = iter_peek(tokens_iter)->type;
+            if (op_type != TokenType::MULTIPLY && op_type != TokenType::DIVIDE) { break; }
+            (void)iter_next(tokens_iter);
+            Token *rhs_tok = iter_next(tokens_iter);
+            auto rhs_result = parse_simple_operand(rhs_tok);
+            if (!is_ok(&rhs_result)) { append(errors, rhs_result.err); return rhs_result; }
+
+            size_t const ops_begin = operands_iter->current_index;
+            { BinaryOperand tmp = left; (void)iter_append(operands_iter, std::move(tmp)); }
+            (void)iter_append(operands_iter, std::move(rhs_result.ok));
+
+            ASTNodeType const node_type = (op_type == TokenType::MULTIPLY)
+                ? ASTNodeType::BINARY_MUL : ASTNodeType::BINARY_DIV;
+            BinaryOperatorType const bin_op = (op_type == TokenType::MULTIPLY)
+                ? BinaryOperatorType::MUL : BinaryOperatorType::DIV;
+            ASTNode *new_node = iter_append(nodes_block_iter, ASTNode {
                 .type = node_type,
                 .parent = proc_call_node,
                 .binary_operation = {
-                    .oprt = op,
+                    .oprt = bin_op,
                     .operands = Array<BinaryOperand>(
-                        operands_iter->elements.data + operands_begin,
-                        operands_iter->current_index - operands_begin
+                        operands_iter->elements.data + ops_begin, 2
                     ),
                 },
             });
+            left = BinaryOperand { .type = BinaryOperandType::EXPR_NODE, .expr_node = new_node };
+        }
+        return ok<BinaryOperand, ParseError>(std::move(left));
+    };
+
+    // Parses an additive expression (handles + and -) starting from tok.
+    auto parse_additive = [&](Token *tok) -> Result<BinaryOperand, ParseError> {
+        auto left_result = parse_multiplicative(tok);
+        if (!is_ok(&left_result)) { return left_result; }
+        BinaryOperand left = std::move(left_result.ok);
+
+        while (tokens_iter->current_index < tokens_iter->elements.length) {
+            TokenType const op_type = iter_peek(tokens_iter)->type;
+            if (op_type != TokenType::ADD && op_type != TokenType::SUBTRACT) { break; }
+            (void)iter_next(tokens_iter);
+            Token *rhs_tok = iter_next(tokens_iter);
+            auto rhs_result = parse_multiplicative(rhs_tok);
+            if (!is_ok(&rhs_result)) { append(errors, rhs_result.err); return rhs_result; }
+
+            size_t const ops_begin = operands_iter->current_index;
+            { BinaryOperand tmp = left; (void)iter_append(operands_iter, std::move(tmp)); }
+            (void)iter_append(operands_iter, std::move(rhs_result.ok));
+
+            ASTNodeType const node_type = (op_type == TokenType::ADD)
+                ? ASTNodeType::BINARY_ADD : ASTNodeType::BINARY_SUB;
+            BinaryOperatorType const bin_op = (op_type == TokenType::ADD)
+                ? BinaryOperatorType::ADD : BinaryOperatorType::SUB;
+            ASTNode *new_node = iter_append(nodes_block_iter, ASTNode {
+                .type = node_type,
+                .parent = proc_call_node,
+                .binary_operation = {
+                    .oprt = bin_op,
+                    .operands = Array<BinaryOperand>(
+                        operands_iter->elements.data + ops_begin, 2
+                    ),
+                },
+            });
+            left = BinaryOperand { .type = BinaryOperandType::EXPR_NODE, .expr_node = new_node };
+        }
+        return ok<BinaryOperand, ParseError>(std::move(left));
+    };
+
+    // Reserves an arg slot first, then parses a full expression (with optional ==
+    // comparison) into that slot. Intermediate binary nodes go after the slot so the
+    // arguments array slice remains contiguous from proc_call_nodes_begin_index.
+    auto parse_expr_arg = [&](Token *tok) -> bool {
+        ASTNode *arg_slot = iter_append(nodes_block_iter, ASTNode {
+            .type = ASTNodeType::UNKNOWN,
+            .parent = proc_call_node,
+        });
+
+        auto left_result = parse_additive(tok);
+        if (!is_ok(&left_result)) { append(errors, left_result.err); return false; }
+        BinaryOperand left = std::move(left_result.ok);
+
+        if (tokens_iter->current_index < tokens_iter->elements.length &&
+            iter_peek(tokens_iter)->type == TokenType::EQUAL_EQUAL)
+        {
+            (void)iter_next(tokens_iter);
+            Token *rhs_tok = iter_next(tokens_iter);
+            auto rhs_result = parse_additive(rhs_tok);
+            if (!is_ok(&rhs_result)) { append(errors, rhs_result.err); return false; }
+
+            size_t const ops_begin = operands_iter->current_index;
+            { BinaryOperand tmp = left; (void)iter_append(operands_iter, std::move(tmp)); }
+            (void)iter_append(operands_iter, std::move(rhs_result.ok));
+
+            arg_slot->type = ASTNodeType::COMPARISON;
+            arg_slot->binary_operation = {
+                .oprt = BinaryOperatorType::ADD,
+                .operands = Array<BinaryOperand>(
+                    operands_iter->elements.data + ops_begin, 2
+                ),
+            };
             return true;
         }
-        switch (first_op.type) {
-            case BinaryOperandType::MEMBER_ACCESS:
-                (void)iter_append(nodes_block_iter, ASTNode {
-                    .type = ASTNodeType::MEMBER_ACCESS,
-                    .parent = proc_call_node,
-                    .member_access = {
-                        .object_name = first_op.member_access.object_name,
-                        .field_name = first_op.member_access.field_name,
-                    },
-                });
-                break;
-            case BinaryOperandType::ARRAY_ACCESS:
-                (void)iter_append(nodes_block_iter, ASTNode {
-                    .type = ASTNodeType::ARRAY_ACCESS,
-                    .parent = proc_call_node,
-                    .array_access = {
-                        .variable_name = first_op.array_access.variable_name,
-                        .index = first_op.array_access.index,
-                    },
-                });
-                break;
-            case BinaryOperandType::INTEGER_LITERAL:
-                (void)iter_append(nodes_block_iter, ASTNode {
-                    .type = ASTNodeType::INTEGER_LITERAL,
-                    .parent = proc_call_node,
-                    .integer_literal = { .value = first_op.integer_literal },
-                });
-                break;
-            case BinaryOperandType::DEREF:
-                (void)iter_append(nodes_block_iter, ASTNode {
-                    .type = ASTNodeType::DEREF,
-                    .parent = proc_call_node,
-                    .identifier = first_op.identifier,
-                });
-                break;
-            default:
-                (void)iter_append(nodes_block_iter, ASTNode {
-                    .type = ASTNodeType::IDENTIFIER,
-                    .parent = proc_call_node,
-                    .identifier = first_op.identifier,
-                });
-                break;
+
+        if (left.type == BinaryOperandType::EXPR_NODE) {
+            *arg_slot = *left.expr_node;
+            arg_slot->parent = proc_call_node;
+        }
+        else {
+            switch (left.type) {
+                case BinaryOperandType::INTEGER_LITERAL:
+                    arg_slot->type = ASTNodeType::INTEGER_LITERAL;
+                    arg_slot->integer_literal = { .value = left.integer_literal };
+                    break;
+                case BinaryOperandType::MEMBER_ACCESS:
+                    arg_slot->type = ASTNodeType::MEMBER_ACCESS;
+                    arg_slot->member_access.object_name = left.member_access.object_name;
+                    arg_slot->member_access.field_name = left.member_access.field_name;
+                    break;
+                case BinaryOperandType::ARRAY_ACCESS:
+                    arg_slot->type = ASTNodeType::ARRAY_ACCESS;
+                    arg_slot->array_access.variable_name = left.array_access.variable_name;
+                    arg_slot->array_access.index = left.array_access.index;
+                    break;
+                case BinaryOperandType::DEREF:
+                    arg_slot->type = ASTNodeType::DEREF;
+                    arg_slot->identifier = left.identifier;
+                    break;
+                default:
+                    arg_slot->type = ASTNodeType::IDENTIFIER;
+                    arg_slot->identifier = left.identifier;
+                    break;
+            }
         }
         return true;
     };
@@ -663,9 +712,7 @@ static auto parse_proc_call_arguments(
                     }
                 }
                 else {
-                    auto first = parse_simple_operand(next_token);
-                    if (!is_ok(&first)) { append(errors, first.err); return false; }
-                    if (!emit_operand_or_binary_add(std::move(first.ok))) { return false; }
+                    if (!parse_expr_arg(next_token)) { return false; }
                     if (!check_arg_type(next_token)) { return false; }
                     arg_count++;
                 }
@@ -683,9 +730,7 @@ static auto parse_proc_call_arguments(
                 arg_count++;
                 break;
             case TokenType::INTEGER_LITERAL: {
-                auto first = parse_simple_operand(next_token);
-                if (!is_ok(&first)) { append(errors, first.err); return false; }
-                if (!emit_operand_or_binary_add(std::move(first.ok))) { return false; }
+                if (!parse_expr_arg(next_token)) { return false; }
                 if (!check_arg_type(next_token)) { return false; }
                 arg_count++;
                 break;
@@ -2671,6 +2716,10 @@ auto parse(Array<Token> *tokens, ArenaAllocator *allocator, Str source_content, 
                     break;
                 }
                 case ASTNodeType::BINARY_ADD:
+                case ASTNodeType::BINARY_MUL:
+                case ASTNodeType::BINARY_DIV:
+                case ASTNodeType::BINARY_SUB:
+                case ASTNodeType::COMPARISON:
                     node.binary_operation.operands.data =
                         new_operands_block.data + (node.binary_operation.operands.data - orig_operands_data);
                     break;

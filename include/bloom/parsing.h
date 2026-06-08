@@ -16,6 +16,7 @@ enum class ASTNodeType : uint8_t {
     BINARY_SUB,
     BOOLEAN_LITERAL,
     BREAK,
+    COMPARISON,
     BUILTIN_LENGTH,
     CONSTANT_DEFINITION,
     BUILTIN_LENGTH_IN_BYTES,
@@ -74,6 +75,7 @@ enum class BinaryOperandType : uint8_t {
     MEMBER_ACCESS,
     STRING_LITERAL,
     DEREF,
+    EXPR_NODE,
 };
 
 struct BinaryOperand {
@@ -94,6 +96,7 @@ struct BinaryOperand {
             Str field_name;
         } member_access;
         Str string_literal;
+        ASTNode *expr_node;
     };
 };
 
@@ -233,6 +236,7 @@ constexpr auto to_string(ASTNodeType type) -> Str {
         case ASTNodeType::BINARY_SUB:          return STR("binary_sub");
         case ASTNodeType::BOOLEAN_LITERAL:     return STR("boolean_literal");
         case ASTNodeType::BREAK:               return STR("break");
+        case ASTNodeType::COMPARISON:          return STR("comparison");
         case ASTNodeType::BUILTIN_LENGTH:          return STR("builtin_length");
         case ASTNodeType::CONSTANT_DEFINITION: return STR("constant_definition");
         case ASTNodeType::BUILTIN_LENGTH_IN_BYTES: return STR("builtin_length_in_bytes");

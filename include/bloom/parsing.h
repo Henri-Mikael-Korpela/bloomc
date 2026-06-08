@@ -13,6 +13,7 @@ enum class ASTNodeType : uint8_t {
     BINARY_ADD,
     BINARY_DIV,
     BINARY_MUL,
+    BINARY_SUB,
     BOOLEAN_LITERAL,
     BREAK,
     BUILTIN_LENGTH,
@@ -43,6 +44,7 @@ enum class ASTNodeType : uint8_t {
 
 enum class BinaryOperatorType : uint8_t {
     ADD = '+',
+    SUB = '-',
     DIV = '/',
     MUL = '*',
 };
@@ -228,6 +230,7 @@ constexpr auto to_string(ASTNodeType type) -> Str {
         case ASTNodeType::BINARY_ADD:          return STR("binary_add");
         case ASTNodeType::BINARY_DIV:          return STR("binary_div");
         case ASTNodeType::BINARY_MUL:          return STR("binary_mul");
+        case ASTNodeType::BINARY_SUB:          return STR("binary_sub");
         case ASTNodeType::BOOLEAN_LITERAL:     return STR("boolean_literal");
         case ASTNodeType::BREAK:               return STR("break");
         case ASTNodeType::BUILTIN_LENGTH:          return STR("builtin_length");

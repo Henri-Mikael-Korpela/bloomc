@@ -19,3 +19,10 @@ main :: proc() ->
         y := 10 / x / 2
         z := x / y
         print("Division: X: {}, Y: {}, Z: {}\n", x, y, z)
+    
+    // Substraction
+    ->
+        x := 4 - 2
+        y := 10 - x - 2
+        z := x - y
+        print("Substraction: X: {}, Y: {}, Z: {}\n", x, y, z)

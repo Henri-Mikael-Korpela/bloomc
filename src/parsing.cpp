@@ -425,8 +425,8 @@ static auto parse_proc_call_arguments(
         auto const peek_type = (tokens_iter->current_index < tokens_iter->elements.length)
             ? iter_peek(tokens_iter)->type
             : TokenType::UNKNOWN;
-        if (peek_type == TokenType::ADD || peek_type == TokenType::MULTIPLY ||
-            peek_type == TokenType::DIVIDE)
+        if (peek_type == TokenType::ADD      || peek_type == TokenType::SUBTRACT ||
+            peek_type == TokenType::MULTIPLY || peek_type == TokenType::DIVIDE)
         {
             TokenType const op_type = peek_type;
             size_t const operands_begin = operands_iter->current_index;
@@ -446,10 +446,12 @@ static auto parse_proc_call_arguments(
             ASTNodeType const node_type =
                 (op_type == TokenType::MULTIPLY) ? ASTNodeType::BINARY_MUL :
                 (op_type == TokenType::DIVIDE)   ? ASTNodeType::BINARY_DIV :
+                (op_type == TokenType::SUBTRACT) ? ASTNodeType::BINARY_SUB :
                                                    ASTNodeType::BINARY_ADD;
             BinaryOperatorType const op =
                 (op_type == TokenType::MULTIPLY) ? BinaryOperatorType::MUL :
                 (op_type == TokenType::DIVIDE)   ? BinaryOperatorType::DIV :
+                (op_type == TokenType::SUBTRACT) ? BinaryOperatorType::SUB :
                                                    BinaryOperatorType::ADD;
             (void)iter_append(nodes_block_iter, ASTNode {
                 .type = node_type,
@@ -1330,8 +1332,8 @@ static auto parse_expression(
             auto const peek_op = (tokens_iter->current_index < tokens_iter->elements.length)
                 ? iter_peek(tokens_iter)->type
                 : TokenType::UNKNOWN;
-            if (peek_op == TokenType::ADD || peek_op == TokenType::MULTIPLY ||
-                peek_op == TokenType::DIVIDE) {
+            if (peek_op == TokenType::ADD      || peek_op == TokenType::SUBTRACT ||
+                peek_op == TokenType::MULTIPLY || peek_op == TokenType::DIVIDE) {
                 TokenType const op_type = peek_op;
                 if (op_type == TokenType::ADD &&
                     left_operand.type == BinaryOperandType::IDENTIFIER)
@@ -1403,10 +1405,12 @@ static auto parse_expression(
                 ASTNodeType const node_type =
                     (op_type == TokenType::MULTIPLY) ? ASTNodeType::BINARY_MUL :
                     (op_type == TokenType::DIVIDE)   ? ASTNodeType::BINARY_DIV :
+                    (op_type == TokenType::SUBTRACT) ? ASTNodeType::BINARY_SUB :
                                                        ASTNodeType::BINARY_ADD;
                 BinaryOperatorType const op =
                     (op_type == TokenType::MULTIPLY) ? BinaryOperatorType::MUL :
                     (op_type == TokenType::DIVIDE)   ? BinaryOperatorType::DIV :
+                    (op_type == TokenType::SUBTRACT) ? BinaryOperatorType::SUB :
                                                        BinaryOperatorType::ADD;
                 return ok<ASTNode, ParseError>(ASTNode {
                     .type = node_type,
@@ -1779,6 +1783,7 @@ static auto parse_statement(
                 break;
             }
             case TokenType::ADD:
+            case TokenType::SUBTRACT:
             case TokenType::MULTIPLY:
             case TokenType::DIVIDE: {
                 TokenType const op_type = peeked_token->type;
@@ -1814,10 +1819,12 @@ static auto parse_statement(
                 ASTNodeType const node_type =
                     (op_type == TokenType::MULTIPLY) ? ASTNodeType::BINARY_MUL :
                     (op_type == TokenType::DIVIDE)   ? ASTNodeType::BINARY_DIV :
+                    (op_type == TokenType::SUBTRACT) ? ASTNodeType::BINARY_SUB :
                                                        ASTNodeType::BINARY_ADD;
                 BinaryOperatorType const bin_op =
                     (op_type == TokenType::MULTIPLY) ? BinaryOperatorType::MUL :
                     (op_type == TokenType::DIVIDE)   ? BinaryOperatorType::DIV :
+                    (op_type == TokenType::SUBTRACT) ? BinaryOperatorType::SUB :
                                                        BinaryOperatorType::ADD;
                 iter_append(nodes_block_iter, ASTNode {
                     .type = node_type,

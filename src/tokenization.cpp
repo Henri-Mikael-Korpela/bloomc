@@ -211,6 +211,10 @@ auto tokenize(Str *input, ArenaAllocator *allocator) -> Array<Token> {
                 append_token_of_type(TokenType::ARROW);
                 current_position.col += 2;
             }
+            else {
+                append_token_of_type(TokenType::SUBTRACT);
+                current_position.col += 1;
+            }
         }
         else if (c == static_cast<char>(TokenType::BRACKET_OPEN)) {
             append_token_of_type(TokenType::BRACKET_OPEN);

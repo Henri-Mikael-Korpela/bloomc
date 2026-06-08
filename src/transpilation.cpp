@@ -366,6 +366,14 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
                 }
                 break;
             }
+            case ASTNodeType::BINARY_SUB: {
+                auto *operands = &expr->binary_operation.operands;
+                for (size_t i = 0; i < operands->length; i++) {
+                    if (i != 0) { PUSH_STR(" - "); }
+                    emit_binary_operand(&operands->data[i]);
+                }
+                break;
+            }
             case ASTNodeType::STRING_LITERAL: {
                 Str const *content = &expr->string_literal.value;
                 size_t const runtime_len = str_literal_runtime_length(*content);
@@ -665,6 +673,17 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
                             PUSH_STR(";\n");
                             break;
                         }
+                        case ASTNodeType::BINARY_SUB: {
+                            push_tabs();
+                            if (emit_as_return) { PUSH_STR("return "); }
+                            auto *operands = &stmt->binary_operation.operands;
+                            for (size_t i = 0; i < operands->length; i++) {
+                                if (i != 0) { PUSH_STR(" - "); }
+                                emit_binary_operand(&operands->data[i]);
+                            }
+                            PUSH_STR(";\n");
+                            break;
+                        }
                         case ASTNodeType::PROC_CALL: {
                             if (stmt->proc_call.caller_identifier == "print") {
                                 assert(stmt->proc_call.arguments.length >= 1 &&
@@ -807,6 +826,15 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
                                                 auto *ops = &arg->binary_operation.operands;
                                                 for (size_t k = 0; k < ops->length; k++) {
                                                     if (k != 0) { PUSH_STR(" / "); }
+                                                    emit_binary_operand(&ops->data[k]);
+                                                }
+                                                PUSH_STR(");\n");
+                                            }
+                                            else if (arg->type == ASTNodeType::BINARY_SUB) {
+                                                PUSH_STR("printf(\"%d\", ");
+                                                auto *ops = &arg->binary_operation.operands;
+                                                for (size_t k = 0; k < ops->length; k++) {
+                                                    if (k != 0) { PUSH_STR(" - "); }
                                                     emit_binary_operand(&ops->data[k]);
                                                 }
                                                 PUSH_STR(");\n");

@@ -346,6 +346,10 @@ auto tokenize(Str *input, ArenaAllocator *allocator) -> Array<Token> {
                     i++;
                 }
             }
+            else {
+                append_token_of_type(TokenType::DIVIDE);
+                current_position.col += 1;
+            }
         }
     }
 

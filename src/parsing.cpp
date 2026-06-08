@@ -425,7 +425,9 @@ static auto parse_proc_call_arguments(
         auto const peek_type = (tokens_iter->current_index < tokens_iter->elements.length)
             ? iter_peek(tokens_iter)->type
             : TokenType::UNKNOWN;
-        if (peek_type == TokenType::ADD || peek_type == TokenType::MULTIPLY) {
+        if (peek_type == TokenType::ADD || peek_type == TokenType::MULTIPLY ||
+            peek_type == TokenType::DIVIDE)
+        {
             TokenType const op_type = peek_type;
             size_t const operands_begin = operands_iter->current_index;
             (void)iter_append(operands_iter, std::move(first_op));
@@ -441,15 +443,19 @@ static auto parse_proc_call_arguments(
                 }
                 (void)iter_append(operands_iter, std::move(rhs.ok));
             }
+            ASTNodeType const node_type =
+                (op_type == TokenType::MULTIPLY) ? ASTNodeType::BINARY_MUL :
+                (op_type == TokenType::DIVIDE)   ? ASTNodeType::BINARY_DIV :
+                                                   ASTNodeType::BINARY_ADD;
+            BinaryOperatorType const op =
+                (op_type == TokenType::MULTIPLY) ? BinaryOperatorType::MUL :
+                (op_type == TokenType::DIVIDE)   ? BinaryOperatorType::DIV :
+                                                   BinaryOperatorType::ADD;
             (void)iter_append(nodes_block_iter, ASTNode {
-                .type = (op_type == TokenType::MULTIPLY)
-                    ? ASTNodeType::BINARY_MUL
-                    : ASTNodeType::BINARY_ADD,
+                .type = node_type,
                 .parent = proc_call_node,
                 .binary_operation = {
-                    .oprt = (op_type == TokenType::MULTIPLY)
-                        ? BinaryOperatorType::MUL
-                        : BinaryOperatorType::ADD,
+                    .oprt = op,
                     .operands = Array<BinaryOperand>(
                         operands_iter->elements.data + operands_begin,
                         operands_iter->current_index - operands_begin
@@ -1324,7 +1330,8 @@ static auto parse_expression(
             auto const peek_op = (tokens_iter->current_index < tokens_iter->elements.length)
                 ? iter_peek(tokens_iter)->type
                 : TokenType::UNKNOWN;
-            if (peek_op == TokenType::ADD || peek_op == TokenType::MULTIPLY) {
+            if (peek_op == TokenType::ADD || peek_op == TokenType::MULTIPLY ||
+                peek_op == TokenType::DIVIDE) {
                 TokenType const op_type = peek_op;
                 if (op_type == TokenType::ADD &&
                     left_operand.type == BinaryOperandType::IDENTIFIER)
@@ -1393,15 +1400,19 @@ static auto parse_expression(
                     (void)iter_append(operands_iter, std::move(operand_result.ok));
                 }
 
+                ASTNodeType const node_type =
+                    (op_type == TokenType::MULTIPLY) ? ASTNodeType::BINARY_MUL :
+                    (op_type == TokenType::DIVIDE)   ? ASTNodeType::BINARY_DIV :
+                                                       ASTNodeType::BINARY_ADD;
+                BinaryOperatorType const op =
+                    (op_type == TokenType::MULTIPLY) ? BinaryOperatorType::MUL :
+                    (op_type == TokenType::DIVIDE)   ? BinaryOperatorType::DIV :
+                                                       BinaryOperatorType::ADD;
                 return ok<ASTNode, ParseError>(ASTNode {
-                    .type = (op_type == TokenType::MULTIPLY)
-                        ? ASTNodeType::BINARY_MUL
-                        : ASTNodeType::BINARY_ADD,
+                    .type = node_type,
                     .parent = nullptr,
                     .binary_operation = {
-                        .oprt = (op_type == TokenType::MULTIPLY)
-                            ? BinaryOperatorType::MUL
-                            : BinaryOperatorType::ADD,
+                        .oprt = op,
                         .operands = Array<BinaryOperand>(
                             operands_iter->elements.data + operands_begin,
                             operands_iter->current_index - operands_begin
@@ -1768,7 +1779,8 @@ static auto parse_statement(
                 break;
             }
             case TokenType::ADD:
-            case TokenType::MULTIPLY: {
+            case TokenType::MULTIPLY:
+            case TokenType::DIVIDE: {
                 TokenType const op_type = peeked_token->type;
                 size_t operands_begin = operands_iter->current_index;
                 (void)iter_append(operands_iter, BinaryOperand {
@@ -1799,15 +1811,19 @@ static auto parse_statement(
                     }
                 }
 
+                ASTNodeType const node_type =
+                    (op_type == TokenType::MULTIPLY) ? ASTNodeType::BINARY_MUL :
+                    (op_type == TokenType::DIVIDE)   ? ASTNodeType::BINARY_DIV :
+                                                       ASTNodeType::BINARY_ADD;
+                BinaryOperatorType const bin_op =
+                    (op_type == TokenType::MULTIPLY) ? BinaryOperatorType::MUL :
+                    (op_type == TokenType::DIVIDE)   ? BinaryOperatorType::DIV :
+                                                       BinaryOperatorType::ADD;
                 iter_append(nodes_block_iter, ASTNode {
-                    .type = (op_type == TokenType::MULTIPLY)
-                        ? ASTNodeType::BINARY_MUL
-                        : ASTNodeType::BINARY_ADD,
+                    .type = node_type,
                     .parent = parent_node,
                     .binary_operation = {
-                        .oprt = (op_type == TokenType::MULTIPLY)
-                            ? BinaryOperatorType::MUL
-                            : BinaryOperatorType::ADD,
+                        .oprt = bin_op,
                         .operands = Array<BinaryOperand>(
                             operands_iter->elements.data + operands_begin,
                             operands_iter->current_index - operands_begin

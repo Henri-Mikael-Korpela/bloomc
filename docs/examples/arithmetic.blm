@@ -12,3 +12,10 @@ main :: proc() ->
         y := 10 * x * 5
         z := x * y
         print("Multiplication: X: {}, Y: {}, Z: {}\n", x, y, z)
+    
+    // Division
+    ->
+        x := 4 / 2
+        y := 10 / x / 2
+        z := x / y
+        print("Division: X: {}, Y: {}, Z: {}\n", x, y, z)

@@ -317,6 +317,10 @@ auto tokenize(Str *input, ArenaAllocator *allocator) -> Array<Token> {
                 current_position.col += 1;
             }
         }
+        else if (c == static_cast<char>(TokenType::MULTIPLY)) {
+            append_token_of_type(TokenType::MULTIPLY);
+            current_position.col += 1;
+        }
         else if (c == static_cast<char>(TokenType::ADD)) {
             if (char next_char = next_char_or_null_char(input, i); next_char == '=') {
                 i++;

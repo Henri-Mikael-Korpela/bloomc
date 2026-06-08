@@ -11,6 +11,7 @@ enum class ASTNodeType : uint8_t {
     ARRAY_ELEMENT_ASSIGN,
     ARRAY_INIT,
     BINARY_ADD,
+    BINARY_MUL,
     BOOLEAN_LITERAL,
     BREAK,
     BUILTIN_LENGTH,
@@ -41,6 +42,7 @@ enum class ASTNodeType : uint8_t {
 
 enum class BinaryOperatorType : uint8_t {
     ADD = '+',
+    MUL = '*',
 };
 
 struct IntegerLiteralASTNode {
@@ -222,6 +224,7 @@ constexpr auto to_string(ASTNodeType type) -> Str {
         case ASTNodeType::ARRAY_ELEMENT_ASSIGN: return STR("array_element_assign");
         case ASTNodeType::ARRAY_INIT:           return STR("array_init");
         case ASTNodeType::BINARY_ADD:          return STR("binary_add");
+        case ASTNodeType::BINARY_MUL:          return STR("binary_mul");
         case ASTNodeType::BOOLEAN_LITERAL:     return STR("boolean_literal");
         case ASTNodeType::BREAK:               return STR("break");
         case ASTNodeType::BUILTIN_LENGTH:          return STR("builtin_length");

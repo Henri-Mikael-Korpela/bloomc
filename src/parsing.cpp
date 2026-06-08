@@ -418,19 +418,21 @@ static auto parse_proc_call_arguments(
         });
     };
 
-    // Given a first operand already parsed, checks for '+' and builds a BINARY_ADD
-    // argument node if found, otherwise converts the single operand to an ASTNode.
-    // Returns false on error.
+    // Given a first operand already parsed, checks for '+' or '*' and builds a
+    // BINARY_ADD or BINARY_MUL argument node if found, otherwise converts the
+    // single operand to an ASTNode. Returns false on error.
     auto emit_operand_or_binary_add = [&](BinaryOperand first_op) -> bool {
-        if (tokens_iter->current_index < tokens_iter->elements.length &&
-            iter_peek(tokens_iter)->type == TokenType::ADD)
-        {
+        auto const peek_type = (tokens_iter->current_index < tokens_iter->elements.length)
+            ? iter_peek(tokens_iter)->type
+            : TokenType::UNKNOWN;
+        if (peek_type == TokenType::ADD || peek_type == TokenType::MULTIPLY) {
+            TokenType const op_type = peek_type;
             size_t const operands_begin = operands_iter->current_index;
             (void)iter_append(operands_iter, std::move(first_op));
             while (tokens_iter->current_index < tokens_iter->elements.length &&
-                   iter_peek(tokens_iter)->type == TokenType::ADD)
+                   iter_peek(tokens_iter)->type == op_type)
             {
-                (void)iter_next(tokens_iter); // consume +
+                (void)iter_next(tokens_iter); // consume operator
                 auto *rhs_tok = iter_next(tokens_iter);
                 auto rhs = parse_simple_operand(rhs_tok);
                 if (!is_ok(&rhs)) {
@@ -440,10 +442,14 @@ static auto parse_proc_call_arguments(
                 (void)iter_append(operands_iter, std::move(rhs.ok));
             }
             (void)iter_append(nodes_block_iter, ASTNode {
-                .type = ASTNodeType::BINARY_ADD,
+                .type = (op_type == TokenType::MULTIPLY)
+                    ? ASTNodeType::BINARY_MUL
+                    : ASTNodeType::BINARY_ADD,
                 .parent = proc_call_node,
                 .binary_operation = {
-                    .oprt = BinaryOperatorType::ADD,
+                    .oprt = (op_type == TokenType::MULTIPLY)
+                        ? BinaryOperatorType::MUL
+                        : BinaryOperatorType::ADD,
                     .operands = Array<BinaryOperand>(
                         operands_iter->elements.data + operands_begin,
                         operands_iter->current_index - operands_begin
@@ -1314,11 +1320,15 @@ static auto parse_expression(
             }
             auto left_operand = left_result.ok;
 
-            // Peek for a binary add operator; if found, collect all operands
-            if (tokens_iter->current_index < tokens_iter->elements.length &&
-                iter_peek(tokens_iter)->type == TokenType::ADD)
-            {
-                if (left_operand.type == BinaryOperandType::IDENTIFIER) {
+            // Peek for a binary operator; if found, collect all operands
+            auto const peek_op = (tokens_iter->current_index < tokens_iter->elements.length)
+                ? iter_peek(tokens_iter)->type
+                : TokenType::UNKNOWN;
+            if (peek_op == TokenType::ADD || peek_op == TokenType::MULTIPLY) {
+                TokenType const op_type = peek_op;
+                if (op_type == TokenType::ADD &&
+                    left_operand.type == BinaryOperandType::IDENTIFIER)
+                {
                     Str const *iname = &left_operand.identifier;
                     for (size_t vi = context->var_type_count; vi-- > 0; ) {
                         Str const *vname = &context->var_types[vi].name;
@@ -1340,12 +1350,13 @@ static auto parse_expression(
                 (void)iter_append(operands_iter, std::move(left_operand));
 
                 while (tokens_iter->current_index < tokens_iter->elements.length &&
-                       iter_peek(tokens_iter)->type == TokenType::ADD)
+                       iter_peek(tokens_iter)->type == op_type)
                 {
-                    (void)iter_next(tokens_iter); // consume '+'
+                    (void)iter_next(tokens_iter); // consume operator
                     Token *operand_token = iter_next(tokens_iter);
-                    if (operand_token->type == TokenType::KEYWORD_TRUE ||
-                        operand_token->type == TokenType::KEYWORD_FALSE)
+                    if (op_type == TokenType::ADD &&
+                        (operand_token->type == TokenType::KEYWORD_TRUE ||
+                         operand_token->type == TokenType::KEYWORD_FALSE))
                     {
                         size_t const bool_width =
                             (operand_token->type == TokenType::KEYWORD_TRUE) ? 4 : 5;
@@ -1356,7 +1367,9 @@ static auto parse_expression(
                             .size_token_width = bool_width,
                         });
                     }
-                    if (operand_token->type == TokenType::IDENTIFIER) {
+                    if (op_type == TokenType::ADD &&
+                        operand_token->type == TokenType::IDENTIFIER)
+                    {
                         Str const *iname = &operand_token->identifier.content;
                         for (size_t vi = context->var_type_count; vi-- > 0; ) {
                             Str const *vname = &context->var_types[vi].name;
@@ -1381,10 +1394,14 @@ static auto parse_expression(
                 }
 
                 return ok<ASTNode, ParseError>(ASTNode {
-                    .type = ASTNodeType::BINARY_ADD,
+                    .type = (op_type == TokenType::MULTIPLY)
+                        ? ASTNodeType::BINARY_MUL
+                        : ASTNodeType::BINARY_ADD,
                     .parent = nullptr,
                     .binary_operation = {
-                        .oprt = BinaryOperatorType::ADD,
+                        .oprt = (op_type == TokenType::MULTIPLY)
+                            ? BinaryOperatorType::MUL
+                            : BinaryOperatorType::ADD,
                         .operands = Array<BinaryOperand>(
                             operands_iter->elements.data + operands_begin,
                             operands_iter->current_index - operands_begin
@@ -1750,7 +1767,9 @@ static auto parse_statement(
                 (void)iter_next(tokens_iter);
                 break;
             }
-            case TokenType::ADD: {
+            case TokenType::ADD:
+            case TokenType::MULTIPLY: {
+                TokenType const op_type = peeked_token->type;
                 size_t operands_begin = operands_iter->current_index;
                 (void)iter_append(operands_iter, BinaryOperand {
                     .type = BinaryOperandType::IDENTIFIER,
@@ -1758,9 +1777,9 @@ static auto parse_statement(
                 });
 
                 while (tokens_iter->current_index < tokens_iter->elements.length &&
-                       iter_peek(tokens_iter)->type == TokenType::ADD)
+                       iter_peek(tokens_iter)->type == op_type)
                 {
-                    (void)iter_next(tokens_iter); // consume '+'
+                    (void)iter_next(tokens_iter); // consume operator
                     Token *operand_token = iter_next(tokens_iter);
                     switch (operand_token->type) {
                         case TokenType::IDENTIFIER:
@@ -1781,10 +1800,14 @@ static auto parse_statement(
                 }
 
                 iter_append(nodes_block_iter, ASTNode {
-                    .type = ASTNodeType::BINARY_ADD,
+                    .type = (op_type == TokenType::MULTIPLY)
+                        ? ASTNodeType::BINARY_MUL
+                        : ASTNodeType::BINARY_ADD,
                     .parent = parent_node,
                     .binary_operation = {
-                        .oprt = BinaryOperatorType::ADD,
+                        .oprt = (op_type == TokenType::MULTIPLY)
+                            ? BinaryOperatorType::MUL
+                            : BinaryOperatorType::ADD,
                         .operands = Array<BinaryOperand>(
                             operands_iter->elements.data + operands_begin,
                             operands_iter->current_index - operands_begin

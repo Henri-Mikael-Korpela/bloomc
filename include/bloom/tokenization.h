@@ -13,6 +13,7 @@ enum class TokenType : uint8_t {
     ADDRESS_OF        = '%',
     PARENTHESIS_OPEN  = '(',
     PARENTHESIS_CLOSE = ')',
+    MULTIPLY          = '*',
     ADD               = '+',
     COMMA             = ',',
     BRACKET_OPEN      = '[',
@@ -97,6 +98,7 @@ constexpr auto to_string(TokenType type) -> Str {
     #define STR(x) cstr_to_str(x)
     switch (type) {
         case TokenType::ADD:               return STR("+");
+        case TokenType::MULTIPLY:          return STR("*");
         case TokenType::ADDRESS_OF:        return STR("%");
         case TokenType::ADD_ASSIGN:        return STR("+=");
         case TokenType::ARROW:             return STR("->");

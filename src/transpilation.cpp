@@ -542,6 +542,18 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
                 std::function<void(Array<ASTNode>*, ASTNode*, int, bool)> emit_body;
 
                 emit_body = [&](Array<ASTNode> *body, ASTNode *owner, int depth, bool last_as_return) {
+                    auto push_tabs = [&]() {
+                        for (int d = 0; d < depth; d++) { PUSH_STR('\t'); }
+                    };
+
+                    bool has_defers = false;
+                    for (size_t bi = 0; bi < body->length; bi++) {
+                        if (body->data[bi].type == ASTNodeType::DEFER) {
+                            has_defers = true;
+                            break;
+                        }
+                    }
+
                     size_t last_non_defer_bi = body->length;
                     if (last_as_return) {
                         for (size_t bi = 0; bi < body->length; bi++) {
@@ -550,15 +562,36 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
                             }
                         }
                     }
+
+                    // When defers coexist with a return value, capture the return value
+                    // into a temp variable first, run the defers, then return the variable.
+                    bool const needs_return_var = last_as_return && has_defers && last_non_defer_bi < body->length;
+
                     for (size_t bi = 0; bi < body->length; bi++) {
                         auto *s = &body->data[bi];
                         if (s->type == ASTNodeType::DEFER) { continue; }
-                        emit_stmt(s, owner, depth, last_as_return && bi == last_non_defer_bi);
+                        if (needs_return_var && bi == last_non_defer_bi) {
+                            push_tabs();
+                            PUSH_STR(return_type_c);
+                            PUSH_STR(" __bloom_return_val = ");
+                            PUSH_INT(s->integer_literal.value.value);
+                            PUSH_STR(";\n");
+                        }
+                        else {
+                            bool const is_return = !needs_return_var && last_as_return && bi == last_non_defer_bi;
+                            emit_stmt(s, owner, depth, is_return);
+                        }
                     }
+
                     for (size_t bi = body->length; bi-- > 0; ) {
                         auto *s = &body->data[bi];
                         if (s->type != ASTNodeType::DEFER) { continue; }
                         emit_stmt(s, owner, depth, false);
+                    }
+
+                    if (needs_return_var) {
+                        push_tabs();
+                        PUSH_STR("return __bloom_return_val;\n");
                     }
                 };
 
@@ -570,6 +603,13 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
                         for (int d = 0; d < depth; d++) { PUSH_STR('\t'); }
                     };
                     switch (stmt->type) {
+                        case ASTNodeType::INTEGER_LITERAL: {
+                            push_tabs();
+                            if (emit_as_return) { PUSH_STR("return "); }
+                            PUSH_INT(stmt->integer_literal.value.value);
+                            PUSH_STR(";\n");
+                            break;
+                        }
                         case ASTNodeType::BINARY_ADD: {
                             push_tabs();
                             if (emit_as_return) { PUSH_STR("return "); }

@@ -1,0 +1,12 @@
+foo :: proc() Int ->
+    defer print("Foo: #1\n")
+    print("Foo: #2\n")
+    3
+
+main :: proc() ->
+    defer print("#1\n")
+    defer print("#2\n")
+    print("#3\n")
+
+    x := foo()
+    print("X: {}\n", x)

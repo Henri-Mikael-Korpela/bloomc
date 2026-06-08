@@ -2439,6 +2439,19 @@ static auto parse_statement(
         }
         break;
     }
+    case TokenType::INTEGER_LITERAL: {
+        (void)iter_append(nodes_block_iter, ASTNode {
+            .type = ASTNodeType::INTEGER_LITERAL,
+            .parent = parent_node,
+            .integer_literal = { .value = { .value = next_token->integer_literal.value } },
+        });
+        assert(
+            iter_current(tokens_iter)->type == TokenType::NEWLINE ||
+            iter_current(tokens_iter)->type == TokenType::END &&
+            "Expected newline or end token after integer literal");
+        (void)iter_next(tokens_iter);
+        break;
+    }
     default:
         break;
     }

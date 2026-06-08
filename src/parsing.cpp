@@ -845,10 +845,16 @@ static auto parse_indented_body(
     size_t current_indent_level,
     Array<ASTNode> *body
 ) -> bool {
-    while (tokens_iter->current_index < tokens_iter->elements.length &&
-           iter_peek(tokens_iter)->type == TokenType::INDENT &&
-           iter_peek(tokens_iter)->indent.level > current_indent_level)
-    {
+    while (tokens_iter->current_index < tokens_iter->elements.length) {
+        if (iter_peek(tokens_iter)->type == TokenType::NEWLINE) {
+            (void)iter_next(tokens_iter);
+            continue;
+        }
+        if (iter_peek(tokens_iter)->type != TokenType::INDENT ||
+            iter_peek(tokens_iter)->indent.level <= current_indent_level)
+        {
+            break;
+        }
         auto *body_indent = iter_next(tokens_iter);
         if (!parse_statement(tokens_iter, context, nodes_block_iter, parent_node,
                              proc_params_block, proc_params_iter, types_iter,
@@ -2450,6 +2456,28 @@ static auto parse_statement(
             iter_current(tokens_iter)->type == TokenType::END &&
             "Expected newline or end token after integer literal");
         (void)iter_next(tokens_iter);
+        break;
+    }
+    case TokenType::ARROW: {
+        if (expect_token_or_append_error(tokens_iter, TokenType::NEWLINE, errors) == nullptr) { return false; }
+
+        auto *scope_node = iter_append(nodes_block_iter, ASTNode {
+            .type = ASTNodeType::SCOPE,
+            .parent = parent_node,
+            .scope = {
+                .body = Array<ASTNode>(
+                    nodes_block_iter->elements.data + nodes_block_iter->current_index + 1,
+                    0
+                ),
+            },
+        });
+
+        if (!parse_indented_body(tokens_iter, context, nodes_block_iter, scope_node,
+                                 proc_params_block, proc_params_iter, types_iter,
+                                 operands_iter, array_elements_iter, errors,
+                                 current_indent_level, &scope_node->scope.body)) {
+            return false;
+        }
         break;
     }
     default:

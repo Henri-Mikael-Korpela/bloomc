@@ -1,12 +1,26 @@
 foo :: proc() Int ->
+    // Defer with return value in the same scope
     defer print("Foo: #1\n")
     print("Foo: #2\n")
     3
 
 main :: proc() ->
-    defer print("#1\n")
-    defer print("#2\n")
-    print("#3\n")
+    // Procedure top level scope with defer
+    defer print("Proc top level: #1\n")
+    defer print("Proc top level: #2\n")
+    print("Proc top level: #3\n")
+
+    // Inner scopes with defer
+    ->
+        defer print("Inner scope, #1\n")
+        defer print("Inner scope, #2\n")
+
+        ->
+            defer print("Even deeper scope, #1\n")
+            defer print("Even deeper scope, #2\n")
+            print("Even deeper scope, #3\n")
+
+        print("Inner scope, #3\n")
 
     x := foo()
     print("X: {}\n", x)

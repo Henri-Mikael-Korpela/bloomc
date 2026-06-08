@@ -23,6 +23,7 @@ enum class ASTNodeType : uint8_t {
     FOR_LOOP,
     FOR_RANGE_LOOP,
     IF_ELSE,
+    SCOPE,
     IDENTIFIER,
     INTEGER_LITERAL,
     MEMBER_ACCESS,
@@ -178,6 +179,9 @@ struct ASTNode {
             Str caller_identifier;
         } defer_stmt;
         struct {
+            Array<ASTNode> body;
+        } scope;
+        struct {
             Str variable_name;
             BinaryOperand operand;
         } add_assign;
@@ -229,6 +233,7 @@ constexpr auto to_string(ASTNodeType type) -> Str {
         case ASTNodeType::FOR_IN_LOOP:         return STR("for_in_loop");
         case ASTNodeType::FOR_LOOP:            return STR("for_loop");
         case ASTNodeType::FOR_RANGE_LOOP:      return STR("for_range_loop");
+        case ASTNodeType::SCOPE:               return STR("scope");
         case ASTNodeType::IF_ELSE:             return STR("if_else");
         case ASTNodeType::IDENTIFIER:          return STR("identifier");
         case ASTNodeType::INTEGER_LITERAL:     return STR("integer_literal");

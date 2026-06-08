@@ -546,9 +546,14 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
                         for (int d = 0; d < depth; d++) { PUSH_STR('\t'); }
                     };
 
+                    // Only consider nodes directly owned by this scope (parent == owner).
+                    // The body array may also contain nodes from nested scopes (whose
+                    // parent is a child scope node), and those must not affect this scope's
+                    // defer or return-value logic.
                     bool has_defers = false;
                     for (size_t bi = 0; bi < body->length; bi++) {
-                        if (body->data[bi].type == ASTNodeType::DEFER) {
+                        auto *s = &body->data[bi];
+                        if (s->type == ASTNodeType::DEFER && s->parent == owner) {
                             has_defers = true;
                             break;
                         }
@@ -557,7 +562,8 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
                     size_t last_non_defer_bi = body->length;
                     if (last_as_return) {
                         for (size_t bi = 0; bi < body->length; bi++) {
-                            if (body->data[bi].type != ASTNodeType::DEFER) {
+                            auto *s = &body->data[bi];
+                            if (s->type != ASTNodeType::DEFER && s->parent == owner) {
                                 last_non_defer_bi = bi;
                             }
                         }
@@ -1058,6 +1064,14 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
                         case ASTNodeType::BREAK: {
                             push_tabs();
                             PUSH_STR("break;\n");
+                            break;
+                        }
+                        case ASTNodeType::SCOPE: {
+                            push_tabs();
+                            PUSH_STR("{\n");
+                            emit_body(&stmt->scope.body, stmt, depth + 1, false);
+                            push_tabs();
+                            PUSH_STR("}\n");
                             break;
                         }
                         case ASTNodeType::FOR_IN_LOOP: {

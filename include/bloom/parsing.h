@@ -9,9 +9,11 @@ enum class ASTNodeType : uint8_t {
     ADDRESS_OF,
     ARRAY_ACCESS,
     ARRAY_ELEMENT_ASSIGN,
+    ARRAY_ELEMENT_MEMBER_ACCESS,
     ARRAY_INIT,
     ARRAY_RANGE_ASSIGN,
     ARRAY_SLICE,
+    ARRAY_STRUCT_INIT,
     BINARY_ADD,
     BINARY_DIV,
     BINARY_MUL,
@@ -225,6 +227,15 @@ struct ASTNode {
         } array_slice;
         struct {
             Str element_type;
+            Array<ASTNode> elements;
+        } array_struct_init;
+        struct {
+            Str array_name;
+            int64_t element_index;
+            Str field_name;
+        } array_element_member_access;
+        struct {
+            Str element_type;
             ASTNode *expr;
         } slice_cast;
         struct {
@@ -250,7 +261,9 @@ constexpr auto to_string(ASTNodeType type) -> Str {
         case ASTNodeType::ARRAY_ELEMENT_ASSIGN: return STR("array_element_assign");
         case ASTNodeType::ARRAY_INIT:           return STR("array_init");
         case ASTNodeType::ARRAY_RANGE_ASSIGN:   return STR("array_range_assign");
-        case ASTNodeType::ARRAY_SLICE:          return STR("array_slice");
+        case ASTNodeType::ARRAY_SLICE:                   return STR("array_slice");
+        case ASTNodeType::ARRAY_STRUCT_INIT:             return STR("array_struct_init");
+        case ASTNodeType::ARRAY_ELEMENT_MEMBER_ACCESS:   return STR("array_element_member_access");
         case ASTNodeType::BINARY_ADD:          return STR("binary_add");
         case ASTNodeType::BINARY_DIV:          return STR("binary_div");
         case ASTNodeType::BINARY_MUL:          return STR("binary_mul");

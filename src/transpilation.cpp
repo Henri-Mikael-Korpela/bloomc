@@ -146,6 +146,41 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
         return len;
     };
 
+    struct ArrayStructVar { Str name; Str element_type; };
+    ArrayStructVar array_struct_vars[64] = {};
+    size_t array_struct_var_count = 0;
+
+    auto register_array_struct_var = [&](Str name, Str elem_type) {
+        if (array_struct_var_count < 64) {
+            array_struct_vars[array_struct_var_count++] = { .name = name, .element_type = elem_type };
+        }
+    };
+
+    auto lookup_array_element_member_kind = [&](Str array_name, Str field_name) -> VarKind {
+        Str elem_type = {};
+        for (size_t i = 0; i < array_struct_var_count; i++) {
+            if (array_struct_vars[i].name.length == array_name.length &&
+                strncmp(array_struct_vars[i].name.data, array_name.data, array_name.length) == 0)
+            {
+                elem_type = array_struct_vars[i].element_type;
+                break;
+            }
+        }
+        if (elem_type.length == 0) { return VarKind::INT; }
+        for (size_t i = 0; i < struct_def_count; i++) {
+            if (struct_defs[i].name.length != elem_type.length ||
+                strncmp(struct_defs[i].name.data, elem_type.data, elem_type.length) != 0) { continue; }
+            for (size_t j = 0; j < struct_defs[i].field_count; j++) {
+                if (struct_defs[i].fields[j].name.length == field_name.length &&
+                    strncmp(struct_defs[i].fields[j].name.data, field_name.data, field_name.length) == 0)
+                {
+                    return struct_defs[i].fields[j].kind;
+                }
+            }
+        }
+        return VarKind::INT;
+    };
+
     auto is_user_proc = [&](Str name) -> bool {
         for (size_t ni = 0; ni < ast_nodes->length; ni++) {
             auto *n = &ast_nodes->data[ni];
@@ -276,6 +311,13 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
                     PUSH_STR("}");
                     break;
                 }
+                case ASTNodeType::ARRAY_ELEMENT_MEMBER_ACCESS:
+                    PUSH_STR(arg->array_element_member_access.array_name);
+                    PUSH_STR("[");
+                    PUSH_INT(arg->array_element_member_access.element_index);
+                    PUSH_STR("].");
+                    PUSH_STR(arg->array_element_member_access.field_name);
+                    break;
                 default:
                     assert(false && "Unsupported argument type in emit_proc_call_args");
             }
@@ -1047,6 +1089,45 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
                                                 emit_binary_operand(&ops->data[1]);
                                                 PUSH_STR(") ? \"true\" : \"false\", stdout);\n");
                                             }
+                                            else if (arg->type == ASTNodeType::ARRAY_ELEMENT_MEMBER_ACCESS) {
+                                                VarKind kind = lookup_array_element_member_kind(
+                                                    arg->array_element_member_access.array_name,
+                                                    arg->array_element_member_access.field_name
+                                                );
+                                                if (kind == VarKind::BLOOM_STR) {
+                                                    PUSH_STR("fwrite(");
+                                                    PUSH_STR(arg->array_element_member_access.array_name);
+                                                    PUSH_STR("[");
+                                                    PUSH_INT(arg->array_element_member_access.element_index);
+                                                    PUSH_STR("].");
+                                                    PUSH_STR(arg->array_element_member_access.field_name);
+                                                    PUSH_STR(".data, 1, ");
+                                                    PUSH_STR(arg->array_element_member_access.array_name);
+                                                    PUSH_STR("[");
+                                                    PUSH_INT(arg->array_element_member_access.element_index);
+                                                    PUSH_STR("].");
+                                                    PUSH_STR(arg->array_element_member_access.field_name);
+                                                    PUSH_STR(".length, stdout);\n");
+                                                }
+                                                else if (kind == VarKind::BOOL) {
+                                                    PUSH_STR("fputs(");
+                                                    PUSH_STR(arg->array_element_member_access.array_name);
+                                                    PUSH_STR("[");
+                                                    PUSH_INT(arg->array_element_member_access.element_index);
+                                                    PUSH_STR("].");
+                                                    PUSH_STR(arg->array_element_member_access.field_name);
+                                                    PUSH_STR(" ? \"true\" : \"false\", stdout);\n");
+                                                }
+                                                else {
+                                                    PUSH_STR("printf(\"%d\", ");
+                                                    PUSH_STR(arg->array_element_member_access.array_name);
+                                                    PUSH_STR("[");
+                                                    PUSH_INT(arg->array_element_member_access.element_index);
+                                                    PUSH_STR("].");
+                                                    PUSH_STR(arg->array_element_member_access.field_name);
+                                                    PUSH_STR(");\n");
+                                                }
+                                            }
                                             arg_idx++;
                                         }
                                         k++;
@@ -1198,6 +1279,30 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
                                         if (i != 0) { PUSH_STR(", "); }
                                         PUSH_INT(elems->data[i]);
                                     }
+                                }
+                                PUSH_STR("};\n");
+                                break;
+                            }
+                            if (expr->type == ASTNodeType::ARRAY_STRUCT_INIT) {
+                                register_array_struct_var(stmt->variable_definition.name, expr->array_struct_init.element_type);
+                                register_var(stmt->variable_definition.name, VarKind::STRUCT);
+                                PUSH_STR(expr->array_struct_init.element_type);
+                                PUSH_STR(" ");
+                                PUSH_STR(stmt->variable_definition.name);
+                                PUSH_STR("[] = {");
+                                auto *elems = &expr->array_struct_init.elements;
+                                for (size_t ei = 0; ei < elems->length; ei++) {
+                                    if (ei != 0) { PUSH_STR(", "); }
+                                    auto *elem = &elems->data[ei];
+                                    PUSH_STR("{");
+                                    for (size_t fi = 0; fi < elem->struct_init.field_names.length; fi++) {
+                                        if (fi != 0) { PUSH_STR(", "); }
+                                        PUSH_STR(".");
+                                        PUSH_STR(elem->struct_init.field_names.data[fi].name);
+                                        PUSH_STR(" = ");
+                                        emit_binary_operand(&elem->struct_init.field_values.data[fi]);
+                                    }
+                                    PUSH_STR("}");
                                 }
                                 PUSH_STR("};\n");
                                 break;

@@ -1,3 +1,6 @@
+Event :: struct ->
+    name: Str
+
 main :: proc() ->
     // Array initialization with
     // deduced array length
@@ -24,9 +27,25 @@ main :: proc() ->
     // Array initialization
     // with partial initialization using a range
     e := [4]Int { 1, 1..<4 = 9 }
-    printf("E: %i, %i, %i, %i\n", e[0], e[1], e[2], e[3])
+    print("E: {}, {}, {}, {}\n", e[0], e[1], e[2], e[3])
 
     // Value assignments to array elements
     e[0] = 2
     e[1] = 3
-    printf("E: %i, %i, %i, %i", e[0], e[1], e[2], e[3])
+    print("E: {}, {}, {}, {}\n", e[0], e[1], e[2], e[3])
+
+    // Array of structs
+    events := [const]Event{
+        Event { name = "Party" },
+        Event { name = "Another party" }
+    }
+    print("Event #1: {}\n", events[0].name)
+    print("Event #2: {}\n", events[1].name)
+
+    // Array of structs with automatic type deduction on element struct type
+    events2 := [const]Event{
+        .{ name = "Party" },
+        .{ name = "Another party" }
+    }
+    print("Event #1: {}\n", events2[0].name)
+    print("Event #2: {}\n", events2[1].name)

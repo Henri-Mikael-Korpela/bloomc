@@ -534,7 +534,7 @@ static auto parse_proc_call_arguments(
                             .expr_node = slice_node,
                         });
                     }
-                    // [N] — regular element access
+                    // [N] — regular element access, or [N].field — array element member access
                     auto *cl_tok = iter_next(tokens_iter);
                     if (cl_tok->type != TokenType::BRACKET_CLOSE) {
                         return err<BinaryOperand, ParseError>(ParseError {
@@ -542,6 +542,33 @@ static auto parse_proc_call_arguments(
                             .position = cl_tok->position,
                             .src_code_line = __LINE__,
                             .token_type = cl_tok->type,
+                        });
+                    }
+                    if (tokens_iter->current_index < tokens_iter->elements.length &&
+                        iter_peek(tokens_iter)->type == TokenType::DOT)
+                    {
+                        (void)iter_next(tokens_iter); // consume .
+                        auto *field_tok = iter_next(tokens_iter);
+                        if (field_tok->type != TokenType::IDENTIFIER) {
+                            return err<BinaryOperand, ParseError>(ParseError {
+                                .code = ParseErrorCode::UNEXPECTED_TOKEN,
+                                .position = field_tok->position,
+                                .src_code_line = __LINE__,
+                                .token_type = field_tok->type,
+                            });
+                        }
+                        ASTNode *elem_member_node = iter_append(nodes_block_iter, ASTNode {
+                            .type = ASTNodeType::ARRAY_ELEMENT_MEMBER_ACCESS,
+                            .parent = proc_call_node,
+                            .array_element_member_access = {
+                                .array_name = token->identifier.content,
+                                .element_index = idx_tok->integer_literal.value,
+                                .field_name = field_tok->identifier.content,
+                            },
+                        });
+                        return ok<BinaryOperand, ParseError>(BinaryOperand {
+                            .type = BinaryOperandType::EXPR_NODE,
+                            .expr_node = elem_member_node,
                         });
                     }
                     return ok<BinaryOperand, ParseError>(BinaryOperand {
@@ -1262,6 +1289,133 @@ static auto parse_expression(
                 return err<ASTNode, ParseError>(PARSE_ERROR_CREATE(UNEXPECTED_TOKEN, brace_open));
             }
             Token::Position const brace_open_pos = brace_open->position;
+            // Detect struct-init elements: TypeName { ... } or .{ ... }
+            {
+                size_t peek_idx = tokens_iter->current_index;
+                while (peek_idx < tokens_iter->elements.length) {
+                    TokenType const tt = tokens_iter->elements.data[peek_idx].type;
+                    if (tt != TokenType::NEWLINE && tt != TokenType::INDENT && tt != TokenType::COMMA) {
+                        break;
+                    }
+                    peek_idx++;
+                }
+                bool is_struct_array = false;
+                if (peek_idx < tokens_iter->elements.length) {
+                    TokenType const first = tokens_iter->elements.data[peek_idx].type;
+                    if (first == TokenType::DOT &&
+                        peek_idx + 1 < tokens_iter->elements.length &&
+                        tokens_iter->elements.data[peek_idx + 1].type == TokenType::BRACE_OPEN)
+                    {
+                        is_struct_array = true;
+                    }
+                    else if (first == TokenType::IDENTIFIER &&
+                        peek_idx + 1 < tokens_iter->elements.length &&
+                        tokens_iter->elements.data[peek_idx + 1].type == TokenType::BRACE_OPEN)
+                    {
+                        is_struct_array = true;
+                    }
+                }
+                if (is_struct_array) {
+                    size_t const struct_inits_begin = nodes_block_iter->current_index;
+                    size_t struct_elem_count = 0;
+                    while (true) {
+                        auto *tok = iter_next(tokens_iter);
+                        if (tok->type == TokenType::BRACE_CLOSE) {
+                            break;
+                        }
+                        if (tok->type == TokenType::NEWLINE ||
+                            tok->type == TokenType::INDENT ||
+                            tok->type == TokenType::COMMA)
+                        {
+                            continue;
+                        }
+                        bool const is_dot_syntax = (tok->type == TokenType::DOT);
+                        if (!is_dot_syntax && tok->type != TokenType::IDENTIFIER) {
+                            return err<ASTNode, ParseError>(PARSE_ERROR_CREATE(UNEXPECTED_TOKEN, tok));
+                        }
+                        auto *bopen = iter_next(tokens_iter);
+                        if (bopen->type != TokenType::BRACE_OPEN) {
+                            return err<ASTNode, ParseError>(PARSE_ERROR_CREATE(UNEXPECTED_TOKEN, bopen));
+                        }
+                        size_t const field_names_begin = proc_params_iter->current_index;
+                        size_t const field_values_begin = operands_iter->current_index;
+                        while (true) {
+                            auto *ftok = iter_next(tokens_iter);
+                            if (ftok->type == TokenType::BRACE_CLOSE) {
+                                break;
+                            }
+                            if (ftok->type == TokenType::COMMA ||
+                                ftok->type == TokenType::NEWLINE ||
+                                ftok->type == TokenType::INDENT)
+                            {
+                                continue;
+                            }
+                            if (ftok->type != TokenType::IDENTIFIER) {
+                                return err<ASTNode, ParseError>(PARSE_ERROR_CREATE(UNEXPECTED_TOKEN, ftok));
+                            }
+                            Str const field_name = ftok->identifier.content;
+                            auto *eq = iter_next(tokens_iter);
+                            if (eq->type != TokenType::EQUALS) {
+                                return err<ASTNode, ParseError>(PARSE_ERROR_CREATE(UNEXPECTED_TOKEN, eq));
+                            }
+                            auto *val_tok = iter_next(tokens_iter);
+                            switch (val_tok->type) {
+                                case TokenType::INTEGER_LITERAL:
+                                    (void)iter_append(proc_params_iter, ProcParameterASTNode { .name = field_name, .type_name = {} });
+                                    (void)iter_append(operands_iter, BinaryOperand {
+                                        .type = BinaryOperandType::INTEGER_LITERAL,
+                                        .integer_literal = IntegerLiteralASTNode { .value = val_tok->integer_literal.value },
+                                    });
+                                    break;
+                                case TokenType::STRING_LITERAL:
+                                    (void)iter_append(proc_params_iter, ProcParameterASTNode { .name = field_name, .type_name = {} });
+                                    (void)iter_append(operands_iter, BinaryOperand {
+                                        .type = BinaryOperandType::STRING_LITERAL,
+                                        .string_literal = val_tok->string_literal.content,
+                                    });
+                                    break;
+                                case TokenType::IDENTIFIER:
+                                    (void)iter_append(proc_params_iter, ProcParameterASTNode { .name = field_name, .type_name = {} });
+                                    (void)iter_append(operands_iter, BinaryOperand {
+                                        .type = BinaryOperandType::IDENTIFIER,
+                                        .identifier = val_tok->identifier.content,
+                                    });
+                                    break;
+                                default:
+                                    return err<ASTNode, ParseError>(PARSE_ERROR_CREATE(UNEXPECTED_TOKEN, val_tok));
+                            }
+                        }
+                        size_t const field_count = proc_params_iter->current_index - field_names_begin;
+                        (void)iter_append(nodes_block_iter, ASTNode {
+                            .type = ASTNodeType::STRUCT_INIT,
+                            .parent = nullptr,
+                            .struct_init = {
+                                .type_name = element_type,
+                                .field_names = Array<ProcParameterASTNode>(
+                                    proc_params_iter->elements.data + field_names_begin,
+                                    field_count
+                                ),
+                                .field_values = Array<BinaryOperand>(
+                                    operands_iter->elements.data + field_values_begin,
+                                    field_count
+                                ),
+                            },
+                        });
+                        struct_elem_count++;
+                    }
+                    return ok<ASTNode, ParseError>(ASTNode {
+                        .type = ASTNodeType::ARRAY_STRUCT_INIT,
+                        .parent = nullptr,
+                        .array_struct_init = {
+                            .element_type = element_type,
+                            .elements = Array<ASTNode>(
+                                nodes_block_iter->elements.data + struct_inits_begin,
+                                struct_elem_count
+                            ),
+                        },
+                    });
+                }
+            }
             size_t elements_begin = array_elements_iter->current_index;
             bool in_range_mode = false;
             Token::Position brace_close_pos = {};

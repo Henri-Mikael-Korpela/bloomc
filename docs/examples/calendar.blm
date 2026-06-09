@@ -26,7 +26,8 @@ Event :: struct ->
 main :: proc() ->
     EVENT_NAME_MAX_LENGTH :: 255
 
-    e1 := Event { id = 1, name = "My event" }
+    events := [const]Event { .{ id = 1, name = "My event" } }
+    e1 := events[0]
     print("Event #1: {}\n", e1.name)
 
     f := file_open_for_write("calendar-db")

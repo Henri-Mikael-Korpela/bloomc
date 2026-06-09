@@ -1283,6 +1283,29 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
                                 PUSH_STR("};\n");
                                 break;
                             }
+                            if (expr->type == ASTNodeType::ARRAY_ACCESS) {
+                                Str elem_type = {};
+                                for (size_t i = 0; i < array_struct_var_count; i++) {
+                                    if (array_struct_vars[i].name.length == expr->array_access.variable_name.length &&
+                                        strncmp(array_struct_vars[i].name.data, expr->array_access.variable_name.data, expr->array_access.variable_name.length) == 0)
+                                    {
+                                        elem_type = array_struct_vars[i].element_type;
+                                        break;
+                                    }
+                                }
+                                if (elem_type.length > 0) {
+                                    register_struct_var(stmt->variable_definition.name, elem_type);
+                                    PUSH_STR(elem_type);
+                                    PUSH_STR(' ');
+                                    PUSH_STR(stmt->variable_definition.name);
+                                    PUSH_STR(" = ");
+                                    PUSH_STR(expr->array_access.variable_name);
+                                    PUSH_STR("[");
+                                    PUSH_INT(expr->array_access.index);
+                                    PUSH_STR("];\n");
+                                    break;
+                                }
+                            }
                             if (expr->type == ASTNodeType::ARRAY_STRUCT_INIT) {
                                 register_array_struct_var(stmt->variable_definition.name, expr->array_struct_init.element_type);
                                 register_var(stmt->variable_definition.name, VarKind::STRUCT);

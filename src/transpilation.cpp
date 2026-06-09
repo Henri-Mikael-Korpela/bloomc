@@ -250,6 +250,7 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
                     Str const &arr_name = arg->array_slice.variable_name;
                     int64_t const offset = (arg->array_slice.start_index < 0) ? 0 : arg->array_slice.start_index;
                     int64_t const end = arg->array_slice.end_index;
+                    Str const &count_id = arg->array_slice.count_identifier;
                     PUSH_STR("(BloomSliceU8){.data = (uint8_t*)");
                     PUSH_STR(arr_name);
                     if (offset > 0) {
@@ -257,7 +258,10 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
                         PUSH_INT(offset);
                     }
                     PUSH_STR(", .length = ");
-                    if (end >= 0) {
+                    if (count_id.data != nullptr) {
+                        PUSH_STR(count_id);
+                    }
+                    else if (end >= 0) {
                         PUSH_INT(end - offset);
                     }
                     else {
@@ -303,6 +307,7 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
                 Str const &arr_name = expr->array_slice.variable_name;
                 int64_t const offset = (expr->array_slice.start_index < 0) ? 0 : expr->array_slice.start_index;
                 int64_t const end = expr->array_slice.end_index;
+                Str const &count_id = expr->array_slice.count_identifier;
                 PUSH_STR("(BloomSliceU8){.data = (uint8_t*)");
                 PUSH_STR(arr_name);
                 if (offset > 0) {
@@ -310,7 +315,10 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
                     PUSH_INT(offset);
                 }
                 PUSH_STR(", .length = ");
-                if (end >= 0) {
+                if (count_id.data != nullptr) {
+                    PUSH_STR(count_id);
+                }
+                else if (end >= 0) {
                     PUSH_INT(end - offset);
                 }
                 else {

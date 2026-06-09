@@ -366,16 +366,8 @@ static auto parse_proc_call_arguments(
                 (void)iter_next(tokens_iter); // consume [
                 auto *idx_tok = iter_next(tokens_iter);
                 if (idx_tok->type == TokenType::RANGE_COUNTED) {
-                    // [..+M] — counted slice from beginning: start at 0, take M elements
+                    // [..+M] or [..+VAR] — counted slice from beginning: start at 0, take M elements
                     auto *count_tok = iter_next(tokens_iter);
-                    if (count_tok->type != TokenType::INTEGER_LITERAL) {
-                        return err<BinaryOperand, ParseError>(ParseError {
-                            .code = ParseErrorCode::UNEXPECTED_TOKEN,
-                            .position = count_tok->position,
-                            .src_code_line = __LINE__,
-                            .token_type = count_tok->type,
-                        });
-                    }
                     auto *cl_tok = iter_next(tokens_iter);
                     if (cl_tok->type != TokenType::BRACKET_CLOSE) {
                         return err<BinaryOperand, ParseError>(ParseError {
@@ -385,15 +377,38 @@ static auto parse_proc_call_arguments(
                             .token_type = cl_tok->type,
                         });
                     }
-                    ASTNode *slice_node = iter_append(nodes_block_iter, ASTNode {
-                        .type = ASTNodeType::ARRAY_SLICE,
-                        .parent = proc_call_node,
-                        .array_slice = {
-                            .variable_name = token->identifier.content,
-                            .start_index = -1,
-                            .end_index = count_tok->integer_literal.value,
-                        },
-                    });
+                    ASTNode *slice_node;
+                    if (count_tok->type == TokenType::INTEGER_LITERAL) {
+                        slice_node = iter_append(nodes_block_iter, ASTNode {
+                            .type = ASTNodeType::ARRAY_SLICE,
+                            .parent = proc_call_node,
+                            .array_slice = {
+                                .variable_name = token->identifier.content,
+                                .start_index = -1,
+                                .end_index = count_tok->integer_literal.value,
+                            },
+                        });
+                    }
+                    else if (count_tok->type == TokenType::IDENTIFIER) {
+                        slice_node = iter_append(nodes_block_iter, ASTNode {
+                            .type = ASTNodeType::ARRAY_SLICE,
+                            .parent = proc_call_node,
+                            .array_slice = {
+                                .variable_name = token->identifier.content,
+                                .start_index = -1,
+                                .end_index = -1,
+                                .count_identifier = count_tok->identifier.content,
+                            },
+                        });
+                    }
+                    else {
+                        return err<BinaryOperand, ParseError>(ParseError {
+                            .code = ParseErrorCode::UNEXPECTED_TOKEN,
+                            .position = count_tok->position,
+                            .src_code_line = __LINE__,
+                            .token_type = count_tok->type,
+                        });
+                    }
                     return ok<BinaryOperand, ParseError>(BinaryOperand {
                         .type = BinaryOperandType::EXPR_NODE,
                         .expr_node = slice_node,
@@ -434,18 +449,10 @@ static auto parse_proc_call_arguments(
                     if (tokens_iter->current_index < tokens_iter->elements.length &&
                         iter_peek(tokens_iter)->type == TokenType::RANGE_COUNTED)
                     {
-                        // [N..+M] — counted slice: start at N, take M elements
+                        // [N..+M] or [N..+VAR] — counted slice: start at N, take M elements
                         int64_t const start_index = idx_tok->integer_literal.value;
                         (void)iter_next(tokens_iter); // consume ..+
                         auto *count_tok = iter_next(tokens_iter);
-                        if (count_tok->type != TokenType::INTEGER_LITERAL) {
-                            return err<BinaryOperand, ParseError>(ParseError {
-                                .code = ParseErrorCode::UNEXPECTED_TOKEN,
-                                .position = count_tok->position,
-                                .src_code_line = __LINE__,
-                                .token_type = count_tok->type,
-                            });
-                        }
                         auto *cl_tok = iter_next(tokens_iter);
                         if (cl_tok->type != TokenType::BRACKET_CLOSE) {
                             return err<BinaryOperand, ParseError>(ParseError {
@@ -455,15 +462,38 @@ static auto parse_proc_call_arguments(
                                 .token_type = cl_tok->type,
                             });
                         }
-                        ASTNode *slice_node = iter_append(nodes_block_iter, ASTNode {
-                            .type = ASTNodeType::ARRAY_SLICE,
-                            .parent = proc_call_node,
-                            .array_slice = {
-                                .variable_name = token->identifier.content,
-                                .start_index = start_index,
-                                .end_index = start_index + count_tok->integer_literal.value,
-                            },
-                        });
+                        ASTNode *slice_node;
+                        if (count_tok->type == TokenType::INTEGER_LITERAL) {
+                            slice_node = iter_append(nodes_block_iter, ASTNode {
+                                .type = ASTNodeType::ARRAY_SLICE,
+                                .parent = proc_call_node,
+                                .array_slice = {
+                                    .variable_name = token->identifier.content,
+                                    .start_index = start_index,
+                                    .end_index = start_index + count_tok->integer_literal.value,
+                                },
+                            });
+                        }
+                        else if (count_tok->type == TokenType::IDENTIFIER) {
+                            slice_node = iter_append(nodes_block_iter, ASTNode {
+                                .type = ASTNodeType::ARRAY_SLICE,
+                                .parent = proc_call_node,
+                                .array_slice = {
+                                    .variable_name = token->identifier.content,
+                                    .start_index = start_index,
+                                    .end_index = -1,
+                                    .count_identifier = count_tok->identifier.content,
+                                },
+                            });
+                        }
+                        else {
+                            return err<BinaryOperand, ParseError>(ParseError {
+                                .code = ParseErrorCode::UNEXPECTED_TOKEN,
+                                .position = count_tok->position,
+                                .src_code_line = __LINE__,
+                                .token_type = count_tok->type,
+                            });
+                        }
                         return ok<BinaryOperand, ParseError>(BinaryOperand {
                             .type = BinaryOperandType::EXPR_NODE,
                             .expr_node = slice_node,
@@ -2143,39 +2173,32 @@ static auto parse_statement(
             case TokenType::ADD_ASSIGN: {
                 (void)iter_next(tokens_iter); // consume +=
 
-                auto *rhs_token = iter_next(tokens_iter);
-                switch (rhs_token->type) {
-                    case TokenType::INTEGER_LITERAL:
-                        (void)iter_append(nodes_block_iter, ASTNode {
-                            .type = ASTNodeType::ADD_ASSIGN,
-                            .parent = parent_node,
-                            .add_assign = {
-                                .variable_name = next_token->identifier.content,
-                                .operand = BinaryOperand {
-                                    .type = BinaryOperandType::INTEGER_LITERAL,
-                                    .integer_literal = IntegerLiteralASTNode { .value = rhs_token->integer_literal.value },
-                                },
-                            },
-                        });
-                        break;
-                    case TokenType::IDENTIFIER:
-                        (void)iter_append(nodes_block_iter, ASTNode {
-                            .type = ASTNodeType::ADD_ASSIGN,
-                            .parent = parent_node,
-                            .add_assign = {
-                                .variable_name = next_token->identifier.content,
-                                .operand = BinaryOperand {
-                                    .type = BinaryOperandType::IDENTIFIER,
-                                    .identifier = rhs_token->identifier.content,
-                                },
-                            },
-                        });
-                        break;
-                    default:
-                        append(errors, PARSE_ERROR_CREATE(UNEXPECTED_TOKEN, rhs_token));
-                        return false;
+                Iterator<Token> expr_tokens_iter;
+                if (!slice_expression_tokens(tokens_iter, errors, &expr_tokens_iter)) {
+                    return false;
                 }
-
+                auto expr_parse_result = parse_expression(
+                    &expr_tokens_iter, context, nodes_block_iter,
+                    proc_params_block, proc_params_iter, types_iter,
+                    operands_iter, array_elements_iter, errors
+                );
+                if (!is_ok(&expr_parse_result)) {
+                    append(errors, expr_parse_result.err);
+                    return false;
+                }
+                ASTNode *expr_ptr = iter_append(nodes_block_iter, std::move(expr_parse_result.ok));
+                (void)iter_append(nodes_block_iter, ASTNode {
+                    .type = ASTNodeType::ADD_ASSIGN,
+                    .parent = parent_node,
+                    .add_assign = {
+                        .variable_name = next_token->identifier.content,
+                        .operand = BinaryOperand {
+                            .type = BinaryOperandType::EXPR_NODE,
+                            .expr_node = expr_ptr,
+                        },
+                    },
+                });
+                tokens_iter->current_index += expr_tokens_iter.current_index;
                 assert(
                     iter_current(tokens_iter)->type == TokenType::NEWLINE ||
                     iter_current(tokens_iter)->type == TokenType::END &&

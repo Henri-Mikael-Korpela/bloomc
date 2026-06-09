@@ -219,8 +219,9 @@ struct ASTNode {
         } array_range_assign;
         struct {
             Str variable_name;
-            int64_t start_index;  // -1 = from beginning (0)
-            int64_t end_index;    // -1 = to end (sizeof)
+            int64_t start_index;     // -1 = from beginning (0)
+            int64_t end_index;       // -1 = to end (sizeof); ignored when count_identifier is set
+            Str count_identifier;    // variable name for counted range [N..+VAR]; empty = use end_index
         } array_slice;
         struct {
             Str element_type;

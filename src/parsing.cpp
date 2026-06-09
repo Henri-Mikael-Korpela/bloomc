@@ -1069,6 +1069,36 @@ static auto parse_expression(
             else {
                 return err<ASTNode, ParseError>(PARSE_ERROR_CREATE(UNEXPECTED_TOKEN, size_token));
             }
+            while (explicit_length >= 0 &&
+                   tokens_iter->current_index < tokens_iter->elements.length &&
+                   iter_peek(tokens_iter)->type == TokenType::ADD)
+            {
+                (void)iter_next(tokens_iter); // consume '+'
+                auto *rhs_token = iter_next(tokens_iter);
+                if (rhs_token->type == TokenType::INTEGER_LITERAL) {
+                    explicit_length += rhs_token->integer_literal.value;
+                }
+                else if (rhs_token->type == TokenType::IDENTIFIER) {
+                    bool found = false;
+                    for (size_t ci = 0; ci < context->constant_count; ci++) {
+                        Str const *cname = &context->constants[ci].name;
+                        Str const *sname = &rhs_token->identifier.content;
+                        if (cname->length == sname->length &&
+                            strncmp(cname->data, sname->data, cname->length) == 0)
+                        {
+                            explicit_length += context->constants[ci].value;
+                            found = true;
+                            break;
+                        }
+                    }
+                    if (!found) {
+                        return err<ASTNode, ParseError>(PARSE_ERROR_CREATE(UNEXPECTED_TOKEN, rhs_token));
+                    }
+                }
+                else {
+                    return err<ASTNode, ParseError>(PARSE_ERROR_CREATE(UNEXPECTED_TOKEN, rhs_token));
+                }
+            }
             auto *bracket_close = iter_next(tokens_iter);
             if (bracket_close->type != TokenType::BRACKET_CLOSE) {
                 return err<ASTNode, ParseError>(PARSE_ERROR_CREATE(UNEXPECTED_TOKEN, bracket_close));

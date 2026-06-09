@@ -24,6 +24,8 @@ Event :: struct ->
     name: Str
 
 main :: proc() ->
+    EVENT_NAME_MAX_LENGTH :: 255
+
     e1 := Event { id = 1, name = "My event" }
     print("Event #1: {}\n", e1.name)
 
@@ -32,7 +34,7 @@ main :: proc() ->
 
     print("Output file path: {}\n", f.path)
 
-    buffer := [9]U8{}
+    buffer := [1 + EVENT_NAME_MAX_LENGTH]U8{}
     name_len := length_in_bytes(e1.name)
     buffer[0] = name_len
     buffer[1..+name_len] = []U8(e1.name)

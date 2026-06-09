@@ -219,6 +219,8 @@ struct ASTNode {
         } array_range_assign;
         struct {
             Str variable_name;
+            int64_t start_index;  // -1 = from beginning (0)
+            int64_t end_index;    // -1 = to end (sizeof)
         } array_slice;
         struct {
             Str element_type;

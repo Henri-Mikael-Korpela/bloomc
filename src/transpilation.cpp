@@ -246,13 +246,32 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
                     PUSH_STR("*");
                     PUSH_STR(arg->identifier);
                     break;
-                case ASTNodeType::ARRAY_SLICE:
+                case ASTNodeType::ARRAY_SLICE: {
+                    Str const &arr_name = arg->array_slice.variable_name;
+                    int64_t const offset = (arg->array_slice.start_index < 0) ? 0 : arg->array_slice.start_index;
+                    int64_t const end = arg->array_slice.end_index;
                     PUSH_STR("(BloomSliceU8){.data = (uint8_t*)");
-                    PUSH_STR(arg->array_slice.variable_name);
-                    PUSH_STR(", .length = sizeof(");
-                    PUSH_STR(arg->array_slice.variable_name);
-                    PUSH_STR(")}");
+                    PUSH_STR(arr_name);
+                    if (offset > 0) {
+                        PUSH_STR(" + ");
+                        PUSH_INT(offset);
+                    }
+                    PUSH_STR(", .length = ");
+                    if (end >= 0) {
+                        PUSH_INT(end - offset);
+                    }
+                    else {
+                        PUSH_STR("sizeof(");
+                        PUSH_STR(arr_name);
+                        PUSH_STR(")");
+                        if (offset > 0) {
+                            PUSH_STR(" - ");
+                            PUSH_INT(offset);
+                        }
+                    }
+                    PUSH_STR("}");
                     break;
+                }
                 default:
                     assert(false && "Unsupported argument type in emit_proc_call_args");
             }
@@ -280,13 +299,32 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
                 PUSH_INT(expr->array_access.index);
                 PUSH_STR(']');
                 break;
-            case ASTNodeType::ARRAY_SLICE:
+            case ASTNodeType::ARRAY_SLICE: {
+                Str const &arr_name = expr->array_slice.variable_name;
+                int64_t const offset = (expr->array_slice.start_index < 0) ? 0 : expr->array_slice.start_index;
+                int64_t const end = expr->array_slice.end_index;
                 PUSH_STR("(BloomSliceU8){.data = (uint8_t*)");
-                PUSH_STR(expr->array_slice.variable_name);
-                PUSH_STR(", .length = sizeof(");
-                PUSH_STR(expr->array_slice.variable_name);
-                PUSH_STR(")}");
+                PUSH_STR(arr_name);
+                if (offset > 0) {
+                    PUSH_STR(" + ");
+                    PUSH_INT(offset);
+                }
+                PUSH_STR(", .length = ");
+                if (end >= 0) {
+                    PUSH_INT(end - offset);
+                }
+                else {
+                    PUSH_STR("sizeof(");
+                    PUSH_STR(arr_name);
+                    PUSH_STR(")");
+                    if (offset > 0) {
+                        PUSH_STR(" - ");
+                        PUSH_INT(offset);
+                    }
+                }
+                PUSH_STR("}");
                 break;
+            }
             case ASTNodeType::SLICE_CAST: {
                 ASTNode *inner = expr->slice_cast.expr;
                 PUSH_STR("(BloomSliceU8){.data = (uint8_t*)");

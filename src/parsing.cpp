@@ -365,7 +365,17 @@ static auto parse_proc_call_arguments(
             {
                 (void)iter_next(tokens_iter); // consume [
                 auto *idx_tok = iter_next(tokens_iter);
-                if (idx_tok->type == TokenType::RANGE) {
+                if (idx_tok->type == TokenType::RANGE_COUNTED) {
+                    // [..+M] — counted slice from beginning: start at 0, take M elements
+                    auto *count_tok = iter_next(tokens_iter);
+                    if (count_tok->type != TokenType::INTEGER_LITERAL) {
+                        return err<BinaryOperand, ParseError>(ParseError {
+                            .code = ParseErrorCode::UNEXPECTED_TOKEN,
+                            .position = count_tok->position,
+                            .src_code_line = __LINE__,
+                            .token_type = count_tok->type,
+                        });
+                    }
                     auto *cl_tok = iter_next(tokens_iter);
                     if (cl_tok->type != TokenType::BRACKET_CLOSE) {
                         return err<BinaryOperand, ParseError>(ParseError {
@@ -378,36 +388,145 @@ static auto parse_proc_call_arguments(
                     ASTNode *slice_node = iter_append(nodes_block_iter, ASTNode {
                         .type = ASTNodeType::ARRAY_SLICE,
                         .parent = proc_call_node,
-                        .array_slice = { .variable_name = token->identifier.content },
+                        .array_slice = {
+                            .variable_name = token->identifier.content,
+                            .start_index = -1,
+                            .end_index = count_tok->integer_literal.value,
+                        },
                     });
                     return ok<BinaryOperand, ParseError>(BinaryOperand {
                         .type = BinaryOperandType::EXPR_NODE,
                         .expr_node = slice_node,
                     });
                 }
-                if (idx_tok->type != TokenType::INTEGER_LITERAL) {
-                    return err<BinaryOperand, ParseError>(ParseError {
-                        .code = ParseErrorCode::UNEXPECTED_TOKEN,
-                        .position = idx_tok->position,
-                        .src_code_line = __LINE__,
-                        .token_type = idx_tok->type,
+                if (idx_tok->type == TokenType::RANGE) {
+                    // [..] or [..N] — start from beginning, optional end bound
+                    int64_t end_index = -1;
+                    if (tokens_iter->current_index < tokens_iter->elements.length &&
+                        iter_peek(tokens_iter)->type == TokenType::INTEGER_LITERAL)
+                    {
+                        end_index = iter_next(tokens_iter)->integer_literal.value;
+                    }
+                    auto *cl_tok = iter_next(tokens_iter);
+                    if (cl_tok->type != TokenType::BRACKET_CLOSE) {
+                        return err<BinaryOperand, ParseError>(ParseError {
+                            .code = ParseErrorCode::UNEXPECTED_TOKEN,
+                            .position = cl_tok->position,
+                            .src_code_line = __LINE__,
+                            .token_type = cl_tok->type,
+                        });
+                    }
+                    ASTNode *slice_node = iter_append(nodes_block_iter, ASTNode {
+                        .type = ASTNodeType::ARRAY_SLICE,
+                        .parent = proc_call_node,
+                        .array_slice = {
+                            .variable_name = token->identifier.content,
+                            .start_index = -1,
+                            .end_index = end_index,
+                        },
+                    });
+                    return ok<BinaryOperand, ParseError>(BinaryOperand {
+                        .type = BinaryOperandType::EXPR_NODE,
+                        .expr_node = slice_node,
                     });
                 }
-                auto *cl_tok = iter_next(tokens_iter);
-                if (cl_tok->type != TokenType::BRACKET_CLOSE) {
-                    return err<BinaryOperand, ParseError>(ParseError {
-                        .code = ParseErrorCode::UNEXPECTED_TOKEN,
-                        .position = cl_tok->position,
-                        .src_code_line = __LINE__,
-                        .token_type = cl_tok->type,
+                if (idx_tok->type == TokenType::INTEGER_LITERAL) {
+                    if (tokens_iter->current_index < tokens_iter->elements.length &&
+                        iter_peek(tokens_iter)->type == TokenType::RANGE_COUNTED)
+                    {
+                        // [N..+M] — counted slice: start at N, take M elements
+                        int64_t const start_index = idx_tok->integer_literal.value;
+                        (void)iter_next(tokens_iter); // consume ..+
+                        auto *count_tok = iter_next(tokens_iter);
+                        if (count_tok->type != TokenType::INTEGER_LITERAL) {
+                            return err<BinaryOperand, ParseError>(ParseError {
+                                .code = ParseErrorCode::UNEXPECTED_TOKEN,
+                                .position = count_tok->position,
+                                .src_code_line = __LINE__,
+                                .token_type = count_tok->type,
+                            });
+                        }
+                        auto *cl_tok = iter_next(tokens_iter);
+                        if (cl_tok->type != TokenType::BRACKET_CLOSE) {
+                            return err<BinaryOperand, ParseError>(ParseError {
+                                .code = ParseErrorCode::UNEXPECTED_TOKEN,
+                                .position = cl_tok->position,
+                                .src_code_line = __LINE__,
+                                .token_type = cl_tok->type,
+                            });
+                        }
+                        ASTNode *slice_node = iter_append(nodes_block_iter, ASTNode {
+                            .type = ASTNodeType::ARRAY_SLICE,
+                            .parent = proc_call_node,
+                            .array_slice = {
+                                .variable_name = token->identifier.content,
+                                .start_index = start_index,
+                                .end_index = start_index + count_tok->integer_literal.value,
+                            },
+                        });
+                        return ok<BinaryOperand, ParseError>(BinaryOperand {
+                            .type = BinaryOperandType::EXPR_NODE,
+                            .expr_node = slice_node,
+                        });
+                    }
+                    if (tokens_iter->current_index < tokens_iter->elements.length &&
+                        iter_peek(tokens_iter)->type == TokenType::RANGE)
+                    {
+                        // [N..] or [N..M] — explicit start, optional end bound
+                        int64_t const start_index = idx_tok->integer_literal.value;
+                        (void)iter_next(tokens_iter); // consume ..
+                        int64_t end_index = -1;
+                        if (tokens_iter->current_index < tokens_iter->elements.length &&
+                            iter_peek(tokens_iter)->type == TokenType::INTEGER_LITERAL)
+                        {
+                            end_index = iter_next(tokens_iter)->integer_literal.value;
+                        }
+                        auto *cl_tok = iter_next(tokens_iter);
+                        if (cl_tok->type != TokenType::BRACKET_CLOSE) {
+                            return err<BinaryOperand, ParseError>(ParseError {
+                                .code = ParseErrorCode::UNEXPECTED_TOKEN,
+                                .position = cl_tok->position,
+                                .src_code_line = __LINE__,
+                                .token_type = cl_tok->type,
+                            });
+                        }
+                        ASTNode *slice_node = iter_append(nodes_block_iter, ASTNode {
+                            .type = ASTNodeType::ARRAY_SLICE,
+                            .parent = proc_call_node,
+                            .array_slice = {
+                                .variable_name = token->identifier.content,
+                                .start_index = start_index,
+                                .end_index = end_index,
+                            },
+                        });
+                        return ok<BinaryOperand, ParseError>(BinaryOperand {
+                            .type = BinaryOperandType::EXPR_NODE,
+                            .expr_node = slice_node,
+                        });
+                    }
+                    // [N] — regular element access
+                    auto *cl_tok = iter_next(tokens_iter);
+                    if (cl_tok->type != TokenType::BRACKET_CLOSE) {
+                        return err<BinaryOperand, ParseError>(ParseError {
+                            .code = ParseErrorCode::UNEXPECTED_TOKEN,
+                            .position = cl_tok->position,
+                            .src_code_line = __LINE__,
+                            .token_type = cl_tok->type,
+                        });
+                    }
+                    return ok<BinaryOperand, ParseError>(BinaryOperand {
+                        .type = BinaryOperandType::ARRAY_ACCESS,
+                        .array_access = {
+                            .variable_name = token->identifier.content,
+                            .index = idx_tok->integer_literal.value,
+                        },
                     });
                 }
-                return ok<BinaryOperand, ParseError>(BinaryOperand {
-                    .type = BinaryOperandType::ARRAY_ACCESS,
-                    .array_access = {
-                        .variable_name = token->identifier.content,
-                        .index = idx_tok->integer_literal.value,
-                    },
+                return err<BinaryOperand, ParseError>(ParseError {
+                    .code = ParseErrorCode::UNEXPECTED_TOKEN,
+                    .position = idx_tok->position,
+                    .src_code_line = __LINE__,
+                    .token_type = idx_tok->type,
                 });
             }
             if (tokens_iter->current_index < tokens_iter->elements.length &&

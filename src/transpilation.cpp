@@ -1136,11 +1136,22 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
                                 register_var(stmt->variable_definition.name, VarKind::INT);
                                 PUSH_STR(is_u8_array ? "uint8_t " : "int ");
                                 PUSH_STR(stmt->variable_definition.name);
-                                PUSH_STR("[] = {");
                                 auto *elems = &expr->array_init.elements;
-                                for (size_t i = 0; i < elems->length; i++) {
-                                    if (i != 0) { PUSH_STR(", "); }
-                                    PUSH_INT(elems->data[i]);
+                                bool all_same = elems->length > 1;
+                                for (size_t i = 1; i < elems->length && all_same; i++) {
+                                    if (elems->data[i] != elems->data[0]) { all_same = false; }
+                                }
+                                if (all_same && elems->length > 1) {
+                                    PUSH_STR("[");
+                                    PUSH_INT(static_cast<int64_t>(elems->length));
+                                    PUSH_STR("] = {");
+                                    PUSH_INT(elems->data[0]);
+                                } else {
+                                    PUSH_STR("[] = {");
+                                    for (size_t i = 0; i < elems->length; i++) {
+                                        if (i != 0) { PUSH_STR(", "); }
+                                        PUSH_INT(elems->data[i]);
+                                    }
                                 }
                                 PUSH_STR("};\n");
                                 break;

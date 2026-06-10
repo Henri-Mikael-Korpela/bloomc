@@ -27,6 +27,8 @@ enum class ASTNodeType : uint8_t {
     DEFER,
     DEREF,
     FOR_COND_LOOP,
+    INTBE_CAST,
+    INTLE_CAST,
     FOR_IN_LOOP,
     FOR_LOOP,
     FOR_RANGE_LOOP,
@@ -238,6 +240,7 @@ struct ASTNode {
             Str element_type;
             ASTNode *expr;
         } slice_cast;
+        ASTNode *intle_cast;
         struct {
             Str name;
             Array<ProcParameterASTNode> fields;
@@ -277,6 +280,8 @@ constexpr auto to_string(ASTNodeType type) -> Str {
         case ASTNodeType::DEFER:               return STR("defer");
         case ASTNodeType::DEREF:               return STR("deref");
         case ASTNodeType::FOR_COND_LOOP:       return STR("for_cond_loop");
+        case ASTNodeType::INTBE_CAST:          return STR("intbe_cast");
+        case ASTNodeType::INTLE_CAST:          return STR("intle_cast");
         case ASTNodeType::FOR_IN_LOOP:         return STR("for_in_loop");
         case ASTNodeType::FOR_LOOP:            return STR("for_loop");
         case ASTNodeType::FOR_RANGE_LOOP:      return STR("for_range_loop");

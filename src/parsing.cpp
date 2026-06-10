@@ -1178,6 +1178,65 @@ static auto parse_expression(
                 auto *inner_tok = iter_next(tokens_iter);
                 ASTNode inner_node = {};
                 if (inner_tok->type == TokenType::IDENTIFIER &&
+                    (inner_tok->identifier.content == "IntLE" || inner_tok->identifier.content == "IntBE") &&
+                    tokens_iter->current_index < tokens_iter->elements.length &&
+                    iter_peek(tokens_iter)->type == TokenType::PARENTHESIS_OPEN)
+                {
+                    bool const is_le = (inner_tok->identifier.content == "IntLE");
+                    ASTNodeType const int_cast_type = is_le ? ASTNodeType::INTLE_CAST : ASTNodeType::INTBE_CAST;
+                    (void)iter_next(tokens_iter); // consume IntLE/IntBE's (
+                    auto *inner_int_tok = iter_next(tokens_iter);
+                    ASTNode intle_inner_node = {};
+                    if (inner_int_tok->type == TokenType::IDENTIFIER &&
+                        tokens_iter->current_index < tokens_iter->elements.length &&
+                        iter_peek(tokens_iter)->type == TokenType::DOT)
+                    {
+                        (void)iter_next(tokens_iter); // consume .
+                        auto *field_tok = iter_next(tokens_iter);
+                        if (field_tok->type != TokenType::IDENTIFIER) {
+                            return err<ASTNode, ParseError>(PARSE_ERROR_CREATE(UNEXPECTED_TOKEN, field_tok));
+                        }
+                        intle_inner_node = ASTNode {
+                            .type = ASTNodeType::MEMBER_ACCESS,
+                            .parent = nullptr,
+                            .member_access = {
+                                .object_name = inner_int_tok->identifier.content,
+                                .field_name = field_tok->identifier.content,
+                            },
+                        };
+                    }
+                    else if (inner_int_tok->type == TokenType::IDENTIFIER) {
+                        intle_inner_node = ASTNode {
+                            .type = ASTNodeType::IDENTIFIER,
+                            .parent = nullptr,
+                            .identifier = inner_int_tok->identifier.content,
+                        };
+                    }
+                    else {
+                        return err<ASTNode, ParseError>(PARSE_ERROR_CREATE(UNEXPECTED_TOKEN, inner_int_tok));
+                    }
+                    if (expect_token_or_append_error(tokens_iter, TokenType::PARENTHESIS_CLOSE, errors) == nullptr) {
+                        return err<ASTNode, ParseError>(PARSE_ERROR_CREATE(UNEXPECTED_TOKEN, inner_int_tok));
+                    }
+                    if (expect_token_or_append_error(tokens_iter, TokenType::PARENTHESIS_CLOSE, errors) == nullptr) {
+                        return err<ASTNode, ParseError>(PARSE_ERROR_CREATE(UNEXPECTED_TOKEN, inner_int_tok));
+                    }
+                    ASTNode *intle_inner_ptr = iter_append(nodes_block_iter, std::move(intle_inner_node));
+                    ASTNode *intle_node_ptr = iter_append(nodes_block_iter, ASTNode {
+                        .type = int_cast_type,
+                        .parent = nullptr,
+                        .intle_cast = intle_inner_ptr,
+                    });
+                    return ok<ASTNode, ParseError>(ASTNode {
+                        .type = ASTNodeType::SLICE_CAST,
+                        .parent = nullptr,
+                        .slice_cast = {
+                            .element_type = elem_type,
+                            .expr = intle_node_ptr,
+                        },
+                    });
+                }
+                else if (inner_tok->type == TokenType::IDENTIFIER &&
                     tokens_iter->current_index < tokens_iter->elements.length &&
                     iter_peek(tokens_iter)->type == TokenType::DOT)
                 {

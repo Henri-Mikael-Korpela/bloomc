@@ -616,7 +616,14 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
     PUSH_STR("\tp[s.length] = '\\0';\n");
     PUSH_STR("\talloc->offset += s.length + 1;\n");
     PUSH_STR("\treturn p;\n");
-    PUSH_STR("}\n\n");
+    PUSH_STR("}\n");
+    PUSH_STR("#if defined(__BYTE_ORDER__) && __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__\n");
+    PUSH_STR("#  define __bloom_u32_le(x) ((uint32_t)__builtin_bswap32((uint32_t)(x)))\n");
+    PUSH_STR("#  define __bloom_u32_be(x) ((uint32_t)(x))\n");
+    PUSH_STR("#else\n");
+    PUSH_STR("#  define __bloom_u32_le(x) ((uint32_t)(x))\n");
+    PUSH_STR("#  define __bloom_u32_be(x) ((uint32_t)__builtin_bswap32((uint32_t)(x)))\n");
+    PUSH_STR("#endif\n\n");
 
     for (size_t ni = 0; ni < ast_nodes->length; ni++) {
         auto *node = &ast_nodes->data[ni];
@@ -1485,7 +1492,25 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
                             PUSH_STR(" + ");
                             PUSH_INT(stmt->array_range_assign.start_index);
                             PUSH_STR(", ");
-                            if (inner->type == ASTNodeType::MEMBER_ACCESS) {
+                            if (inner->type == ASTNodeType::INTLE_CAST ||
+                                inner->type == ASTNodeType::INTBE_CAST)
+                            {
+                                ASTNode *int_inner = inner->intle_cast;
+                                bool const is_le = (inner->type == ASTNodeType::INTLE_CAST);
+                                PUSH_STR("&(uint32_t){");
+                                PUSH_STR(is_le ? "__bloom_u32_le(" : "__bloom_u32_be(");
+                                if (int_inner->type == ASTNodeType::MEMBER_ACCESS) {
+                                    char const *acc = is_pointer_var(int_inner->member_access.object_name) ? "->" : ".";
+                                    PUSH_STR(int_inner->member_access.object_name);
+                                    PUSH_STR(acc);
+                                    PUSH_STR(int_inner->member_access.field_name);
+                                }
+                                else {
+                                    PUSH_STR(int_inner->identifier);
+                                }
+                                PUSH_STR(")}, 4);\n");
+                            }
+                            else if (inner->type == ASTNodeType::MEMBER_ACCESS) {
                                 char const *acc = is_pointer_var(inner->member_access.object_name) ? "->" : ".";
                                 PUSH_STR(inner->member_access.object_name);
                                 PUSH_STR(acc);

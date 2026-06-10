@@ -17,7 +17,7 @@ file_open_for_write :: proc(path: Str) File ->
     File { path = path, _ptr = fptr }
 
 file_write :: proc(file: ^File, content: []U8) ->
-    fwrite(content_cstr, 1, length(content), file._ptr)
+    fwrite(CStr(content), 1, length(content), file._ptr)
 
 Event :: struct ->
     id: Int

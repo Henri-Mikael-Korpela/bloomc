@@ -257,10 +257,21 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
                     PUSH_BOOL(arg->boolean_literal.value);
                     break;
                 case ASTNodeType::PROC_CALL:
-                    PUSH_STR(arg->proc_call.caller_identifier);
-                    PUSH_STR('(');
-                    emit_proc_call_args(&arg->proc_call.arguments, arg->proc_call.caller_identifier);
-                    PUSH_STR(')');
+                    if (arg->proc_call.caller_identifier == "CStr" &&
+                        arg->proc_call.arguments.length == 1 &&
+                        arg->proc_call.arguments.data[0].type == ASTNodeType::IDENTIFIER &&
+                        lookup_var_kind(arg->proc_call.arguments.data[0].identifier) == VarKind::SLICE_U8)
+                    {
+                        PUSH_STR("(char const *)");
+                        PUSH_STR(arg->proc_call.arguments.data[0].identifier);
+                        PUSH_STR(".data");
+                    }
+                    else {
+                        PUSH_STR(arg->proc_call.caller_identifier);
+                        PUSH_STR('(');
+                        emit_proc_call_args(&arg->proc_call.arguments, arg->proc_call.caller_identifier);
+                        PUSH_STR(')');
+                    }
                     break;
                 case ASTNodeType::ADDRESS_OF:
                     PUSH_STR("&");
@@ -398,7 +409,16 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
                 break;
             }
             case ASTNodeType::PROC_CALL:
-                if (expr->proc_call.caller_identifier == "Int") {
+                if (expr->proc_call.caller_identifier == "CStr" &&
+                    expr->proc_call.arguments.length == 1 &&
+                    expr->proc_call.arguments.data[0].type == ASTNodeType::IDENTIFIER &&
+                    lookup_var_kind(expr->proc_call.arguments.data[0].identifier) == VarKind::SLICE_U8)
+                {
+                    PUSH_STR("(char const *)");
+                    PUSH_STR(expr->proc_call.arguments.data[0].identifier);
+                    PUSH_STR(".data");
+                }
+                else if (expr->proc_call.caller_identifier == "Int") {
                     assert(expr->proc_call.arguments.length == 1 && "Int() cast requires exactly one argument");
                     PUSH_STR("(int)(");
                     emit_proc_call_args(&expr->proc_call.arguments, expr->proc_call.caller_identifier);

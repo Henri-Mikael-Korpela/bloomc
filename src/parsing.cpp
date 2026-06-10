@@ -2245,6 +2245,96 @@ static auto parse_expression(
     }
 }
 
+static auto eval_const_primary(
+    Iterator<Token> *tokens_iter,
+    Context *context,
+    DynamicArray<ParseError> *errors,
+    int64_t *out_value
+) -> bool {
+    if (tokens_iter->current_index >= tokens_iter->elements.length) {
+        return false;
+    }
+    auto *tok = iter_next(tokens_iter);
+    if (tok->type == TokenType::INTEGER_LITERAL) {
+        *out_value = tok->integer_literal.value;
+        return true;
+    }
+    if (tok->type == TokenType::IDENTIFIER) {
+        for (size_t i = 0; i < context->constant_count; i++) {
+            Str const *cname = &context->constants[i].name;
+            if (cname->length == tok->identifier.content.length &&
+                strncmp(cname->data, tok->identifier.content.data, cname->length) == 0)
+            {
+                *out_value = context->constants[i].value;
+                return true;
+            }
+        }
+    }
+    append(errors, PARSE_ERROR_CREATE(UNEXPECTED_TOKEN, tok));
+    return false;
+}
+
+static auto eval_const_multiplicative(
+    Iterator<Token> *tokens_iter,
+    Context *context,
+    DynamicArray<ParseError> *errors,
+    int64_t *out_value
+) -> bool {
+    if (!eval_const_primary(tokens_iter, context, errors, out_value)) {
+        return false;
+    }
+    while (tokens_iter->current_index < tokens_iter->elements.length) {
+        TokenType const op = iter_peek(tokens_iter)->type;
+        if (op != TokenType::MULTIPLY && op != TokenType::DIVIDE) {
+            break;
+        }
+        (void)iter_next(tokens_iter);
+        int64_t rhs = 0;
+        if (!eval_const_primary(tokens_iter, context, errors, &rhs)) {
+            return false;
+        }
+        if (op == TokenType::MULTIPLY) {
+            *out_value *= rhs;
+        }
+        else {
+            if (rhs == 0) {
+                return false;
+            }
+            *out_value /= rhs;
+        }
+    }
+    return true;
+}
+
+static auto eval_const_additive(
+    Iterator<Token> *tokens_iter,
+    Context *context,
+    DynamicArray<ParseError> *errors,
+    int64_t *out_value
+) -> bool {
+    if (!eval_const_multiplicative(tokens_iter, context, errors, out_value)) {
+        return false;
+    }
+    while (tokens_iter->current_index < tokens_iter->elements.length) {
+        TokenType const op = iter_peek(tokens_iter)->type;
+        if (op != TokenType::ADD && op != TokenType::SUBTRACT) {
+            break;
+        }
+        (void)iter_next(tokens_iter);
+        int64_t rhs = 0;
+        if (!eval_const_multiplicative(tokens_iter, context, errors, &rhs)) {
+            return false;
+        }
+        if (op == TokenType::ADD) {
+            *out_value += rhs;
+        }
+        else {
+            *out_value -= rhs;
+        }
+    }
+    return true;
+}
+
 static auto parse_statement(
     Iterator<Token> *tokens_iter,
     Context *context,
@@ -2544,49 +2634,44 @@ static auto parse_statement(
                     (void)iter_next(tokens_iter);
                 }
                 else {
-                    // Expression constant (e.g. array): reuse VAR_DEF expression parsing path
-                    Iterator<Token> expr_tokens_iter;
-                    if (!slice_expression_tokens(tokens_iter, errors, &expr_tokens_iter)) {
-                        return false;
-                    }
-                    auto expr_parse_result = parse_expression(
-                        &expr_tokens_iter,
-                        context,
-                        nodes_block_iter,
-                        proc_params_block,
-                        proc_params_iter,
-                        types_iter,
-                        operands_iter,
-                        array_elements_iter,
-                        errors
+                    // Compile-time constant expression: evaluate at parse time
+                    int64_t expr_end_idx = iter_get_index_at_if<Token>(
+                        tokens_iter, [](Token const *t) {
+                            return t->type == TokenType::NEWLINE || t->type == TokenType::END;
+                        }
                     );
-                    if (!is_ok(&expr_parse_result)) {
-                        append(errors, expr_parse_result.err);
+                    if (expr_end_idx == -1 ||
+                        expr_end_idx == static_cast<int64_t>(tokens_iter->current_index))
+                    {
+                        append(errors, PARSE_ERROR_CREATE(UNEXPECTED_TOKEN, iter_current(tokens_iter)));
                         return false;
                     }
-                    auto *expr_node_ptr = iter_append(nodes_block_iter, std::move(expr_parse_result.ok));
-                    if (expr_node_ptr->type == ASTNodeType::ARRAY_INIT &&
-                        context->array_size_count < 64)
-                    {
-                        context->array_sizes[context->array_size_count++] = {
-                            .name = next_token->identifier.content,
-                            .size = static_cast<int64_t>(expr_node_ptr->array_init.elements.length),
-                        };
+                    auto expr_toks = iter_slice_by_offset(
+                        tokens_iter, tokens_iter->current_index, expr_end_idx);
+                    int64_t const_value = 0;
+                    if (!eval_const_additive(&expr_toks, context, errors, &const_value)) {
+                        return false;
                     }
-                    (void)iter_append(nodes_block_iter, ASTNode {
-                        .type = ASTNodeType::VARIABLE_DEFINITION,
-                        .parent = parent_node,
-                        .variable_definition = {
-                            .name = next_token->identifier.content,
-                            .expr = expr_node_ptr,
-                        },
-                    });
-                    tokens_iter->current_index += expr_tokens_iter.current_index;
+                    tokens_iter->current_index = static_cast<size_t>(expr_end_idx);
                     assert(
                         iter_current(tokens_iter)->type == TokenType::NEWLINE ||
                         iter_current(tokens_iter)->type == TokenType::END &&
                         "Expected newline or end token after constant expression definition");
                     (void)iter_next(tokens_iter);
+                    if (context->constant_count < 64) {
+                        context->constants[context->constant_count++] = {
+                            .name = next_token->identifier.content,
+                            .value = const_value,
+                        };
+                    }
+                    (void)iter_append(nodes_block_iter, ASTNode {
+                        .type = ASTNodeType::CONSTANT_DEFINITION,
+                        .parent = parent_node,
+                        .constant_def = {
+                            .name = next_token->identifier.content,
+                            .value = const_value,
+                        },
+                    });
                 }
                 break;
             }

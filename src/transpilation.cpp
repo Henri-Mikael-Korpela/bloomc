@@ -146,13 +146,13 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
         return len;
     };
 
-    struct ArrayStructVar { Str name; Str element_type; };
+    struct ArrayStructVar { Str name; Str element_type; size_t count; };
     ArrayStructVar array_struct_vars[64] = {};
     size_t array_struct_var_count = 0;
 
-    auto register_array_struct_var = [&](Str name, Str elem_type) {
+    auto register_array_struct_var = [&](Str name, Str elem_type, size_t count) {
         if (array_struct_var_count < 64) {
-            array_struct_vars[array_struct_var_count++] = { .name = name, .element_type = elem_type };
+            array_struct_vars[array_struct_var_count++] = { .name = name, .element_type = elem_type, .count = count };
         }
     };
 
@@ -1327,7 +1327,7 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
                                 }
                             }
                             if (expr->type == ASTNodeType::ARRAY_STRUCT_INIT) {
-                                register_array_struct_var(stmt->variable_definition.name, expr->array_struct_init.element_type);
+                                register_array_struct_var(stmt->variable_definition.name, expr->array_struct_init.element_type, expr->array_struct_init.elements.length);
                                 register_var(stmt->variable_definition.name, VarKind::STRUCT);
                                 PUSH_STR(expr->array_struct_init.element_type);
                                 PUSH_STR(" ");
@@ -1522,6 +1522,52 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
                             Str const *elem = &stmt->for_in_loop.element_name;
                             Str const *coll = &stmt->for_in_loop.collection_name;
                             Str const *idx = &stmt->for_in_loop.index_name;
+
+                            // Check if collection is a struct array
+                            Str struct_elem_type = {};
+                            size_t struct_arr_count = 0;
+                            for (size_t i = 0; i < array_struct_var_count; i++) {
+                                if (array_struct_vars[i].name.length == coll->length &&
+                                    strncmp(array_struct_vars[i].name.data, coll->data, coll->length) == 0)
+                                {
+                                    struct_elem_type = array_struct_vars[i].element_type;
+                                    struct_arr_count = array_struct_vars[i].count;
+                                    break;
+                                }
+                            }
+
+                            if (struct_elem_type.length > 0) {
+                                register_struct_var(*elem, struct_elem_type);
+                                if (idx->length > 0) {
+                                    register_var(*idx, VarKind::SIZE_T);
+                                }
+                                push_tabs();
+                                PUSH_STR("for (size_t __bloom_i");
+                                PUSH_INT(static_cast<intmax_t>(loop_idx));
+                                PUSH_STR(" = 0; __bloom_i");
+                                PUSH_INT(static_cast<intmax_t>(loop_idx));
+                                PUSH_STR(" < ");
+                                PUSH_INT(static_cast<intmax_t>(struct_arr_count));
+                                PUSH_STR("; __bloom_i");
+                                PUSH_INT(static_cast<intmax_t>(loop_idx));
+                                PUSH_STR("++) {\n");
+                                push_tabs(); PUSH_STR("\t");
+                                PUSH_STR(struct_elem_type); PUSH_STR(" ");
+                                PUSH_STR(*elem); PUSH_STR(" = ");
+                                PUSH_STR(*coll); PUSH_STR("[__bloom_i");
+                                PUSH_INT(static_cast<intmax_t>(loop_idx));
+                                PUSH_STR("];\n");
+                                if (idx->length > 0) {
+                                    push_tabs(); PUSH_STR("\tsize_t ");
+                                    PUSH_STR(*idx); PUSH_STR(" = __bloom_i");
+                                    PUSH_INT(static_cast<intmax_t>(loop_idx));
+                                    PUSH_STR(";\n");
+                                }
+                                emit_body(&stmt->for_in_loop.body, stmt, depth + 1, false);
+                                push_tabs(); PUSH_STR("}\n");
+                                break;
+                            }
+
                             register_var(*elem, VarKind::BLOOM_CHAR);
 
                             push_tabs(); PUSH_STR("{\n");

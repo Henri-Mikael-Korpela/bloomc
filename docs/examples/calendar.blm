@@ -26,7 +26,10 @@ Event :: struct ->
 main :: proc() ->
     EVENT_NAME_MAX_LENGTH :: 255
 
-    events := [const]Event { .{ id = 1, name = "My event" } }
+    events := [const]Event {
+        .{ id = 1, name = "My event" },
+        .{ id = 2, name = "My other event" },
+    }
     e1 := events[0]
     print("Event #1: {}\n", e1.name)
 
@@ -35,10 +38,11 @@ main :: proc() ->
 
     print("Output file path: {}\n", f.path)
 
-    buffer := [1 + EVENT_NAME_MAX_LENGTH]U8{}
-    name_len := length_in_bytes(e1.name)
-    buffer[0] = name_len
-    buffer[1..+name_len] = []U8(e1.name)
-    buffer_len := 0
-    buffer_len += 1 + name_len
-    file_write(%f, buffer[0..+buffer_len])
+    for event in events ->
+        buffer := [1 + EVENT_NAME_MAX_LENGTH]U8{}
+        name_len := length_in_bytes(event.name)
+        buffer[0] = name_len
+        buffer[1..+name_len] = []U8(event.name)
+        buffer_len := 0
+        buffer_len += 1 + name_len
+        file_write(%f, buffer[0..+buffer_len])

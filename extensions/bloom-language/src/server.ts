@@ -98,6 +98,59 @@ function lookupStructFieldType(text: string, structName: string, fieldName: stri
     return fieldMatch[1].trim();
 }
 
+// Counts elements in an array body string (text between the outer { and }).
+// Counts top-level commas (not nested inside inner {}) with trailing-comma awareness.
+function countArrayElements(body: string): number {
+    let depth = 0;
+    let commas = 0;
+    let sawNonWS = false;
+    for (const ch of body) {
+        if (ch === '{') { depth++; }
+        else if (ch === '}') { depth--; }
+        else if (ch === ',' && depth === 0) { commas++; sawNonWS = false; }
+        else if (depth === 0 && !/\s/.test(ch)) { sawNonWS = true; }
+    }
+    if (!sawNonWS && commas === 0) { return 0; }
+    return sawNonWS ? commas + 1 : commas;
+}
+
+// Extracts the body string between the outer { } of an array initialiser.
+// exprLine is the trimmed RHS expression (may be only the first line for multiline arrays).
+// Falls back to scanning the full document text when the closing } is not on the same line.
+function extractArrayBody(text: string, exprLine: string): string | null {
+    const braceIdx = exprLine.indexOf('{');
+    if (braceIdx === -1) { return null; }
+
+    // Single-line array: check whether the matching } is already in exprLine
+    let depth = 0;
+    for (let i = braceIdx; i < exprLine.length; i++) {
+        if (exprLine[i] === '{') { depth++; }
+        else if (exprLine[i] === '}') {
+            depth--;
+            if (depth === 0) {
+                return exprLine.substring(braceIdx + 1, i);
+            }
+        }
+    }
+
+    // Multi-line: locate the opening { in the full document text
+    const searchFor = exprLine.trimEnd();
+    const pos = text.indexOf(searchFor);
+    if (pos === -1) { return null; }
+    const textBraceIdx = text.indexOf('{', pos + braceIdx);
+    if (textBraceIdx === -1) { return null; }
+
+    depth = 0;
+    for (let i = textBraceIdx; i < text.length; i++) {
+        if (text[i] === '{') { depth++; }
+        else if (text[i] === '}') {
+            depth--;
+            if (depth === 0) { return text.substring(textBraceIdx + 1, i); }
+        }
+    }
+    return null;
+}
+
 // Infers the Bloom type of an expression string.
 // depth guards against infinite recursion when looking up variable types.
 function inferExprType(text: string, expr: string, depth: number): string | null {
@@ -115,8 +168,20 @@ function inferExprType(text: string, expr: string, depth: number): string | null
     if (s === 'true' || s === 'false') return 'Bool';
 
     // Array init: [const]Type{ or [N]Type{
-    const arrayInitMatch = s.match(/^\[(?:const|\d+)\](\w+)\s*[\{(]/);
-    if (arrayInitMatch) return `[]${arrayInitMatch[1]}`;
+    const arrayInitMatch = s.match(/^\[(\w+)\](\w+)\s*\{/);
+    if (arrayInitMatch) {
+        const lenSpec = arrayInitMatch[1];
+        const typeName = arrayInitMatch[2];
+        if (/^\d+$/.test(lenSpec)) {
+            return `[${lenSpec}]${typeName}`;
+        }
+        // lenSpec === 'const': count elements from the array body
+        const body = extractArrayBody(text, s);
+        if (body !== null) {
+            return `[const = ${countArrayElements(body)}]${typeName}`;
+        }
+        return `[const]${typeName}`;
+    }
 
     // Address-of: %varname
     const addrOfMatch = s.match(/^%(\w+)$/);

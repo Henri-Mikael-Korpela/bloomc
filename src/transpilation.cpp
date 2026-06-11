@@ -22,6 +22,7 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
     struct ArrayVarEntry {
         Str name;
         size_t count;
+        Str element_type;
     };
     ArrayVarEntry array_vars[64];
     size_t array_var_count = 0;
@@ -1356,6 +1357,7 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
                                     array_vars[array_var_count++] = {
                                         .name = stmt->variable_definition.name,
                                         .count = expr->array_init.elements.length,
+                                        .element_type = expr->array_init.element_type,
                                     };
                                 }
                                 bool const is_u8_array = expr->array_init.element_type == "U8";
@@ -1650,6 +1652,53 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
                                 PUSH_STR("++) {\n");
                                 push_tabs(); PUSH_STR("\t");
                                 PUSH_STR(struct_elem_type); PUSH_STR(" ");
+                                PUSH_STR(*elem); PUSH_STR(" = ");
+                                PUSH_STR(*coll); PUSH_STR("[__bloom_i");
+                                PUSH_INT(static_cast<intmax_t>(loop_idx));
+                                PUSH_STR("];\n");
+                                if (idx->length > 0) {
+                                    push_tabs(); PUSH_STR("\tsize_t ");
+                                    PUSH_STR(*idx); PUSH_STR(" = __bloom_i");
+                                    PUSH_INT(static_cast<intmax_t>(loop_idx));
+                                    PUSH_STR(";\n");
+                                }
+                                emit_body(&stmt->for_in_loop.body, stmt, depth + 1, false);
+                                push_tabs(); PUSH_STR("}\n");
+                                break;
+                            }
+
+                            // Check if collection is a primitive array
+                            Str prim_elem_type = {};
+                            size_t prim_arr_count = 0;
+                            for (size_t i = 0; i < array_var_count; i++) {
+                                if (array_vars[i].name.length == coll->length &&
+                                    strncmp(array_vars[i].name.data, coll->data, coll->length) == 0)
+                                {
+                                    prim_elem_type = array_vars[i].element_type;
+                                    prim_arr_count = array_vars[i].count;
+                                    break;
+                                }
+                            }
+
+                            if (prim_elem_type.length > 0) {
+                                register_var(*elem, VarKind::INT);
+                                if (idx->length > 0) {
+                                    register_var(*idx, VarKind::SIZE_T);
+                                }
+                                bool const is_u8 = prim_elem_type == "U8";
+                                push_tabs();
+                                PUSH_STR("for (size_t __bloom_i");
+                                PUSH_INT(static_cast<intmax_t>(loop_idx));
+                                PUSH_STR(" = 0; __bloom_i");
+                                PUSH_INT(static_cast<intmax_t>(loop_idx));
+                                PUSH_STR(" < ");
+                                PUSH_INT(static_cast<intmax_t>(prim_arr_count));
+                                PUSH_STR("; __bloom_i");
+                                PUSH_INT(static_cast<intmax_t>(loop_idx));
+                                PUSH_STR("++) {\n");
+                                push_tabs(); PUSH_STR("\t");
+                                PUSH_STR(is_u8 ? "uint8_t" : "int");
+                                PUSH_STR(" ");
                                 PUSH_STR(*elem); PUSH_STR(" = ");
                                 PUSH_STR(*coll); PUSH_STR("[__bloom_i");
                                 PUSH_INT(static_cast<intmax_t>(loop_idx));

@@ -24,3 +24,8 @@ main :: proc() ->
     for if j < 10 ->
         print("For if, j = {}\n", j)
         j += 1
+
+    // For-in loop with array
+    a := [const]Int { 1, 2, 3 }
+    for x, i in a ->
+        print("For-in loop with array, X: {}, index {}\n", x, i)

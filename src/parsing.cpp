@@ -939,6 +939,40 @@ static auto parse_proc_call_arguments(
                                 .type_info_name = { .type_name = type_name },
                             });
                         }
+                        else if (field_tok->identifier.content == "members") {
+                            if (expect_token_or_append_error(tokens_iter, TokenType::BRACKET_OPEN, errors) == nullptr) { return false; }
+                            auto *idx_tok = iter_next(tokens_iter);
+                            if (idx_tok->type != TokenType::IDENTIFIER) {
+                                append(errors, ParseError {
+                                    .code = ParseErrorCode::UNEXPECTED_TOKEN,
+                                    .position = idx_tok->position,
+                                    .src_code_line = __LINE__,
+                                    .token_type = idx_tok->type,
+                                });
+                                return false;
+                            }
+                            Str index_var = idx_tok->identifier.content;
+                            if (expect_token_or_append_error(tokens_iter, TokenType::BRACKET_CLOSE, errors) == nullptr) { return false; }
+                            if (expect_token_or_append_error(tokens_iter, TokenType::DOT, errors) == nullptr) { return false; }
+                            auto *key_tok = iter_next(tokens_iter);
+                            if (key_tok->type != TokenType::IDENTIFIER) {
+                                append(errors, ParseError {
+                                    .code = ParseErrorCode::UNEXPECTED_TOKEN,
+                                    .position = key_tok->position,
+                                    .src_code_line = __LINE__,
+                                    .token_type = key_tok->type,
+                                });
+                                return false;
+                            }
+                            (void)iter_append(nodes_block_iter, ASTNode {
+                                .type = ASTNodeType::TYPE_INFO_ENUM_MEMBER_KEY,
+                                .parent = proc_call_node,
+                                .type_info_enum_member_key = {
+                                    .enum_type_name = type_name,
+                                    .index_var = index_var,
+                                },
+                            });
+                        }
                         else {
                             append(errors, ParseError {
                                 .code = ParseErrorCode::UNEXPECTED_TOKEN,
@@ -2382,6 +2416,53 @@ static auto parse_expression(
 
             return ok<ASTNode, ParseError>(*struct_node);
         }
+        case TokenType::KEYWORD_ENUM: {
+            auto *arrow = iter_next(tokens_iter);
+            if (arrow->type != TokenType::ARROW) {
+                return err<ASTNode, ParseError>(PARSE_ERROR_CREATE(UNEXPECTED_TOKEN, arrow));
+            }
+            auto *newline = iter_next(tokens_iter);
+            if (newline->type != TokenType::NEWLINE) {
+                return err<ASTNode, ParseError>(PARSE_ERROR_CREATE(UNEXPECTED_TOKEN, newline));
+            }
+
+            size_t const members_start = proc_params_iter->current_index;
+
+            while (tokens_iter->current_index < tokens_iter->elements.length &&
+                   iter_peek(tokens_iter)->type == TokenType::INDENT)
+            {
+                (void)iter_next(tokens_iter); // consume indent
+                auto *member_name_token = iter_next(tokens_iter);
+                if (member_name_token->type != TokenType::IDENTIFIER) {
+                    return err<ASTNode, ParseError>(PARSE_ERROR_CREATE(UNEXPECTED_TOKEN, member_name_token));
+                }
+                (void)iter_append(proc_params_iter, ProcParameterASTNode {
+                    .name = member_name_token->identifier.content,
+                    .type_name = {},
+                    .is_pointer = false,
+                });
+                if (tokens_iter->current_index < tokens_iter->elements.length) {
+                    auto *nl = iter_peek(tokens_iter);
+                    if (nl->type == TokenType::NEWLINE || nl->type == TokenType::END) {
+                        (void)iter_next(tokens_iter);
+                    }
+                }
+            }
+
+            auto *enum_node = iter_append(nodes_block_iter, ASTNode {
+                .type = ASTNodeType::ENUM_DEF,
+                .parent = nullptr,
+                .enum_def = {
+                    .name = context->current_identifier->identifier.content,
+                    .members = Array<ProcParameterASTNode>(
+                        proc_params_block->data + members_start,
+                        proc_params_iter->current_index - members_start
+                    ),
+                },
+            });
+
+            return ok<ASTNode, ParseError>(*enum_node);
+        }
         default:
             return err<ASTNode, ParseError>(PARSE_ERROR_CREATE(UNEXPECTED_TOKEN, next_token));
     }
@@ -2436,6 +2517,17 @@ static auto infer_bloom_type_from_tokens(
         }
     }
 
+    // If the expression is an enum type name used directly, return it immediately.
+    for (size_t i = 0; i < nodes_block_iter->current_index; i++) {
+        auto const *node = &nodes_block_iter->elements.data[i];
+        if (node->type == ASTNodeType::ENUM_DEF &&
+            str_equal(node->enum_def.name, name) &&
+            expr_iter->current_index >= expr_iter->elements.length)
+        {
+            return name;
+        }
+    }
+
     // Look up the variable definition in already-parsed nodes.
     Str current_type = {};
     for (size_t i = 0; i < nodes_block_iter->current_index; i++) {
@@ -2449,6 +2541,18 @@ static auto infer_bloom_type_from_tokens(
             }
             else if (expr->type == ASTNodeType::STRUCT_INIT) {
                 current_type = expr->struct_init.type_name;
+            }
+            else if (expr->type == ASTNodeType::MEMBER_ACCESS) {
+                // Check if object_name is an enum type
+                for (size_t j = 0; j < nodes_block_iter->current_index; j++) {
+                    auto const *n = &nodes_block_iter->elements.data[j];
+                    if (n->type == ASTNodeType::ENUM_DEF &&
+                        str_equal(n->enum_def.name, expr->member_access.object_name))
+                    {
+                        current_type = n->enum_def.name;
+                        break;
+                    }
+                }
             }
             break;
         }
@@ -3840,6 +3944,11 @@ auto parse(Array<Token> *tokens, ArenaAllocator *allocator, Str source_content, 
                 case ASTNodeType::STRUCT_DEF: {
                     ptrdiff_t const offset = node.struct_def.fields.data - orig_proc_params_data;
                     node.struct_def.fields.data = new_proc_params_block.data + offset;
+                    break;
+                }
+                case ASTNodeType::ENUM_DEF: {
+                    ptrdiff_t const offset = node.enum_def.members.data - orig_proc_params_data;
+                    node.enum_def.members.data = new_proc_params_block.data + offset;
                     break;
                 }
                 case ASTNodeType::BINARY_ADD:

@@ -42,6 +42,7 @@ enum class TokenType : uint8_t {
     KEYWORD_BREAK,
     KEYWORD_CONST,
     KEYWORD_ELSE,
+    KEYWORD_ENUM,
     KEYWORD_FALSE,
     KEYWORD_FOR,
     KEYWORD_FOREIGN,
@@ -61,6 +62,7 @@ constexpr auto TOKEN_KEYWORD_BREAK   = "break";
 constexpr auto TOKEN_KEYWORD_DEFER   = "defer";
 constexpr auto TOKEN_KEYWORD_CONST   = "const";
 constexpr auto TOKEN_KEYWORD_ELSE    = "else";
+constexpr auto TOKEN_KEYWORD_ENUM    = "enum";
 constexpr auto TOKEN_KEYWORD_FALSE   = "false";
 constexpr auto TOKEN_KEYWORD_FOR     = "for";
 constexpr auto TOKEN_KEYWORD_FOREIGN = "foreign";
@@ -125,6 +127,7 @@ constexpr auto to_string(TokenType type) -> Str {
         case TokenType::KEYWORD_BREAK:     return STR(TOKEN_KEYWORD_BREAK);
         case TokenType::KEYWORD_CONST:     return STR(TOKEN_KEYWORD_CONST);
         case TokenType::KEYWORD_ELSE:      return STR(TOKEN_KEYWORD_ELSE);
+        case TokenType::KEYWORD_ENUM:      return STR(TOKEN_KEYWORD_ENUM);
         case TokenType::KEYWORD_FALSE:     return STR(TOKEN_KEYWORD_FALSE);
         case TokenType::KEYWORD_FOR:       return STR(TOKEN_KEYWORD_FOR);
         case TokenType::KEYWORD_FOREIGN:   return STR(TOKEN_KEYWORD_FOREIGN);

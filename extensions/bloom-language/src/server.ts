@@ -201,7 +201,12 @@ function inferExprType(text: string, expr: string, depth: number): string | null
     // Member access: obj.field  (simple, single dot)
     const memberMatch = s.match(/^(\w+)\.(\w+)$/);
     if (memberMatch) {
-        const objType = inferVarType(text, memberMatch[1], depth + 1);
+        const objName = memberMatch[1];
+        // Check if objName is an enum type directly (Color.RED syntax)
+        if (new RegExp(`\\b${escapeRegex(objName)}\\s*::\\s*enum\\b`).test(text)) {
+            return objName;
+        }
+        const objType = inferVarType(text, objName, depth + 1);
         if (!objType) return null;
         // Strip leading ^ for pointer dereference
         const baseType = objType.startsWith('^') ? objType.slice(1) : objType;
@@ -239,8 +244,8 @@ function inferVarType(text: string, name: string, depth: number): string | null 
     const varDefMatch = text.match(varDefRe);
     if (varDefMatch) return inferExprType(text, varDefMatch[1], depth);
 
-    // Constant binding (non-proc, non-struct): name :: expr
-    const constDefRe = new RegExp(`\\b${e}\\s*::\\s*(?!proc\\b|struct\\b)(.+)$`, 'm');
+    // Constant binding (non-proc, non-struct, non-enum): name :: expr
+    const constDefRe = new RegExp(`\\b${e}\\s*::\\s*(?!proc\\b|struct\\b|enum\\b)(.+)$`, 'm');
     const constDefMatch = text.match(constDefRe);
     if (constDefMatch) return inferExprType(text, constDefMatch[1], depth);
 
@@ -286,9 +291,14 @@ function analyzeIdentifier(text: string, name: string): string | null {
         return `**struct** \`${name}\``;
     }
 
-    // Constant/value binding: name :: (not proc, not struct — already excluded above)
+    // Enum definition: Name :: enum
+    if (new RegExp(`\\b${e}\\s*::\\s*enum\\b`).test(text)) {
+        return `**enum** \`${name}\``;
+    }
+
+    // Constant/value binding: name :: (not proc, not struct, not enum — already excluded above)
     if (new RegExp(`\\b${e}\\s*::`).test(text)) {
-        const constDefRe = new RegExp(`\\b${e}\\s*::\\s*(?!proc\\b|struct\\b)(.+)$`, 'm');
+        const constDefRe = new RegExp(`\\b${e}\\s*::\\s*(?!proc\\b|struct\\b|enum\\b)(.+)$`, 'm');
         const constDefMatch = text.match(constDefRe);
         const inferredType = constDefMatch
             ? inferExprType(text, constDefMatch[1], 0)

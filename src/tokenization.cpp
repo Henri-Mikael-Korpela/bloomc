@@ -88,6 +88,10 @@ auto tokenize(Str *input, ArenaAllocator *allocator) -> Array<Token> {
                 append_token_of_type(TokenType::KEYWORD_ELSE);
                 continue;
             }
+            if (word == TOKEN_KEYWORD_ENUM) {
+                append_token_of_type(TokenType::KEYWORD_ENUM);
+                continue;
+            }
             if (word == TOKEN_KEYWORD_FALSE) {
                 append_token_of_type(TokenType::KEYWORD_FALSE);
                 continue;

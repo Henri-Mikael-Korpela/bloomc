@@ -93,6 +93,21 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
         }
     };
 
+    struct EnumDefEntry { Str name; Str member_names[32]; size_t member_count; };
+    EnumDefEntry enum_defs[16] = {};
+    size_t enum_def_count = 0;
+
+    auto is_enum_type = [&](Str name) -> bool {
+        for (size_t i = 0; i < enum_def_count; i++) {
+            if (enum_defs[i].name.length == name.length &&
+                strncmp(enum_defs[i].name.data, name.data, name.length) == 0)
+            {
+                return true;
+            }
+        }
+        return false;
+    };
+
     auto lookup_member_kind = [&](Str object_name, Str field_name) -> VarKind {
         Str struct_type = {};
         for (size_t i = 0; i < var_type_count; i++) {
@@ -505,9 +520,17 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
                 break;
             }
             case ASTNodeType::MEMBER_ACCESS:
-                PUSH_STR(expr->member_access.object_name);
-                PUSH_STR(is_pointer_var(expr->member_access.object_name) ? "->" : ".");
-                PUSH_STR(expr->member_access.field_name);
+                if (is_enum_type(expr->member_access.object_name)) {
+                    PUSH_STR("__bloom_");
+                    PUSH_STR(expr->member_access.object_name);
+                    PUSH_STR("_");
+                    PUSH_STR(expr->member_access.field_name);
+                }
+                else {
+                    PUSH_STR(expr->member_access.object_name);
+                    PUSH_STR(is_pointer_var(expr->member_access.object_name) ? "->" : ".");
+                    PUSH_STR(expr->member_access.field_name);
+                }
                 break;
             case ASTNodeType::ADDRESS_OF:
                 PUSH_STR("&");
@@ -538,6 +561,13 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
                 PUSH_STR(")");
                 break;
             }
+            case ASTNodeType::TYPE_INFO_ENUM_MEMBER_KEY:
+                PUSH_STR("__bloom_");
+                PUSH_STR(expr->type_info_enum_member_key.enum_type_name);
+                PUSH_STR("_members[");
+                PUSH_STR(expr->type_info_enum_member_key.index_var);
+                PUSH_STR("]");
+                break;
             default:
                 assert(false && "Unsupported expression type in emit_expression");
         }
@@ -693,6 +723,45 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
                 PUSH_STR("} ");
                 PUSH_STR(node->struct_def.name);
                 PUSH_STR(";\n\n");
+                break;
+            }
+            case ASTNodeType::ENUM_DEF: {
+                // Register enum type
+                if (enum_def_count < 16) {
+                    auto *def = &enum_defs[enum_def_count++];
+                    def->name = node->enum_def.name;
+                    def->member_count = 0;
+                    for (size_t i = 0; i < node->enum_def.members.length && i < 32; i++) {
+                        def->member_names[def->member_count++] = node->enum_def.members.data[i].name;
+                    }
+                }
+                // Emit typedef
+                PUSH_STR("typedef int ");
+                PUSH_STR(node->enum_def.name);
+                PUSH_STR(";\n");
+                // Emit member constants
+                for (size_t i = 0; i < node->enum_def.members.length; i++) {
+                    PUSH_STR("static int const __bloom_");
+                    PUSH_STR(node->enum_def.name);
+                    PUSH_STR("_");
+                    PUSH_STR(node->enum_def.members.data[i].name);
+                    PUSH_STR(" = ");
+                    PUSH_INT(static_cast<intmax_t>(i));
+                    PUSH_STR(";\n");
+                }
+                // Emit members array for type_info_of reflection
+                PUSH_STR("static BloomStr const __bloom_");
+                PUSH_STR(node->enum_def.name);
+                PUSH_STR("_members[] = {\n");
+                for (size_t i = 0; i < node->enum_def.members.length; i++) {
+                    Str mname = node->enum_def.members.data[i].name;
+                    PUSH_STR("\t{.data = \"");
+                    PUSH_STR(mname);
+                    PUSH_STR("\", .length = ");
+                    PUSH_INT(static_cast<intmax_t>(mname.length));
+                    PUSH_STR("},\n");
+                }
+                PUSH_STR("};\n\n");
                 break;
             }
             case ASTNodeType::PROC_DEF: {
@@ -1164,6 +1233,18 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
                                                 PUSH_INT(static_cast<intmax_t>(tn.length));
                                                 PUSH_STR(", stdout);\n");
                                             }
+                                            else if (arg->type == ASTNodeType::TYPE_INFO_ENUM_MEMBER_KEY) {
+                                                push_tabs();
+                                                PUSH_STR("fwrite(__bloom_");
+                                                PUSH_STR(arg->type_info_enum_member_key.enum_type_name);
+                                                PUSH_STR("_members[");
+                                                PUSH_STR(arg->type_info_enum_member_key.index_var);
+                                                PUSH_STR("].data, 1, __bloom_");
+                                                PUSH_STR(arg->type_info_enum_member_key.enum_type_name);
+                                                PUSH_STR("_members[");
+                                                PUSH_STR(arg->type_info_enum_member_key.index_var);
+                                                PUSH_STR("].length, stdout);\n");
+                                            }
                                             else if (arg->type == ASTNodeType::TYPE_INFO_SIZE) {
                                                 PUSH_STR("printf(\"%zu\", ");
                                                 emit_expression(arg);
@@ -1283,6 +1364,20 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
                         case ASTNodeType::VARIABLE_DEFINITION: {
                             push_tabs();
                             ASTNode *expr = stmt->variable_definition.expr;
+                            if (expr->type == ASTNodeType::MEMBER_ACCESS &&
+                                is_enum_type(expr->member_access.object_name))
+                            {
+                                register_var(stmt->variable_definition.name, VarKind::INT);
+                                PUSH_STR(expr->member_access.object_name);
+                                PUSH_STR(" ");
+                                PUSH_STR(stmt->variable_definition.name);
+                                PUSH_STR(" = __bloom_");
+                                PUSH_STR(expr->member_access.object_name);
+                                PUSH_STR("_");
+                                PUSH_STR(expr->member_access.field_name);
+                                PUSH_STR(";\n");
+                                break;
+                            }
                             if (expr->type == ASTNodeType::TYPE_INFO_STORE) {
                                 Str tn = expr->type_info_store.type_name;
                                 Str typeinfo_type = { .data = "TypeInfo", .length = 8 };

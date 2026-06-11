@@ -26,6 +26,7 @@ enum class ASTNodeType : uint8_t {
     BUILTIN_LENGTH_IN_BYTES,
     DEFER,
     DEREF,
+    ENUM_DEF,
     FOR_COND_LOOP,
     INTBE_CAST,
     INTLE_CAST,
@@ -47,6 +48,7 @@ enum class ASTNodeType : uint8_t {
     SLICE_CAST,
     STRUCT_DEF,
     STRUCT_INIT,
+    TYPE_INFO_ENUM_MEMBER_KEY,
     TYPE_INFO_NAME,
     TYPE_INFO_SIZE,
     TYPE_INFO_STORE,
@@ -260,6 +262,14 @@ struct ASTNode {
             Array<ProcParameterASTNode> fields;
         } struct_def;
         struct {
+            Str name;
+            Array<ProcParameterASTNode> members;
+        } enum_def;
+        struct {
+            Str enum_type_name;
+            Str index_var;
+        } type_info_enum_member_key;
+        struct {
             Str type_name;
             Array<ProcParameterASTNode> field_names;
             Array<BinaryOperand> field_values;
@@ -293,6 +303,7 @@ constexpr auto to_string(ASTNodeType type) -> Str {
         case ASTNodeType::BUILTIN_LENGTH_IN_BYTES: return STR("builtin_length_in_bytes");
         case ASTNodeType::DEFER:               return STR("defer");
         case ASTNodeType::DEREF:               return STR("deref");
+        case ASTNodeType::ENUM_DEF:            return STR("enum_def");
         case ASTNodeType::FOR_COND_LOOP:       return STR("for_cond_loop");
         case ASTNodeType::INTBE_CAST:          return STR("intbe_cast");
         case ASTNodeType::INTLE_CAST:          return STR("intle_cast");
@@ -313,6 +324,7 @@ constexpr auto to_string(ASTNodeType type) -> Str {
         case ASTNodeType::SLICE_CAST:          return STR("slice_cast");
         case ASTNodeType::STRUCT_DEF:          return STR("struct_def");
         case ASTNodeType::STRUCT_INIT:         return STR("struct_init");
+        case ASTNodeType::TYPE_INFO_ENUM_MEMBER_KEY: return STR("type_info_enum_member_key");
         case ASTNodeType::TYPE_INFO_NAME:      return STR("type_info_name");
         case ASTNodeType::TYPE_INFO_SIZE:      return STR("type_info_size");
         case ASTNodeType::TYPE_INFO_STORE:     return STR("type_info_store");

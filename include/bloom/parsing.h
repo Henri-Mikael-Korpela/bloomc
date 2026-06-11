@@ -178,6 +178,8 @@ struct ASTNode {
             Str element_name;
             Str index_name;
             Str collection_name;
+            Str inline_element_type;
+            Array<int64_t> inline_elements;
             Array<ASTNode> body;
         } for_in_loop;
         struct {

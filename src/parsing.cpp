@@ -3357,6 +3357,100 @@ static auto parse_statement(
                         return false;
                     }
                 }
+                else if (iter_peek(tokens_iter)->type == TokenType::BRACKET_OPEN) {
+                    (void)iter_next(tokens_iter); // consume [
+                    if (expect_token_or_append_error(tokens_iter, TokenType::BRACKET_CLOSE, errors) == nullptr) { return false; }
+                    auto *elem_type_tok = expect_token_or_append_error(tokens_iter, TokenType::IDENTIFIER, errors);
+                    if (elem_type_tok == nullptr) { return false; }
+                    Str const inline_elem_type = elem_type_tok->identifier.content;
+                    if (expect_token_or_append_error(tokens_iter, TokenType::BRACE_OPEN, errors) == nullptr) { return false; }
+                    size_t const elements_begin = array_elements_iter->current_index;
+                    bool in_range_mode = false;
+                    while (true) {
+                        auto *tok = iter_next(tokens_iter);
+                        if (tok->type == TokenType::BRACE_CLOSE) { break; }
+                        if (tok->type == TokenType::COMMA ||
+                            tok->type == TokenType::NEWLINE ||
+                            tok->type == TokenType::INDENT) { continue; }
+                        if (tok->type != TokenType::INTEGER_LITERAL) {
+                            append(errors, PARSE_ERROR_CREATE(UNEXPECTED_TOKEN, tok));
+                            return false;
+                        }
+                        if (tokens_iter->current_index < tokens_iter->elements.length &&
+                            iter_peek(tokens_iter)->type == TokenType::RANGE_EXCLUSIVE)
+                        {
+                            in_range_mode = true;
+                            int64_t range_start = tok->integer_literal.value;
+                            size_t current_count = array_elements_iter->current_index - elements_begin;
+                            if (range_start != static_cast<int64_t>(current_count)) {
+                                append(errors, PARSE_ERROR_CREATE(UNEXPECTED_TOKEN, tok));
+                                return false;
+                            }
+                            (void)iter_next(tokens_iter); // consume ..<
+                            auto *end_tok = iter_next(tokens_iter);
+                            if (end_tok->type != TokenType::INTEGER_LITERAL) {
+                                append(errors, PARSE_ERROR_CREATE(UNEXPECTED_TOKEN, end_tok));
+                                return false;
+                            }
+                            int64_t range_end = end_tok->integer_literal.value;
+                            if (range_end <= range_start) {
+                                append(errors, PARSE_ERROR_CREATE(UNEXPECTED_TOKEN, end_tok));
+                                return false;
+                            }
+                            auto *eq_tok = iter_next(tokens_iter);
+                            if (eq_tok->type != TokenType::EQUALS) {
+                                append(errors, PARSE_ERROR_CREATE(UNEXPECTED_TOKEN, eq_tok));
+                                return false;
+                            }
+                            auto *val_tok = iter_next(tokens_iter);
+                            if (val_tok->type != TokenType::INTEGER_LITERAL) {
+                                append(errors, PARSE_ERROR_CREATE(UNEXPECTED_TOKEN, val_tok));
+                                return false;
+                            }
+                            int64_t range_value = val_tok->integer_literal.value;
+                            for (int64_t ri = range_start; ri < range_end; ri++) {
+                                int64_t v = range_value;
+                                (void)iter_append(array_elements_iter, std::move(v));
+                            }
+                        }
+                        else {
+                            if (in_range_mode) {
+                                append(errors, PARSE_ERROR_CREATE(UNEXPECTED_TOKEN, tok));
+                                return false;
+                            }
+                            int64_t val = tok->integer_literal.value;
+                            (void)iter_append(array_elements_iter, std::move(val));
+                        }
+                    }
+                    size_t const inline_count = array_elements_iter->current_index - elements_begin;
+                    if (!expect_arrow_newline(tokens_iter, errors)) { return false; }
+
+                    auto *for_in_node = iter_append(nodes_block_iter, ASTNode {
+                        .type = ASTNodeType::FOR_IN_LOOP,
+                        .parent = parent_node,
+                        .for_in_loop = {
+                            .element_name = elem_token->identifier.content,
+                            .index_name = index_name,
+                            .collection_name = {},
+                            .inline_element_type = inline_elem_type,
+                            .inline_elements = Array<int64_t>(
+                                array_elements_iter->elements.data + elements_begin,
+                                inline_count
+                            ),
+                            .body = Array<ASTNode>(
+                                nodes_block_iter->elements.data + nodes_block_iter->current_index + 1,
+                                0
+                            ),
+                        },
+                    });
+
+                    if (!parse_indented_body(tokens_iter, context, nodes_block_iter, for_in_node,
+                                             proc_params_block, proc_params_iter, types_iter,
+                                             operands_iter, array_elements_iter, errors,
+                                             current_indent_level, &for_in_node->for_in_loop.body)) {
+                        return false;
+                    }
+                }
                 else {
                     auto *coll_token = expect_token_or_append_error(tokens_iter, TokenType::IDENTIFIER, errors);
                     if (coll_token == nullptr) { return false; }
@@ -3760,6 +3854,13 @@ auto parse(Array<Token> *tokens, ArenaAllocator *allocator, Str source_content, 
                     node.array_init.elements.data =
                         new_array_elements_block.data +
                         (node.array_init.elements.data - orig_array_elements_data);
+                    break;
+                case ASTNodeType::FOR_IN_LOOP:
+                    if (node.for_in_loop.inline_elements.length > 0) {
+                        node.for_in_loop.inline_elements.data =
+                            new_array_elements_block.data +
+                            (node.for_in_loop.inline_elements.data - orig_array_elements_data);
+                    }
                     break;
                 case ASTNodeType::STRUCT_INIT:
                     if (node.struct_init.field_names.length > 0) {

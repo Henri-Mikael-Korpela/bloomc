@@ -25,7 +25,11 @@ main :: proc() ->
         print("For if, j = {}\n", j)
         j += 1
 
-    // For-in loop with array
+    // For-in loop with array, with variable binding
     a := [const]Int { 1, 2, 3 }
     for x, i in a ->
-        print("For-in loop with array, X: {}, index {}\n", x, i)
+        print("For-in loop with array with variable binding, X: {}, index {}\n", x, i)
+
+    // For-in loop with array, without variable binding
+    for x, i in []Int { 1, 1..<4 = 9 } ->
+        print("For-in loop with array without variable binding, X: {}, index {}\n", x, i)

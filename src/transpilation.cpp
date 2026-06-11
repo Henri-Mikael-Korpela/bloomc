@@ -1622,6 +1622,54 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
                             Str const *coll = &stmt->for_in_loop.collection_name;
                             Str const *idx = &stmt->for_in_loop.index_name;
 
+                            // Inline array literal: for x in []Type { ... }
+                            if (stmt->for_in_loop.inline_element_type.length > 0) {
+                                bool const is_u8 = stmt->for_in_loop.inline_element_type == "U8";
+                                auto const *elems = &stmt->for_in_loop.inline_elements;
+                                register_var(*elem, VarKind::INT);
+                                if (idx->length > 0) {
+                                    register_var(*idx, VarKind::SIZE_T);
+                                }
+                                push_tabs();
+                                PUSH_STR(is_u8 ? "uint8_t" : "int");
+                                PUSH_STR(" __bloom_tmp");
+                                PUSH_INT(static_cast<intmax_t>(loop_idx));
+                                PUSH_STR("[] = {");
+                                for (size_t i = 0; i < elems->length; i++) {
+                                    if (i != 0) { PUSH_STR(", "); }
+                                    PUSH_INT(elems->data[i]);
+                                }
+                                PUSH_STR("};\n");
+                                push_tabs();
+                                PUSH_STR("for (size_t __bloom_i");
+                                PUSH_INT(static_cast<intmax_t>(loop_idx));
+                                PUSH_STR(" = 0; __bloom_i");
+                                PUSH_INT(static_cast<intmax_t>(loop_idx));
+                                PUSH_STR(" < ");
+                                PUSH_INT(static_cast<intmax_t>(elems->length));
+                                PUSH_STR("; __bloom_i");
+                                PUSH_INT(static_cast<intmax_t>(loop_idx));
+                                PUSH_STR("++) {\n");
+                                push_tabs(); PUSH_STR("\t");
+                                PUSH_STR(is_u8 ? "uint8_t" : "int");
+                                PUSH_STR(" ");
+                                PUSH_STR(*elem);
+                                PUSH_STR(" = __bloom_tmp");
+                                PUSH_INT(static_cast<intmax_t>(loop_idx));
+                                PUSH_STR("[__bloom_i");
+                                PUSH_INT(static_cast<intmax_t>(loop_idx));
+                                PUSH_STR("];\n");
+                                if (idx->length > 0) {
+                                    push_tabs(); PUSH_STR("\tsize_t ");
+                                    PUSH_STR(*idx); PUSH_STR(" = __bloom_i");
+                                    PUSH_INT(static_cast<intmax_t>(loop_idx));
+                                    PUSH_STR(";\n");
+                                }
+                                emit_body(&stmt->for_in_loop.body, stmt, depth + 1, false);
+                                push_tabs(); PUSH_STR("}\n");
+                                break;
+                            }
+
                             // Check if collection is a struct array
                             Str struct_elem_type = {};
                             size_t struct_arr_count = 0;

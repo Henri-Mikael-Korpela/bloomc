@@ -566,7 +566,7 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
                 PUSH_STR(expr->type_info_enum_member_key.enum_type_name);
                 PUSH_STR("_members[");
                 PUSH_STR(expr->type_info_enum_member_key.index_var);
-                PUSH_STR("]");
+                PUSH_STR("].name");
                 break;
             default:
                 assert(false && "Unsupported expression type in emit_expression");
@@ -663,6 +663,7 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
     PUSH_STR("typedef struct { char buf[4096]; size_t offset; } BloomTempAllocator;\n");
     PUSH_STR("typedef struct { BloomTempAllocator temp_allocator; } BloomContext;\n");
     PUSH_STR("typedef struct { BloomStr name; int size_in_bytes; } BloomTypeInfo;\n");
+    PUSH_STR("typedef struct { BloomStr name; } BloomEnumMember;\n");
 
     // Register TypeInfo as a built-in struct definition so member lookups work
     if (struct_def_count < 16) {
@@ -671,6 +672,13 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
         def->field_count = 0;
         def->fields[def->field_count++] = { .name = { .data = "name", .length = 4 }, .kind = VarKind::BLOOM_STR };
         def->fields[def->field_count++] = { .name = { .data = "size_in_bytes", .length = 13 }, .kind = VarKind::INT };
+    }
+    // Register BloomEnumMember so member.name resolves correctly
+    if (struct_def_count < 16) {
+        auto *def = &struct_defs[struct_def_count++];
+        def->name = { .data = "BloomEnumMember", .length = 15 };
+        def->field_count = 0;
+        def->fields[def->field_count++] = { .name = { .data = "name", .length = 4 }, .kind = VarKind::BLOOM_STR };
     }
     PUSH_STR("static char* __bloom_clone_to_cstr(BloomStr s, BloomTempAllocator *alloc) {\n");
     PUSH_STR("\tchar *p = alloc->buf + alloc->offset;\n");
@@ -750,16 +758,16 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
                     PUSH_STR(";\n");
                 }
                 // Emit members array for type_info_of reflection
-                PUSH_STR("static BloomStr const __bloom_");
+                PUSH_STR("static BloomEnumMember const __bloom_");
                 PUSH_STR(node->enum_def.name);
                 PUSH_STR("_members[] = {\n");
                 for (size_t i = 0; i < node->enum_def.members.length; i++) {
                     Str mname = node->enum_def.members.data[i].name;
-                    PUSH_STR("\t{.data = \"");
+                    PUSH_STR("\t{.name = {.data = \"");
                     PUSH_STR(mname);
                     PUSH_STR("\", .length = ");
                     PUSH_INT(static_cast<intmax_t>(mname.length));
-                    PUSH_STR("},\n");
+                    PUSH_STR("}},\n");
                 }
                 PUSH_STR("};\n\n");
                 break;
@@ -1239,11 +1247,11 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
                                                 PUSH_STR(arg->type_info_enum_member_key.enum_type_name);
                                                 PUSH_STR("_members[");
                                                 PUSH_STR(arg->type_info_enum_member_key.index_var);
-                                                PUSH_STR("].data, 1, __bloom_");
+                                                PUSH_STR("].name.data, 1, __bloom_");
                                                 PUSH_STR(arg->type_info_enum_member_key.enum_type_name);
                                                 PUSH_STR("_members[");
                                                 PUSH_STR(arg->type_info_enum_member_key.index_var);
-                                                PUSH_STR("].length, stdout);\n");
+                                                PUSH_STR("].name.length, stdout);\n");
                                             }
                                             else if (arg->type == ASTNodeType::TYPE_INFO_SIZE) {
                                                 PUSH_STR("printf(\"%zu\", ");
@@ -1752,6 +1760,51 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
                                 PUSH_STR(" = __bloom_tmp");
                                 PUSH_INT(static_cast<intmax_t>(loop_idx));
                                 PUSH_STR("[__bloom_i");
+                                PUSH_INT(static_cast<intmax_t>(loop_idx));
+                                PUSH_STR("];\n");
+                                if (idx->length > 0) {
+                                    push_tabs(); PUSH_STR("\tsize_t ");
+                                    PUSH_STR(*idx); PUSH_STR(" = __bloom_i");
+                                    PUSH_INT(static_cast<intmax_t>(loop_idx));
+                                    PUSH_STR(";\n");
+                                }
+                                emit_body(&stmt->for_in_loop.body, stmt, depth + 1, false);
+                                push_tabs(); PUSH_STR("}\n");
+                                break;
+                            }
+
+                            // Enum members iteration: for x in type_info_of(var).members
+                            if (stmt->for_in_loop.enum_members_type_name.length > 0) {
+                                Str const *etype = &stmt->for_in_loop.enum_members_type_name;
+                                // Look up member count from enum_defs
+                                size_t member_count = 0;
+                                for (size_t i = 0; i < enum_def_count; i++) {
+                                    if (enum_defs[i].name.length == etype->length &&
+                                        strncmp(enum_defs[i].name.data, etype->data, etype->length) == 0)
+                                    {
+                                        member_count = enum_defs[i].member_count;
+                                        break;
+                                    }
+                                }
+                                register_struct_var(*elem, { .data = "BloomEnumMember", .length = 15 });
+                                if (idx->length > 0) {
+                                    register_var(*idx, VarKind::SIZE_T);
+                                }
+                                push_tabs();
+                                PUSH_STR("for (size_t __bloom_i");
+                                PUSH_INT(static_cast<intmax_t>(loop_idx));
+                                PUSH_STR(" = 0; __bloom_i");
+                                PUSH_INT(static_cast<intmax_t>(loop_idx));
+                                PUSH_STR(" < ");
+                                PUSH_INT(static_cast<intmax_t>(member_count));
+                                PUSH_STR("; __bloom_i");
+                                PUSH_INT(static_cast<intmax_t>(loop_idx));
+                                PUSH_STR("++) {\n");
+                                push_tabs(); PUSH_STR("\tBloomEnumMember ");
+                                PUSH_STR(*elem);
+                                PUSH_STR(" = __bloom_");
+                                PUSH_STR(*etype);
+                                PUSH_STR("_members[__bloom_i");
                                 PUSH_INT(static_cast<intmax_t>(loop_idx));
                                 PUSH_STR("];\n");
                                 if (idx->length > 0) {

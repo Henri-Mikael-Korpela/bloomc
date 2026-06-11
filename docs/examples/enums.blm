@@ -7,3 +7,7 @@ main :: proc() ->
     // Get key for the enum value
     color := Color.RED
     print("Current color: {}\n", type_info_of(color).members[color].key)
+
+    // Get all keys in enum
+    for member in type_info_of(color).members ->
+        print("Color member {}\n", member.name)

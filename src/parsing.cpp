@@ -3555,6 +3555,52 @@ static auto parse_statement(
                         return false;
                     }
                 }
+                else if (tokens_iter->current_index < tokens_iter->elements.length &&
+                         iter_peek(tokens_iter)->type == TokenType::IDENTIFIER &&
+                         iter_peek(tokens_iter)->identifier.content == "type_info_of")
+                {
+                    // for elem in type_info_of(var).members
+                    (void)iter_next(tokens_iter); // consume type_info_of
+                    if (expect_token_or_append_error(tokens_iter, TokenType::PARENTHESIS_OPEN, errors) == nullptr) { return false; }
+                    size_t const inner_start = tokens_iter->current_index;
+                    int tio_depth = 1;
+                    size_t tio_end = inner_start;
+                    while (tio_end < tokens_iter->elements.length) {
+                        TokenType const tt = tokens_iter->elements.data[tio_end].type;
+                        if (tt == TokenType::PARENTHESIS_OPEN)  { tio_depth++; }
+                        if (tt == TokenType::PARENTHESIS_CLOSE) { tio_depth--; if (tio_depth == 0) { break; } }
+                        tio_end++;
+                    }
+                    auto inner_iter = iter_slice_by_offset(tokens_iter, inner_start, static_cast<int64_t>(tio_end));
+                    tokens_iter->current_index = tio_end + 1; // skip past )
+                    Str enum_type_name = infer_bloom_type_from_tokens(&inner_iter, context, nodes_block_iter);
+                    if (expect_token_or_append_error(tokens_iter, TokenType::DOT, errors) == nullptr) { return false; }
+                    auto *members_tok = expect_token_or_append_error(tokens_iter, TokenType::IDENTIFIER, errors);
+                    if (members_tok == nullptr) { return false; }
+                    if (!expect_arrow_newline(tokens_iter, errors)) { return false; }
+
+                    auto *for_in_node = iter_append(nodes_block_iter, ASTNode {
+                        .type = ASTNodeType::FOR_IN_LOOP,
+                        .parent = parent_node,
+                        .for_in_loop = {
+                            .element_name = elem_token->identifier.content,
+                            .index_name = index_name,
+                            .collection_name = {},
+                            .enum_members_type_name = enum_type_name,
+                            .body = Array<ASTNode>(
+                                nodes_block_iter->elements.data + nodes_block_iter->current_index + 1,
+                                0
+                            ),
+                        },
+                    });
+
+                    if (!parse_indented_body(tokens_iter, context, nodes_block_iter, for_in_node,
+                                             proc_params_block, proc_params_iter, types_iter,
+                                             operands_iter, array_elements_iter, errors,
+                                             current_indent_level, &for_in_node->for_in_loop.body)) {
+                        return false;
+                    }
+                }
                 else {
                     auto *coll_token = expect_token_or_append_error(tokens_iter, TokenType::IDENTIFIER, errors);
                     if (coll_token == nullptr) { return false; }

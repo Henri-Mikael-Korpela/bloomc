@@ -182,6 +182,7 @@ struct ASTNode {
             Str collection_name;
             Str inline_element_type;
             Array<int64_t> inline_elements;
+            Str enum_members_type_name;
             Array<ASTNode> body;
         } for_in_loop;
         struct {

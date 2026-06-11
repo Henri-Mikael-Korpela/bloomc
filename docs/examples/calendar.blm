@@ -25,7 +25,6 @@ Event :: struct ->
 
 main :: proc() ->
     EVENT_NAME_LENGTH_BYTE_COUNT :: 1
-    EVENT_ID_BYTE_COUNT :: 4
 
     EVENT_NAME_MAX_LENGTH :: EVENT_NAME_LENGTH_BYTE_COUNT * 256 - 1
 
@@ -36,6 +35,8 @@ main :: proc() ->
     e1 := events[0]
     print("Event #1: {}\n", e1.name)
 
+    EVENT_ID_BYTE_COUNT :: type_info_of(events[0].id).size_in_bytes
+
     f := file_open_for_write("calendar-db")
     defer file_close(%f)
 
@@ -44,7 +45,7 @@ main :: proc() ->
     buffer := [EVENT_ID_BYTE_COUNT + 1 + EVENT_NAME_MAX_LENGTH]U8{}
     for event in events ->
         name_len := length_in_bytes(event.name)
-        buffer[0..<EVENT_ID_BYTE_COUNT] = []U8(IntLE(event.id))
+        buffer[..<EVENT_ID_BYTE_COUNT] = []U8(IntLE(event.id))
         buffer[4] = name_len
         buffer[5..+name_len] = []U8(event.name)
         buffer_len := EVENT_ID_BYTE_COUNT + 1 + name_len

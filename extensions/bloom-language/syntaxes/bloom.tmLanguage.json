@@ -70,7 +70,7 @@
         },
         {
           "name": "keyword.other.bloom",
-          "match": "\\b(const|defer|foreign|proc|struct)\\b"
+          "match": "\\b(const|defer|foreign|proc|struct|type_info_of)\\b"
         },
         {
           "name": "constant.language.boolean.bloom",

@@ -133,3 +133,57 @@ a := [const]Int{ 2, 5, 9 }
 ## Structs
 
 C allows for multiple same fields in a designed initializer list (e.g. `MyStruct { .field1 = 3, .field1 = 7 }`) for a struct. In Bloom, this is not possible and results in a compilation error because it is wasteful to initialize the same field twice or more times.
+
+## Reflection
+
+`type_info_of` is a built-in operator that returns compile-time type information about an expression or a type name. The expression passed to it is **not evaluated** — only its type is inspected.
+
+```
+type_info_of(<expression or type name>)
+```
+
+The returned value is a compile-time structure with the following field:
+
+| Field          | Type | Description                        |
+|----------------|------|------------------------------------|
+| `size_in_bytes` | Int  | Size of the type in bytes          |
+
+### Example: querying the size of a built-in type
+
+```
+n := type_info_of(Int).size_in_bytes   // 4
+```
+
+### Example: querying the size of an expression's type
+
+The type is deduced from the expression without evaluating it:
+
+```
+Event :: struct ->
+    id: Int
+    name: Str
+
+events := [const]Event { .{ id = 1, name = "first" } }
+id_size := type_info_of(events[0].id).size_in_bytes   // 4, same as sizeof(int)
+```
+
+### Example: using the result as a compile-time constant
+
+`type_info_of(...).size_in_bytes` can appear on the right-hand side of a constant definition (`::`) and the result is folded to an integer at compile time:
+
+```
+ID_SIZE :: type_info_of(Int).size_in_bytes   // ID_SIZE = 4
+
+buffer := [ID_SIZE + 1]U8{}
+```
+
+### Transpilation
+
+Access to `size_in_bytes` is transpiled to a C `sizeof` expression:
+
+```
+type_info_of(Int).size_in_bytes   →   sizeof(int)
+type_info_of(U8).size_in_bytes    →   sizeof(uint8_t)
+type_info_of(Bool).size_in_bytes  →   sizeof(bool)
+type_info_of(Str).size_in_bytes   →   sizeof(BloomStr)
+```

@@ -2414,6 +2414,17 @@ static auto infer_bloom_type_from_tokens(
         }
     }
 
+    // If the expression is a struct type name used directly, return it immediately.
+    for (size_t i = 0; i < nodes_block_iter->current_index; i++) {
+        auto const *node = &nodes_block_iter->elements.data[i];
+        if (node->type == ASTNodeType::STRUCT_DEF &&
+            str_equal(node->struct_def.name, name) &&
+            expr_iter->current_index >= expr_iter->elements.length)
+        {
+            return name;
+        }
+    }
+
     // Look up the variable definition in already-parsed nodes.
     Str current_type = {};
     for (size_t i = 0; i < nodes_block_iter->current_index; i++) {

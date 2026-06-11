@@ -1145,6 +1145,11 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
                                                 PUSH_INT(static_cast<intmax_t>(tn.length));
                                                 PUSH_STR(", stdout);\n");
                                             }
+                                            else if (arg->type == ASTNodeType::TYPE_INFO_SIZE) {
+                                                PUSH_STR("printf(\"%zu\", ");
+                                                emit_expression(arg);
+                                                PUSH_STR(");\n");
+                                            }
                                             else if (arg->type == ASTNodeType::ARRAY_ELEMENT_MEMBER_ACCESS) {
                                                 VarKind kind = lookup_array_element_member_kind(
                                                     arg->array_element_member_access.array_name,

@@ -2399,6 +2399,17 @@ static auto infer_bloom_type_from_tokens(
         return {};
     }
     auto *tok = iter_next(expr_iter);
+    // Literal expressions with known types
+    if (tok->type == TokenType::STRING_LITERAL &&
+        expr_iter->current_index >= expr_iter->elements.length)
+    {
+        return { .data = "Str", .length = 3 };
+    }
+    if (tok->type == TokenType::INTEGER_LITERAL &&
+        expr_iter->current_index >= expr_iter->elements.length)
+    {
+        return { .data = "Int", .length = 3 };
+    }
     if (tok->type != TokenType::IDENTIFIER) {
         return {};
     }
@@ -2435,6 +2446,9 @@ static auto infer_bloom_type_from_tokens(
             ASTNode const *expr = node->variable_definition.expr;
             if (expr->type == ASTNodeType::ARRAY_STRUCT_INIT) {
                 current_type = expr->array_struct_init.element_type;
+            }
+            else if (expr->type == ASTNodeType::STRUCT_INIT) {
+                current_type = expr->struct_init.type_name;
             }
             break;
         }

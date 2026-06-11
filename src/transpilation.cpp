@@ -1147,6 +1147,14 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
                                                 emit_binary_operand(&ops->data[1]);
                                                 PUSH_STR(") ? \"true\" : \"false\", stdout);\n");
                                             }
+                                            else if (arg->type == ASTNodeType::STRING_LITERAL) {
+                                                size_t const runtime_len = str_literal_runtime_length(arg->string_literal.value);
+                                                PUSH_STR("fwrite(\"");
+                                                PUSH_STR(arg->string_literal.value);
+                                                PUSH_STR("\", 1, ");
+                                                PUSH_INT(static_cast<intmax_t>(runtime_len));
+                                                PUSH_STR(", stdout);\n");
+                                            }
                                             else if (arg->type == ASTNodeType::TYPE_INFO_NAME) {
                                                 Str tn = arg->type_info_name.type_name;
                                                 PUSH_STR("fwrite(\"");

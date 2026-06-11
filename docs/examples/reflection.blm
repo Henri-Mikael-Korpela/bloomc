@@ -2,7 +2,7 @@ MyStruct :: struct ->
     age: Int
 
 main :: proc() ->
-    // Sizes of built-in types
+    // Names and sizes of built-in types
     ->
         t :: type_info_of(Bool)
         print("{} size: {}\n", t.name, t.size_in_bytes)
@@ -18,3 +18,9 @@ main :: proc() ->
 
     // Sizes of custom structs
     print("MyStruct size: {}\n", type_info_of(MyStruct).size_in_bytes)
+
+    // Sizes based on type deduction
+    print("Type from {}, size: {}\n", "Hello", type_info_of("Hello").size_in_bytes)
+
+    mys := MyStruct{}
+    print("Type from {}, size: {}\n", "mys.age", type_info_of(mys.age).size_in_bytes)

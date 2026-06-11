@@ -2938,6 +2938,59 @@ static auto parse_statement(
             case TokenType::CONST_DEF: {
                 (void)iter_next(tokens_iter); // consume ::
 
+                // type_info_of(expr) without field access → TypeInfo variable
+                if (tokens_iter->current_index < tokens_iter->elements.length &&
+                    tokens_iter->elements.data[tokens_iter->current_index].type == TokenType::IDENTIFIER &&
+                    tokens_iter->elements.data[tokens_iter->current_index].identifier.content == "type_info_of" &&
+                    tokens_iter->current_index + 1 < tokens_iter->elements.length &&
+                    tokens_iter->elements.data[tokens_iter->current_index + 1].type == TokenType::PARENTHESIS_OPEN)
+                {
+                    // Scan ahead to find the matching ) without consuming tokens yet
+                    size_t scan_idx = tokens_iter->current_index + 2;
+                    int depth = 1;
+                    while (scan_idx < tokens_iter->elements.length) {
+                        TokenType const tt = tokens_iter->elements.data[scan_idx].type;
+                        if (tt == TokenType::PARENTHESIS_OPEN)  { depth++; }
+                        if (tt == TokenType::PARENTHESIS_CLOSE) { depth--; if (depth == 0) { break; } }
+                        scan_idx++;
+                    }
+                    // Only handle as TypeInfo store if nothing follows ) on the same line
+                    bool const is_store = (depth == 0) && (
+                        scan_idx + 1 >= tokens_iter->elements.length ||
+                        tokens_iter->elements.data[scan_idx + 1].type == TokenType::NEWLINE ||
+                        tokens_iter->elements.data[scan_idx + 1].type == TokenType::END
+                    );
+                    if (is_store) {
+                        Token *type_info_of_tok = iter_next(tokens_iter); // consume type_info_of
+                        (void)iter_next(tokens_iter); // consume (
+                        size_t const inner_start = tokens_iter->current_index;
+                        auto inner_iter = iter_slice_by_offset(
+                            tokens_iter, inner_start, static_cast<int64_t>(scan_idx));
+                        tokens_iter->current_index = scan_idx + 1; // skip past )
+                        Str type_name = infer_bloom_type_from_tokens(
+                            &inner_iter, context, nodes_block_iter);
+                        if (type_name.length == 0) {
+                            append(errors, PARSE_ERROR_CREATE(UNEXPECTED_TOKEN, type_info_of_tok));
+                            return false;
+                        }
+                        ASTNode *store_node = iter_append(nodes_block_iter, ASTNode {
+                            .type = ASTNodeType::TYPE_INFO_STORE,
+                            .parent = parent_node,
+                            .type_info_store = { .type_name = type_name },
+                        });
+                        (void)iter_append(nodes_block_iter, ASTNode {
+                            .type = ASTNodeType::VARIABLE_DEFINITION,
+                            .parent = parent_node,
+                            .variable_definition = {
+                                .name = next_token->identifier.content,
+                                .expr = store_node,
+                            },
+                        });
+                        (void)iter_next(tokens_iter); // consume NEWLINE/END
+                        break;
+                    }
+                }
+
                 if (iter_peek(tokens_iter)->type == TokenType::INTEGER_LITERAL) {
                     auto *value_token = iter_next(tokens_iter);
                     if (context->constant_count < 64) {

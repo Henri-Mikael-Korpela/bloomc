@@ -1,0 +1,20 @@
+MyStruct :: struct ->
+    age: Int
+
+main :: proc() ->
+    // Sizes of built-in types
+    ->
+        t :: type_info_of(Bool)
+        print("{} size: {}\n", t.name, t.size_in_bytes)
+    ->
+        t :: type_info_of(Int)
+        print("{} size: {}\n", t.name, t.size_in_bytes)
+    ->
+        t :: type_info_of(Str)
+        print("{} size: {}\n", t.name, t.size_in_bytes)
+    ->
+        t :: type_info_of(U8)
+        print("{} size: {}\n", t.name, t.size_in_bytes)
+
+    // Sizes of custom structs
+    print("MyStruct size: {}\n", type_info_of(MyStruct).size_in_bytes)

@@ -49,6 +49,7 @@ enum class ASTNodeType : uint8_t {
     STRUCT_INIT,
     TYPE_INFO_NAME,
     TYPE_INFO_SIZE,
+    TYPE_INFO_STORE,
     VARIABLE_DEFINITION,
 };
 
@@ -250,6 +251,9 @@ struct ASTNode {
             Str type_name;
         } type_info_size;
         struct {
+            Str type_name;
+        } type_info_store;
+        struct {
             Str name;
             Array<ProcParameterASTNode> fields;
         } struct_def;
@@ -309,6 +313,7 @@ constexpr auto to_string(ASTNodeType type) -> Str {
         case ASTNodeType::STRUCT_INIT:         return STR("struct_init");
         case ASTNodeType::TYPE_INFO_NAME:      return STR("type_info_name");
         case ASTNodeType::TYPE_INFO_SIZE:      return STR("type_info_size");
+        case ASTNodeType::TYPE_INFO_STORE:     return STR("type_info_store");
         case ASTNodeType::VARIABLE_DEFINITION: return STR("variable_definition");
         default:                               return STR("undefined");
     }

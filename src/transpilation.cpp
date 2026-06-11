@@ -631,6 +631,16 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
     PUSH_STR("typedef struct { char bytes[4]; uint8_t len; } BloomChar;\n");
     PUSH_STR("typedef struct { char buf[4096]; size_t offset; } BloomTempAllocator;\n");
     PUSH_STR("typedef struct { BloomTempAllocator temp_allocator; } BloomContext;\n");
+    PUSH_STR("typedef struct { BloomStr name; int size_in_bytes; } BloomTypeInfo;\n");
+
+    // Register TypeInfo as a built-in struct definition so member lookups work
+    if (struct_def_count < 16) {
+        auto *def = &struct_defs[struct_def_count++];
+        def->name = { .data = "TypeInfo", .length = 8 };
+        def->field_count = 0;
+        def->fields[def->field_count++] = { .name = { .data = "name", .length = 4 }, .kind = VarKind::BLOOM_STR };
+        def->fields[def->field_count++] = { .name = { .data = "size_in_bytes", .length = 13 }, .kind = VarKind::INT };
+    }
     PUSH_STR("static char* __bloom_clone_to_cstr(BloomStr s, BloomTempAllocator *alloc) {\n");
     PUSH_STR("\tchar *p = alloc->buf + alloc->offset;\n");
     PUSH_STR("\tmemcpy(p, s.data, s.length);\n");
@@ -1264,6 +1274,26 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
                         case ASTNodeType::VARIABLE_DEFINITION: {
                             push_tabs();
                             ASTNode *expr = stmt->variable_definition.expr;
+                            if (expr->type == ASTNodeType::TYPE_INFO_STORE) {
+                                Str tn = expr->type_info_store.type_name;
+                                Str typeinfo_type = { .data = "TypeInfo", .length = 8 };
+                                register_struct_var(stmt->variable_definition.name, typeinfo_type);
+                                PUSH_STR("BloomTypeInfo const ");
+                                PUSH_STR(stmt->variable_definition.name);
+                                PUSH_STR(" = {.name = (BloomStr){.data = \"");
+                                PUSH_STR(tn);
+                                PUSH_STR("\", .length = ");
+                                PUSH_INT(static_cast<intmax_t>(tn.length));
+                                PUSH_STR("}, .size_in_bytes = (int)sizeof(");
+                                if (tn == "Int")       { PUSH_STR("int"); }
+                                else if (tn == "U8")   { PUSH_STR("uint8_t"); }
+                                else if (tn == "Bool") { PUSH_STR("bool"); }
+                                else if (tn == "Str")  { PUSH_STR("BloomStr"); }
+                                else if (tn == "CStr") { PUSH_STR("char const *"); }
+                                else                   { PUSH_STR(tn); }
+                                PUSH_STR(")};\n");
+                                break;
+                            }
                             if (expr->type == ASTNodeType::ADDRESS_OF) {
                                 Str struct_type_name = {};
                                 if (lookup_var_kind(expr->identifier) == VarKind::STRUCT) {

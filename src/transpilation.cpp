@@ -663,7 +663,7 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
     PUSH_STR("typedef struct { char buf[4096]; size_t offset; } BloomTempAllocator;\n");
     PUSH_STR("typedef struct { BloomTempAllocator temp_allocator; } BloomContext;\n");
     PUSH_STR("typedef struct { BloomStr name; int size_in_bytes; } BloomTypeInfo;\n");
-    PUSH_STR("typedef struct { BloomStr name; } BloomEnumMember;\n");
+    PUSH_STR("typedef struct { BloomStr name; int value; } BloomEnumMember;\n");
 
     // Register TypeInfo as a built-in struct definition so member lookups work
     if (struct_def_count < 16) {
@@ -679,6 +679,7 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
         def->name = { .data = "BloomEnumMember", .length = 15 };
         def->field_count = 0;
         def->fields[def->field_count++] = { .name = { .data = "name", .length = 4 }, .kind = VarKind::BLOOM_STR };
+        def->fields[def->field_count++] = { .name = { .data = "value", .length = 5 }, .kind = VarKind::INT };
     }
     PUSH_STR("static char* __bloom_clone_to_cstr(BloomStr s, BloomTempAllocator *alloc) {\n");
     PUSH_STR("\tchar *p = alloc->buf + alloc->offset;\n");
@@ -767,7 +768,9 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
                     PUSH_STR(mname);
                     PUSH_STR("\", .length = ");
                     PUSH_INT(static_cast<intmax_t>(mname.length));
-                    PUSH_STR("}},\n");
+                    PUSH_STR("}, .value = ");
+                    PUSH_INT(static_cast<intmax_t>(i));
+                    PUSH_STR("},\n");
                 }
                 PUSH_STR("};\n\n");
                 break;

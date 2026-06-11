@@ -10,4 +10,4 @@ main :: proc() ->
 
     // Get all keys in enum
     for member in type_info_of(color).members ->
-        print("Color member {}\n", member.name)
+        print("Color member {} with value {}\n", member.name, member.value)

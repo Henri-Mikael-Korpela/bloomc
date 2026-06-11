@@ -304,6 +304,12 @@ static auto infer_arg_type_name(ASTNode const *arg, Context const *context) -> S
     }
 }
 
+static auto infer_bloom_type_from_tokens(
+    Iterator<Token> *expr_iter,
+    Context *context,
+    Iterator<ASTNode> const *nodes_block_iter
+) -> Str;
+
 /**
  * Parses procedure call parameters and appends them to the given procedure call AST node.
  *
@@ -868,6 +874,80 @@ static auto parse_proc_call_arguments(
                             .parent = proc_call_node,
                             .identifier = inner_id_token->identifier.content,
                         });
+                        if (!check_arg_type(next_token)) { return false; }
+                        arg_count++;
+                    }
+                    else if (next_token->identifier.content == "type_info_of") {
+                        // type_info_of(expr).size_in_bytes or .name — parse-time resolution
+                        size_t const inner_start = tokens_iter->current_index;
+                        int depth = 1;
+                        size_t inner_end = inner_start;
+                        while (inner_end < tokens_iter->elements.length) {
+                            TokenType const tt = tokens_iter->elements.data[inner_end].type;
+                            if (tt == TokenType::PARENTHESIS_OPEN)  { depth++; }
+                            if (tt == TokenType::PARENTHESIS_CLOSE) { depth--; if (depth == 0) { break; } }
+                            inner_end++;
+                        }
+                        if (depth != 0) {
+                            append(errors, ParseError {
+                                .code = ParseErrorCode::UNEXPECTED_TOKEN,
+                                .position = next_token->position,
+                                .src_code_line = __LINE__,
+                                .token_type = next_token->type,
+                            });
+                            return false;
+                        }
+                        auto inner_iter = iter_slice_by_offset(
+                            tokens_iter, inner_start, static_cast<int64_t>(inner_end));
+                        tokens_iter->current_index = inner_end + 1; // skip past )
+                        Str type_name = infer_bloom_type_from_tokens(
+                            &inner_iter, context, nodes_block_iter);
+                        if (type_name.length == 0 ||
+                            tokens_iter->current_index >= tokens_iter->elements.length ||
+                            iter_next(tokens_iter)->type != TokenType::DOT ||
+                            tokens_iter->current_index >= tokens_iter->elements.length)
+                        {
+                            append(errors, ParseError {
+                                .code = ParseErrorCode::UNEXPECTED_TOKEN,
+                                .position = next_token->position,
+                                .src_code_line = __LINE__,
+                                .token_type = next_token->type,
+                            });
+                            return false;
+                        }
+                        auto *field_tok = iter_next(tokens_iter);
+                        if (field_tok->type != TokenType::IDENTIFIER) {
+                            append(errors, ParseError {
+                                .code = ParseErrorCode::UNEXPECTED_TOKEN,
+                                .position = field_tok->position,
+                                .src_code_line = __LINE__,
+                                .token_type = field_tok->type,
+                            });
+                            return false;
+                        }
+                        if (field_tok->identifier.content == "size_in_bytes") {
+                            (void)iter_append(nodes_block_iter, ASTNode {
+                                .type = ASTNodeType::TYPE_INFO_SIZE,
+                                .parent = proc_call_node,
+                                .type_info_size = { .type_name = type_name },
+                            });
+                        }
+                        else if (field_tok->identifier.content == "name") {
+                            (void)iter_append(nodes_block_iter, ASTNode {
+                                .type = ASTNodeType::TYPE_INFO_NAME,
+                                .parent = proc_call_node,
+                                .type_info_name = { .type_name = type_name },
+                            });
+                        }
+                        else {
+                            append(errors, ParseError {
+                                .code = ParseErrorCode::UNEXPECTED_TOKEN,
+                                .position = field_tok->position,
+                                .src_code_line = __LINE__,
+                                .token_type = field_tok->type,
+                            });
+                            return false;
+                        }
                         if (!check_arg_type(next_token)) { return false; }
                         arg_count++;
                     }
@@ -1636,16 +1716,24 @@ static auto parse_expression(
                     return err<ASTNode, ParseError>(PARSE_ERROR_CREATE(UNEXPECTED_TOKEN, next_token));
                 }
                 auto *field_tok = iter_next(tokens_iter);
-                if (field_tok->type != TokenType::IDENTIFIER ||
-                    !(field_tok->identifier.content == "size_in_bytes"))
-                {
+                if (field_tok->type != TokenType::IDENTIFIER) {
                     return err<ASTNode, ParseError>(PARSE_ERROR_CREATE(UNEXPECTED_TOKEN, field_tok));
                 }
-                return ok<ASTNode, ParseError>(ASTNode {
-                    .type = ASTNodeType::TYPE_INFO_SIZE,
-                    .parent = nullptr,
-                    .type_info_size = { .type_name = type_name },
-                });
+                if (field_tok->identifier.content == "size_in_bytes") {
+                    return ok<ASTNode, ParseError>(ASTNode {
+                        .type = ASTNodeType::TYPE_INFO_SIZE,
+                        .parent = nullptr,
+                        .type_info_size = { .type_name = type_name },
+                    });
+                }
+                if (field_tok->identifier.content == "name") {
+                    return ok<ASTNode, ParseError>(ASTNode {
+                        .type = ASTNodeType::TYPE_INFO_NAME,
+                        .parent = nullptr,
+                        .type_info_name = { .type_name = type_name },
+                    });
+                }
+                return err<ASTNode, ParseError>(PARSE_ERROR_CREATE(UNEXPECTED_TOKEN, field_tok));
             }
             // Struct init: TypeName {} or TypeName { field = value, ... }
             if (next_token->type == TokenType::IDENTIFIER &&

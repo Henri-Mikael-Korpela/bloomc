@@ -142,11 +142,12 @@ C allows for multiple same fields in a designed initializer list (e.g. `MyStruct
 type_info_of(<expression or type name>)
 ```
 
-The returned value is a compile-time structure with the following field:
+The returned value is a compile-time structure with the following fields:
 
-| Field          | Type | Description                        |
-|----------------|------|------------------------------------|
-| `size_in_bytes` | Int  | Size of the type in bytes          |
+| Field           | Type | Description                                   |
+|-----------------|------|-----------------------------------------------|
+| `size_in_bytes` | Int  | Size of the type in bytes                     |
+| `name`          | Str  | Name of the type as a string (struct types only) |
 
 ### Example: querying the size of a built-in type
 
@@ -177,6 +178,19 @@ ID_SIZE :: type_info_of(Int).size_in_bytes   // ID_SIZE = 4
 buffer := [ID_SIZE + 1]U8{}
 ```
 
+### Example: querying the name of a struct type
+
+`type_info_of(...).name` returns the Bloom type name as a `Str`:
+
+```
+Event :: struct ->
+    id: Int
+    name: Str
+
+events := [const]Event { .{ id = 1, name = "first" } }
+print("Type: {}", type_info_of(events[0]).name)   // prints: Type: Event
+```
+
 ### Transpilation
 
 Access to `size_in_bytes` is transpiled to a C `sizeof` expression:
@@ -186,4 +200,10 @@ type_info_of(Int).size_in_bytes   →   sizeof(int)
 type_info_of(U8).size_in_bytes    →   sizeof(uint8_t)
 type_info_of(Bool).size_in_bytes  →   sizeof(bool)
 type_info_of(Str).size_in_bytes   →   sizeof(BloomStr)
+```
+
+Access to `name` is transpiled to a C `BloomStr` string literal:
+
+```
+type_info_of(events[0]).name   →   (BloomStr){.data = "Event", .length = 5}
 ```

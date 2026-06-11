@@ -36,6 +36,7 @@ main :: proc() ->
     print("Event #1: {}\n", e1.name)
 
     EVENT_ID_BYTE_COUNT :: type_info_of(events[0].id).size_in_bytes
+    print("Event struct name: {}\n", type_info_of(events[0]).name)
 
     f := file_open_for_write("calendar-db")
     defer file_close(%f)

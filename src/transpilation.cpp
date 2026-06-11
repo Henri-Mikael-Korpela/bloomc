@@ -516,6 +516,15 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
                 PUSH_STR("*");
                 PUSH_STR(expr->identifier);
                 break;
+            case ASTNodeType::TYPE_INFO_NAME: {
+                Str tn = expr->type_info_name.type_name;
+                PUSH_STR("(BloomStr){.data = \"");
+                PUSH_STR(tn);
+                PUSH_STR("\", .length = ");
+                PUSH_INT(static_cast<intmax_t>(tn.length));
+                PUSH_STR("}");
+                break;
+            }
             case ASTNodeType::TYPE_INFO_SIZE: {
                 Str tn = expr->type_info_size.type_name;
                 PUSH_STR("sizeof(");
@@ -1127,6 +1136,14 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
                                                 PUSH_STR(" == ");
                                                 emit_binary_operand(&ops->data[1]);
                                                 PUSH_STR(") ? \"true\" : \"false\", stdout);\n");
+                                            }
+                                            else if (arg->type == ASTNodeType::TYPE_INFO_NAME) {
+                                                Str tn = arg->type_info_name.type_name;
+                                                PUSH_STR("fwrite(\"");
+                                                PUSH_STR(tn);
+                                                PUSH_STR("\", 1, ");
+                                                PUSH_INT(static_cast<intmax_t>(tn.length));
+                                                PUSH_STR(", stdout);\n");
                                             }
                                             else if (arg->type == ASTNodeType::ARRAY_ELEMENT_MEMBER_ACCESS) {
                                                 VarKind kind = lookup_array_element_member_kind(

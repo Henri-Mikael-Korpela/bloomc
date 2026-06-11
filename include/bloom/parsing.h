@@ -47,6 +47,7 @@ enum class ASTNodeType : uint8_t {
     SLICE_CAST,
     STRUCT_DEF,
     STRUCT_INIT,
+    TYPE_INFO_NAME,
     TYPE_INFO_SIZE,
     VARIABLE_DEFINITION,
 };
@@ -244,6 +245,9 @@ struct ASTNode {
         ASTNode *intle_cast;
         struct {
             Str type_name;
+        } type_info_name;
+        struct {
+            Str type_name;
         } type_info_size;
         struct {
             Str name;
@@ -303,6 +307,7 @@ constexpr auto to_string(ASTNodeType type) -> Str {
         case ASTNodeType::SLICE_CAST:          return STR("slice_cast");
         case ASTNodeType::STRUCT_DEF:          return STR("struct_def");
         case ASTNodeType::STRUCT_INIT:         return STR("struct_init");
+        case ASTNodeType::TYPE_INFO_NAME:      return STR("type_info_name");
         case ASTNodeType::TYPE_INFO_SIZE:      return STR("type_info_size");
         case ASTNodeType::VARIABLE_DEFINITION: return STR("variable_definition");
         default:                               return STR("undefined");

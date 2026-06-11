@@ -1148,6 +1148,13 @@ static auto parse_indented_body(
     return true;
 }
 
+// Forward declaration — defined after eval_const_* helpers below parse_statement.
+static auto infer_bloom_type_from_tokens(
+    Iterator<Token> *expr_iter,
+    Context *context,
+    Iterator<ASTNode> const *nodes_block_iter
+) -> Str;
+
 static auto parse_expression(
     Iterator<Token> *tokens_iter,
     Context *context,
@@ -1593,6 +1600,53 @@ static auto parse_expression(
         }
         case TokenType::IDENTIFIER:
         case TokenType::INTEGER_LITERAL: {
+            // type_info_of(expr).size_in_bytes — compile-time type size query
+            if (next_token->type == TokenType::IDENTIFIER &&
+                next_token->identifier.content == "type_info_of" &&
+                tokens_iter->current_index < tokens_iter->elements.length &&
+                iter_peek(tokens_iter)->type == TokenType::PARENTHESIS_OPEN)
+            {
+                (void)iter_next(tokens_iter); // consume (
+                size_t const inner_start = tokens_iter->current_index;
+                int depth = 1;
+                size_t inner_end = inner_start;
+                while (inner_end < tokens_iter->elements.length) {
+                    TokenType const tt = tokens_iter->elements.data[inner_end].type;
+                    if (tt == TokenType::PARENTHESIS_OPEN)  { depth++; }
+                    if (tt == TokenType::PARENTHESIS_CLOSE) { depth--; if (depth == 0) { break; } }
+                    inner_end++;
+                }
+                if (depth != 0) {
+                    return err<ASTNode, ParseError>(PARSE_ERROR_CREATE(UNEXPECTED_TOKEN, next_token));
+                }
+                auto inner_iter = iter_slice_by_offset(
+                    tokens_iter, inner_start, static_cast<int64_t>(inner_end));
+                tokens_iter->current_index = inner_end + 1; // skip past )
+                Str const type_name = infer_bloom_type_from_tokens(
+                    &inner_iter, context, nodes_block_iter);
+                if (type_name.length == 0) {
+                    return err<ASTNode, ParseError>(PARSE_ERROR_CREATE(UNEXPECTED_TOKEN, next_token));
+                }
+                if (tokens_iter->current_index >= tokens_iter->elements.length ||
+                    iter_next(tokens_iter)->type != TokenType::DOT)
+                {
+                    return err<ASTNode, ParseError>(PARSE_ERROR_CREATE(UNEXPECTED_TOKEN, next_token));
+                }
+                if (tokens_iter->current_index >= tokens_iter->elements.length) {
+                    return err<ASTNode, ParseError>(PARSE_ERROR_CREATE(UNEXPECTED_TOKEN, next_token));
+                }
+                auto *field_tok = iter_next(tokens_iter);
+                if (field_tok->type != TokenType::IDENTIFIER ||
+                    !(field_tok->identifier.content == "size_in_bytes"))
+                {
+                    return err<ASTNode, ParseError>(PARSE_ERROR_CREATE(UNEXPECTED_TOKEN, field_tok));
+                }
+                return ok<ASTNode, ParseError>(ASTNode {
+                    .type = ASTNodeType::TYPE_INFO_SIZE,
+                    .parent = nullptr,
+                    .type_info_size = { .type_name = type_name },
+                });
+            }
             // Struct init: TypeName {} or TypeName { field = value, ... }
             if (next_token->type == TokenType::IDENTIFIER &&
                 tokens_iter->current_index < tokens_iter->elements.length &&
@@ -2245,9 +2299,124 @@ static auto parse_expression(
     }
 }
 
+// Infer the Bloom type name of the expression described by the tokens in expr_iter.
+// Handles: plain type names, plain identifiers (looked up from AST nodes),
+// array-element access (identifier[N]), member access (.field), and chains of both.
+static auto infer_bloom_type_from_tokens(
+    Iterator<Token> *expr_iter,
+    Context *context,
+    Iterator<ASTNode> const *nodes_block_iter
+) -> Str {
+    if (expr_iter->current_index >= expr_iter->elements.length) {
+        return {};
+    }
+    auto *tok = iter_next(expr_iter);
+    if (tok->type != TokenType::IDENTIFIER) {
+        return {};
+    }
+    Str name = tok->identifier.content;
+
+    // If the expression is just a primitive/builtin type name, return it directly.
+    static char const *const BUILTIN_TYPES[] = { "Int", "U8", "Bool", "Str", "CStr" };
+    for (auto const *bt : BUILTIN_TYPES) {
+        if (name == bt &&
+            expr_iter->current_index >= expr_iter->elements.length)
+        {
+            return name;
+        }
+    }
+
+    // Look up the variable definition in already-parsed nodes.
+    Str current_type = {};
+    for (size_t i = 0; i < nodes_block_iter->current_index; i++) {
+        auto const *node = &nodes_block_iter->elements.data[i];
+        if (node->type == ASTNodeType::VARIABLE_DEFINITION &&
+            str_equal(node->variable_definition.name, name))
+        {
+            ASTNode const *expr = node->variable_definition.expr;
+            if (expr->type == ASTNodeType::ARRAY_STRUCT_INIT) {
+                current_type = expr->array_struct_init.element_type;
+            }
+            break;
+        }
+    }
+    if (current_type.length == 0) {
+        return {};
+    }
+
+    // Consume optional array-element access: [N]
+    if (expr_iter->current_index < expr_iter->elements.length &&
+        iter_peek(expr_iter)->type == TokenType::BRACKET_OPEN)
+    {
+        (void)iter_next(expr_iter); // consume [
+        while (expr_iter->current_index < expr_iter->elements.length &&
+               iter_peek(expr_iter)->type != TokenType::BRACKET_CLOSE)
+        {
+            (void)iter_next(expr_iter);
+        }
+        if (expr_iter->current_index < expr_iter->elements.length) {
+            (void)iter_next(expr_iter); // consume ]
+        }
+        // current_type is the element type — unchanged.
+    }
+
+    // Consume optional member access: .field
+    if (expr_iter->current_index < expr_iter->elements.length &&
+        iter_peek(expr_iter)->type == TokenType::DOT)
+    {
+        (void)iter_next(expr_iter); // consume .
+        if (expr_iter->current_index >= expr_iter->elements.length) {
+            return {};
+        }
+        auto *field_tok = iter_next(expr_iter);
+        if (field_tok->type != TokenType::IDENTIFIER) {
+            return {};
+        }
+        // Find the struct definition matching current_type.
+        for (size_t i = 0; i < nodes_block_iter->current_index; i++) {
+            auto const *node = &nodes_block_iter->elements.data[i];
+            if (node->type == ASTNodeType::STRUCT_DEF &&
+                str_equal(node->struct_def.name, current_type))
+            {
+                for (size_t fi = 0; fi < node->struct_def.fields.length; fi++) {
+                    auto const *field = &node->struct_def.fields.data[fi];
+                    if (str_equal(field->name, field_tok->identifier.content)) {
+                        return field->type_name;
+                    }
+                }
+                return {};
+            }
+        }
+        return {};
+    }
+
+    return current_type;
+}
+
+// Returns the size in bytes for a Bloom built-in type, or -1 if unknown.
+static auto bloom_type_size_in_bytes(Str type_name) -> int64_t {
+    if (type_name == "Int")  { return 4; }
+    if (type_name == "U8")   { return 1; }
+    if (type_name == "Bool") { return 1; }
+    if (type_name == "Str")  { return 16; } // sizeof(BloomStr): data ptr + length
+    if (type_name == "CStr") { return 8; }  // pointer on 64-bit
+    return -1;
+}
+
+// Returns the C type name string for a Bloom type, used in sizeof() emission.
+static auto bloom_type_to_c_type(Str type_name) -> char const * {
+    if (type_name == "Int")  { return "int"; }
+    if (type_name == "U8")   { return "uint8_t"; }
+    if (type_name == "Bool") { return "bool"; }
+    if (type_name == "Str")  { return "BloomStr"; }
+    if (type_name == "CStr") { return "char const *"; }
+    return nullptr;
+}
+
 static auto eval_const_primary(
     Iterator<Token> *tokens_iter,
     Context *context,
+    Iterator<ASTNode> const *nodes_block_iter,
     DynamicArray<ParseError> *errors,
     int64_t *out_value
 ) -> bool {
@@ -2260,6 +2429,63 @@ static auto eval_const_primary(
         return true;
     }
     if (tok->type == TokenType::IDENTIFIER) {
+        // type_info_of(expr).size_in_bytes — compile-time size query
+        if (tok->identifier.content == "type_info_of" &&
+            tokens_iter->current_index < tokens_iter->elements.length &&
+            iter_peek(tokens_iter)->type == TokenType::PARENTHESIS_OPEN)
+        {
+            (void)iter_next(tokens_iter); // consume (
+            // Find the matching close paren.
+            size_t const inner_start = tokens_iter->current_index;
+            int depth = 1;
+            size_t inner_end = inner_start;
+            while (inner_end < tokens_iter->elements.length) {
+                TokenType const tt = tokens_iter->elements.data[inner_end].type;
+                if (tt == TokenType::PARENTHESIS_OPEN)  { depth++; }
+                if (tt == TokenType::PARENTHESIS_CLOSE) { depth--; if (depth == 0) { break; } }
+                inner_end++;
+            }
+            if (depth != 0) {
+                append(errors, PARSE_ERROR_CREATE(UNEXPECTED_TOKEN, tok));
+                return false;
+            }
+            auto inner_iter = iter_slice_by_offset(
+                tokens_iter, inner_start, static_cast<int64_t>(inner_end));
+            tokens_iter->current_index = inner_end + 1; // skip past )
+            // Infer the type of the inner expression.
+            Str const type_name = infer_bloom_type_from_tokens(
+                &inner_iter, context, nodes_block_iter);
+            if (type_name.length == 0) {
+                append(errors, PARSE_ERROR_CREATE(UNEXPECTED_TOKEN, tok));
+                return false;
+            }
+            // Consume .size_in_bytes
+            if (tokens_iter->current_index >= tokens_iter->elements.length ||
+                iter_next(tokens_iter)->type != TokenType::DOT)
+            {
+                append(errors, PARSE_ERROR_CREATE(UNEXPECTED_TOKEN, tok));
+                return false;
+            }
+            if (tokens_iter->current_index >= tokens_iter->elements.length) {
+                append(errors, PARSE_ERROR_CREATE(UNEXPECTED_TOKEN, tok));
+                return false;
+            }
+            auto *field_tok = iter_next(tokens_iter);
+            if (field_tok->type != TokenType::IDENTIFIER ||
+                !(field_tok->identifier.content == "size_in_bytes"))
+            {
+                append(errors, PARSE_ERROR_CREATE(UNEXPECTED_TOKEN, field_tok));
+                return false;
+            }
+            int64_t const sz = bloom_type_size_in_bytes(type_name);
+            if (sz < 0) {
+                append(errors, PARSE_ERROR_CREATE(UNEXPECTED_TOKEN, tok));
+                return false;
+            }
+            *out_value = sz;
+            return true;
+        }
+        // Regular constant reference
         for (size_t i = 0; i < context->constant_count; i++) {
             Str const *cname = &context->constants[i].name;
             if (cname->length == tok->identifier.content.length &&
@@ -2277,10 +2503,11 @@ static auto eval_const_primary(
 static auto eval_const_multiplicative(
     Iterator<Token> *tokens_iter,
     Context *context,
+    Iterator<ASTNode> const *nodes_block_iter,
     DynamicArray<ParseError> *errors,
     int64_t *out_value
 ) -> bool {
-    if (!eval_const_primary(tokens_iter, context, errors, out_value)) {
+    if (!eval_const_primary(tokens_iter, context, nodes_block_iter, errors, out_value)) {
         return false;
     }
     while (tokens_iter->current_index < tokens_iter->elements.length) {
@@ -2290,7 +2517,7 @@ static auto eval_const_multiplicative(
         }
         (void)iter_next(tokens_iter);
         int64_t rhs = 0;
-        if (!eval_const_primary(tokens_iter, context, errors, &rhs)) {
+        if (!eval_const_primary(tokens_iter, context, nodes_block_iter, errors, &rhs)) {
             return false;
         }
         if (op == TokenType::MULTIPLY) {
@@ -2309,10 +2536,11 @@ static auto eval_const_multiplicative(
 static auto eval_const_additive(
     Iterator<Token> *tokens_iter,
     Context *context,
+    Iterator<ASTNode> const *nodes_block_iter,
     DynamicArray<ParseError> *errors,
     int64_t *out_value
 ) -> bool {
-    if (!eval_const_multiplicative(tokens_iter, context, errors, out_value)) {
+    if (!eval_const_multiplicative(tokens_iter, context, nodes_block_iter, errors, out_value)) {
         return false;
     }
     while (tokens_iter->current_index < tokens_iter->elements.length) {
@@ -2322,7 +2550,7 @@ static auto eval_const_additive(
         }
         (void)iter_next(tokens_iter);
         int64_t rhs = 0;
-        if (!eval_const_multiplicative(tokens_iter, context, errors, &rhs)) {
+        if (!eval_const_multiplicative(tokens_iter, context, nodes_block_iter, errors, &rhs)) {
             return false;
         }
         if (op == TokenType::ADD) {
@@ -2649,7 +2877,7 @@ static auto parse_statement(
                     auto expr_toks = iter_slice_by_offset(
                         tokens_iter, tokens_iter->current_index, expr_end_idx);
                     int64_t const_value = 0;
-                    if (!eval_const_additive(&expr_toks, context, errors, &const_value)) {
+                    if (!eval_const_additive(&expr_toks, context, nodes_block_iter, errors, &const_value)) {
                         return false;
                     }
                     tokens_iter->current_index = static_cast<size_t>(expr_end_idx);
@@ -2678,19 +2906,34 @@ static auto parse_statement(
             case TokenType::BRACKET_OPEN: {
                 (void)iter_next(tokens_iter); // consume [
                 auto *index_token = iter_next(tokens_iter);
-                if (index_token->type != TokenType::INTEGER_LITERAL) {
+                int64_t index = 0;
+                bool consumed_range_op = false;
+                if (index_token->type == TokenType::INTEGER_LITERAL) {
+                    index = index_token->integer_literal.value;
+                }
+                else if (index_token->type == TokenType::RANGE ||
+                         index_token->type == TokenType::RANGE_COUNTED ||
+                         index_token->type == TokenType::RANGE_EXCLUSIVE ||
+                         index_token->type == TokenType::RANGE_INCLUSIVE)
+                {
+                    // [..<end] shorthand for [0..<end]: start defaults to 0
+                    index = 0;
+                    consumed_range_op = true;
+                }
+                else {
                     append(errors, PARSE_ERROR_CREATE(UNEXPECTED_TOKEN, index_token));
                     return false;
                 }
-                int64_t const index = index_token->integer_literal.value;
 
-                if (tokens_iter->current_index < tokens_iter->elements.length && (
+                if (consumed_range_op || (tokens_iter->current_index < tokens_iter->elements.length && (
                     iter_peek(tokens_iter)->type == TokenType::RANGE ||
                     iter_peek(tokens_iter)->type == TokenType::RANGE_COUNTED ||
                     iter_peek(tokens_iter)->type == TokenType::RANGE_EXCLUSIVE ||
-                    iter_peek(tokens_iter)->type == TokenType::RANGE_INCLUSIVE))
+                    iter_peek(tokens_iter)->type == TokenType::RANGE_INCLUSIVE)))
                 {
-                    (void)iter_next(tokens_iter); // consume range operator
+                    if (!consumed_range_op) {
+                        (void)iter_next(tokens_iter); // consume range operator
+                    }
                     // Consume end expression tokens (scan forward to ])
                     while (tokens_iter->current_index < tokens_iter->elements.length &&
                            iter_peek(tokens_iter)->type != TokenType::BRACKET_CLOSE)

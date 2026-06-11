@@ -516,6 +516,18 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
                 PUSH_STR("*");
                 PUSH_STR(expr->identifier);
                 break;
+            case ASTNodeType::TYPE_INFO_SIZE: {
+                Str tn = expr->type_info_size.type_name;
+                PUSH_STR("sizeof(");
+                if (tn == "Int")       { PUSH_STR("int"); }
+                else if (tn == "U8")   { PUSH_STR("uint8_t"); }
+                else if (tn == "Bool") { PUSH_STR("bool"); }
+                else if (tn == "Str")  { PUSH_STR("BloomStr"); }
+                else if (tn == "CStr") { PUSH_STR("char const *"); }
+                else                   { PUSH_STR(tn); } // custom struct — same name in C
+                PUSH_STR(")");
+                break;
+            }
             default:
                 assert(false && "Unsupported expression type in emit_expression");
         }

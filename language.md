@@ -26,6 +26,7 @@ if
 in
 proc
 struct
+type_info_of
 ```
 
 ## Data types

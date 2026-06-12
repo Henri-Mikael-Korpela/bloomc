@@ -2015,6 +2015,68 @@ static auto parse_expression(
                 {
                     (void)iter_next(tokens_iter); // consume [
                     auto *index_token = iter_next(tokens_iter);
+                    if (index_token->type == TokenType::RANGE) {
+                        // a[..] — whole array slice
+                        auto *close_tok = iter_next(tokens_iter);
+                        if (close_tok->type != TokenType::BRACKET_CLOSE) {
+                            return err<BinaryOperand, ParseError>(PARSE_ERROR_CREATE(UNEXPECTED_TOKEN, close_tok));
+                        }
+                        return ok<BinaryOperand, ParseError>(BinaryOperand {
+                            .type = BinaryOperandType::ARRAY_SLICE,
+                            .array_slice = {
+                                .variable_name = token->identifier.content,
+                                .start_index = -1,
+                                .end_index = -1,
+                            },
+                        });
+                    }
+                    if (index_token->type == TokenType::INTEGER_LITERAL &&
+                        tokens_iter->current_index < tokens_iter->elements.length &&
+                        iter_peek(tokens_iter)->type == TokenType::RANGE_EXCLUSIVE)
+                    {
+                        // a[N..<M] — exclusive range slice
+                        (void)iter_next(tokens_iter); // consume ..<
+                        auto *end_tok = iter_next(tokens_iter);
+                        if (end_tok->type != TokenType::INTEGER_LITERAL) {
+                            return err<BinaryOperand, ParseError>(PARSE_ERROR_CREATE(UNEXPECTED_TOKEN, end_tok));
+                        }
+                        auto *close_tok = iter_next(tokens_iter);
+                        if (close_tok->type != TokenType::BRACKET_CLOSE) {
+                            return err<BinaryOperand, ParseError>(PARSE_ERROR_CREATE(UNEXPECTED_TOKEN, close_tok));
+                        }
+                        return ok<BinaryOperand, ParseError>(BinaryOperand {
+                            .type = BinaryOperandType::ARRAY_SLICE,
+                            .array_slice = {
+                                .variable_name = token->identifier.content,
+                                .start_index = index_token->integer_literal.value,
+                                .end_index = end_tok->integer_literal.value,
+                            },
+                        });
+                    }
+                    if (index_token->type == TokenType::INTEGER_LITERAL &&
+                        tokens_iter->current_index < tokens_iter->elements.length &&
+                        iter_peek(tokens_iter)->type == TokenType::RANGE_COUNTED)
+                    {
+                        // a[N..+M] — counted range slice
+                        (void)iter_next(tokens_iter); // consume ..+
+                        auto *count_tok = iter_next(tokens_iter);
+                        if (count_tok->type != TokenType::INTEGER_LITERAL) {
+                            return err<BinaryOperand, ParseError>(PARSE_ERROR_CREATE(UNEXPECTED_TOKEN, count_tok));
+                        }
+                        auto *close_tok = iter_next(tokens_iter);
+                        if (close_tok->type != TokenType::BRACKET_CLOSE) {
+                            return err<BinaryOperand, ParseError>(PARSE_ERROR_CREATE(UNEXPECTED_TOKEN, close_tok));
+                        }
+                        int64_t const start = index_token->integer_literal.value;
+                        return ok<BinaryOperand, ParseError>(BinaryOperand {
+                            .type = BinaryOperandType::ARRAY_SLICE,
+                            .array_slice = {
+                                .variable_name = token->identifier.content,
+                                .start_index = start,
+                                .end_index = start + count_tok->integer_literal.value,
+                            },
+                        });
+                    }
                     if (index_token->type != TokenType::INTEGER_LITERAL) {
                         return err<BinaryOperand, ParseError>(PARSE_ERROR_CREATE(UNEXPECTED_TOKEN, index_token));
                     }
@@ -2246,6 +2308,17 @@ static auto parse_expression(
                         .member_access = {
                             .object_name = left_operand.member_access.object_name,
                             .field_name = left_operand.member_access.field_name,
+                        },
+                    });
+                case BinaryOperandType::ARRAY_SLICE:
+                    return ok<ASTNode, ParseError>(ASTNode {
+                        .type = ASTNodeType::ARRAY_SLICE,
+                        .parent = nullptr,
+                        .array_slice = {
+                            .variable_name = left_operand.array_slice.variable_name,
+                            .start_index = left_operand.array_slice.start_index,
+                            .end_index = left_operand.array_slice.end_index,
+                            .count_identifier = {},
                         },
                     });
                 default:

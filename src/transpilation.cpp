@@ -27,6 +27,13 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
     ArrayVarEntry array_vars[64];
     size_t array_var_count = 0;
 
+    struct SliceVarEntry {
+        Str name;
+        Str element_type;
+    };
+    SliceVarEntry slice_vars[32];
+    size_t slice_var_count = 0;
+
     enum class VarKind : uint8_t { INT, BOOL, BLOOM_STR, BLOOM_CHAR, SIZE_T, STRUCT, PTR, PTR_STRUCT, SLICE_U8 };
     struct VarEntry {
         Str name;
@@ -1580,6 +1587,50 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
                                     break;
                                 }
                             }
+                            if (expr->type == ASTNodeType::ARRAY_SLICE) {
+                                Str elem_type = {};
+                                size_t arr_count = 0;
+                                for (size_t i = array_var_count; i-- > 0;) {
+                                    if (array_vars[i].name.length == expr->array_slice.variable_name.length &&
+                                        strncmp(array_vars[i].name.data, expr->array_slice.variable_name.data, expr->array_slice.variable_name.length) == 0)
+                                    {
+                                        elem_type = array_vars[i].element_type;
+                                        arr_count = array_vars[i].count;
+                                        break;
+                                    }
+                                }
+                                bool const is_u8 = elem_type.length == 2 &&
+                                    elem_type.data[0] == 'U' && elem_type.data[1] == '8';
+                                char const *c_elem = is_u8 ? "uint8_t" : "int";
+                                int64_t const start = (expr->array_slice.start_index < 0) ? 0 : expr->array_slice.start_index;
+                                int64_t const end = (expr->array_slice.end_index < 0)
+                                    ? (int64_t)arr_count
+                                    : expr->array_slice.end_index;
+                                Str const varname = stmt->variable_definition.name;
+                                if (slice_var_count < 32) {
+                                    slice_vars[slice_var_count++] = { .name = varname, .element_type = elem_type };
+                                }
+                                // emit: int *__bloom_as_data = arr + offset;
+                                push_tabs();
+                                PUSH_STR(c_elem);
+                                PUSH_STR(" *__bloom_");
+                                PUSH_STR(varname);
+                                PUSH_STR("_data = ");
+                                PUSH_STR(expr->array_slice.variable_name);
+                                if (start > 0) {
+                                    PUSH_STR(" + ");
+                                    PUSH_INT(start);
+                                }
+                                PUSH_STR(";\n");
+                                // emit: size_t __bloom_as_len = length;
+                                push_tabs();
+                                PUSH_STR("size_t __bloom_");
+                                PUSH_STR(varname);
+                                PUSH_STR("_len = ");
+                                PUSH_INT(end - start);
+                                PUSH_STR(";\n");
+                                break;
+                            }
                             char const *c_type = nullptr;
                             VarKind var_kind = VarKind::INT;
                             if (expr->type == ASTNodeType::BOOLEAN_LITERAL) {
@@ -1906,6 +1957,53 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
                                 PUSH_STR(" ");
                                 PUSH_STR(*elem); PUSH_STR(" = ");
                                 PUSH_STR(*coll); PUSH_STR("[__bloom_i");
+                                PUSH_INT(static_cast<intmax_t>(loop_idx));
+                                PUSH_STR("];\n");
+                                if (idx->length > 0) {
+                                    push_tabs(); PUSH_STR("\tsize_t ");
+                                    PUSH_STR(*idx); PUSH_STR(" = __bloom_i");
+                                    PUSH_INT(static_cast<intmax_t>(loop_idx));
+                                    PUSH_STR(";\n");
+                                }
+                                emit_body(&stmt->for_in_loop.body, stmt, depth + 1, false);
+                                push_tabs(); PUSH_STR("}\n");
+                                break;
+                            }
+
+                            // Check if collection is a slice variable
+                            Str slice_elem_type = {};
+                            for (size_t i = slice_var_count; i-- > 0;) {
+                                if (slice_vars[i].name.length == coll->length &&
+                                    strncmp(slice_vars[i].name.data, coll->data, coll->length) == 0)
+                                {
+                                    slice_elem_type = slice_vars[i].element_type;
+                                    break;
+                                }
+                            }
+
+                            if (slice_elem_type.length > 0) {
+                                register_var(*elem, VarKind::INT);
+                                if (idx->length > 0) {
+                                    register_var(*idx, VarKind::SIZE_T);
+                                }
+                                bool const is_u8 = slice_elem_type == "U8";
+                                push_tabs();
+                                PUSH_STR("for (size_t __bloom_i");
+                                PUSH_INT(static_cast<intmax_t>(loop_idx));
+                                PUSH_STR(" = 0; __bloom_i");
+                                PUSH_INT(static_cast<intmax_t>(loop_idx));
+                                PUSH_STR(" < __bloom_");
+                                PUSH_STR(*coll);
+                                PUSH_STR("_len; __bloom_i");
+                                PUSH_INT(static_cast<intmax_t>(loop_idx));
+                                PUSH_STR("++) {\n");
+                                push_tabs(); PUSH_STR("\t");
+                                PUSH_STR(is_u8 ? "uint8_t" : "int");
+                                PUSH_STR(" ");
+                                PUSH_STR(*elem);
+                                PUSH_STR(" = __bloom_");
+                                PUSH_STR(*coll);
+                                PUSH_STR("_data[__bloom_i");
                                 PUSH_INT(static_cast<intmax_t>(loop_idx));
                                 PUSH_STR("];\n");
                                 if (idx->length > 0) {

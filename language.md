@@ -26,6 +26,7 @@ foreign
 if
 in
 proc
+return
 struct
 type_info_of
 ```
@@ -134,6 +135,112 @@ a := [const]Int{ 2, 5, 9 }
 ## Structs
 
 C allows for multiple same fields in a designed initializer list (e.g. `MyStruct { .field1 = 3, .field1 = 7 }`) for a struct. In Bloom, this is not possible and results in a compilation error because it is wasteful to initialize the same field twice or more times.
+
+## Procedures
+
+A procedure is a named, reusable block of code. Procedures are defined with the `proc` keyword using the constant definition syntax (`name :: proc`).
+
+### Definition
+
+```
+print_greeting :: proc() ->
+    printf("Hello!\n")
+```
+
+The body is indented one level below the definition line and terminated by dedenting back.
+
+### Parameters
+
+Parameters are listed inside the parentheses as `name: Type` pairs separated by commas:
+
+```
+greet :: proc(name: Str, times: Int) ->
+    for i in 0..<times ->
+        printf("Hello, ")
+        printf("%.*s!\n", name.length, name.data)
+```
+
+### Return type
+
+The return type is written between the closing `)` and the `->` arrow:
+
+```
+sum :: proc(a: Int, b: Int) Int ->
+    a + b
+```
+
+Procedures with no return type omit it entirely:
+
+```
+print_sum :: proc(a: Int, b: Int) ->
+    printf("Sum: %i\n", a + b)
+```
+
+### Returning values
+
+The last expression in a procedure body is implicitly returned:
+
+```
+double :: proc(n: Int) Int ->
+    n * 2
+```
+
+For early returns, use the `return` keyword followed by the value:
+
+```
+safe_divide :: proc(a: Int, b: Int) Int ->
+    if b == 0 ->
+        return 0
+    a / b
+```
+
+### Array parameters and return types
+
+Fixed-size arrays are passed by pointer using the `[N]Type` syntax in parameter position:
+
+```
+sum_array :: proc(a: [3]Int) Int ->
+    a[0] + a[1] + a[2]
+```
+
+A procedure can return a fixed-size array using `[N]Type` as the return type. The last expression must be a variable of that array type:
+
+```
+make_array :: proc() [3]Int ->
+    a := [3]Int{ 2, 8, 12 }
+    a[0] = 4
+    a
+```
+
+### Slice parameters and return types
+
+Array slices use the `[]Type` syntax. A slice holds a pointer to a contiguous region of elements and its length:
+
+```
+first_two :: proc(a: [4]Int) []Int ->
+    a[0..<2]
+```
+
+Slices can also be passed as parameters:
+
+```
+print_bytes :: proc(data: []U8) ->
+    ...
+```
+
+### The main procedure
+
+The program entry point is a procedure named `main`. When `main` takes command-line arguments, declare a single `[]Str` parameter:
+
+```
+main :: proc(args: []Str) ->
+    if length(args) < 2 ->
+        print("Too few arguments given\n")
+        return 1
+    print("First argument: {}\n", args[1])
+```
+
+The `[]Str` parameter is automatically populated from the operating system's argument vector. `length(args)` includes the program name as the first element, so the first user-supplied argument is at index 1.
 
 ## Reflection
 

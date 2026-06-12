@@ -73,6 +73,8 @@ struct ConditionOperand {
     bool is_identifier;
     bool is_enum_shorthand;
     bool is_proc_call;
+    bool is_array_access;
+    bool is_string_literal;
     union {
         Str identifier;
         IntegerLiteralASTNode integer_literal;
@@ -84,6 +86,11 @@ struct ConditionOperand {
             Str caller;
             Str arg_identifier;
         } proc_call;
+        struct {
+            Str variable_name;
+            int64_t index;
+        } array_access;
+        Str string_literal;
     };
 };
 

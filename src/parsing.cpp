@@ -4055,6 +4055,24 @@ static auto parse_statement(
                             return false;
                         }
                     }
+                    else if (tokens_iter->current_index < tokens_iter->elements.length &&
+                             iter_peek(tokens_iter)->type == TokenType::BRACKET_OPEN)
+                    {
+                        (void)iter_next(tokens_iter); // consume [
+                        out->is_array_access = true;
+                        out->array_access.variable_name = token->identifier.content;
+                        auto *idx_tok = iter_next(tokens_iter);
+                        if (idx_tok->type != TokenType::INTEGER_LITERAL) {
+                            append(errors, PARSE_ERROR_CREATE(UNEXPECTED_TOKEN, idx_tok));
+                            return false;
+                        }
+                        out->array_access.index = idx_tok->integer_literal.value;
+                        auto *close_tok = iter_next(tokens_iter);
+                        if (close_tok->type != TokenType::BRACKET_CLOSE) {
+                            append(errors, PARSE_ERROR_CREATE(UNEXPECTED_TOKEN, close_tok));
+                            return false;
+                        }
+                    }
                     else {
                         out->is_identifier = true;
                         out->identifier = token->identifier.content;
@@ -4063,6 +4081,10 @@ static auto parse_statement(
                 case TokenType::INTEGER_LITERAL:
                     out->is_identifier = false;
                     out->integer_literal = IntegerLiteralASTNode { .value = token->integer_literal.value };
+                    return true;
+                case TokenType::STRING_LITERAL:
+                    out->is_string_literal = true;
+                    out->string_literal = token->string_literal.content;
                     return true;
                 default:
                     append(errors, PARSE_ERROR_CREATE(UNEXPECTED_TOKEN, token));

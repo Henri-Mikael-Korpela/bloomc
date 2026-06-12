@@ -27,6 +27,11 @@ main :: proc(args: []Str) ->
     if length(args) < 2 ->
         print("Too few arguments given\n")
         return 1
+    
+    if args[1] == "get" ->
+        print("Get mode\n")
+    else if args[1] == "insert" ->
+        print("Insert mode\n")
 
     EVENT_NAME_LENGTH_BYTE_COUNT :: 1
 

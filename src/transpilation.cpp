@@ -2433,6 +2433,16 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
                             break;
                         }
                         case ASTNodeType::IF_ELSE: {
+                            auto slice_elem_type_for = [&](Str const &var_name) -> Str {
+                                for (size_t si = 0; si < slice_var_count; si++) {
+                                    if (slice_vars[si].name.length == var_name.length &&
+                                        strncmp(slice_vars[si].name.data, var_name.data, var_name.length) == 0)
+                                    {
+                                        return slice_vars[si].element_type;
+                                    }
+                                }
+                                return {};
+                            };
                             auto emit_cond_op = [&](ConditionOperand const *operand) {
                                 if (operand->is_enum_shorthand) {
                                     PUSH_STR("__bloom_");
@@ -2469,6 +2479,29 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
                                         PUSH_STR(')');
                                     }
                                 }
+                                else if (operand->is_array_access) {
+                                    Str const &var = operand->array_access.variable_name;
+                                    Str const elem_type = slice_elem_type_for(var);
+                                    bool const is_slice = elem_type.length > 0;
+                                    if (is_slice) {
+                                        PUSH_STR("__bloom_");
+                                        PUSH_STR(var);
+                                        PUSH_STR("_data[");
+                                        PUSH_INT(operand->array_access.index);
+                                        PUSH_STR("]");
+                                    }
+                                    else {
+                                        PUSH_STR(var);
+                                        PUSH_STR("[");
+                                        PUSH_INT(operand->array_access.index);
+                                        PUSH_STR("]");
+                                    }
+                                }
+                                else if (operand->is_string_literal) {
+                                    PUSH_STR('"');
+                                    PUSH_STR(operand->string_literal);
+                                    PUSH_STR('"');
+                                }
                                 else if (operand->is_identifier) {
                                     PUSH_STR(operand->identifier);
                                 }
@@ -2478,6 +2511,38 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
                             };
                             auto emit_condition = [&](ASTNode *if_node) {
                                 auto *cond = &if_node->if_else;
+                                bool const is_equality = cond->comparison_op.length == 0;
+                                // BloomStr element == string literal: use strncmp
+                                if (is_equality &&
+                                    cond->condition_left.is_array_access &&
+                                    cond->condition_right.is_string_literal)
+                                {
+                                    Str const &var = cond->condition_left.array_access.variable_name;
+                                    int64_t const idx = cond->condition_left.array_access.index;
+                                    Str const &lit = cond->condition_right.string_literal;
+                                    Str const elem_type = slice_elem_type_for(var);
+                                    bool const is_str_slice = elem_type.length == 3 &&
+                                        strncmp(elem_type.data, "Str", 3) == 0;
+                                    if (is_str_slice) {
+                                        size_t const rlen = str_literal_runtime_length(lit);
+                                        PUSH_STR("if (__bloom_");
+                                        PUSH_STR(var);
+                                        PUSH_STR("_data[");
+                                        PUSH_INT(idx);
+                                        PUSH_STR("].length == ");
+                                        PUSH_INT(static_cast<int64_t>(rlen));
+                                        PUSH_STR(" && strncmp(__bloom_");
+                                        PUSH_STR(var);
+                                        PUSH_STR("_data[");
+                                        PUSH_INT(idx);
+                                        PUSH_STR("].data, \"");
+                                        PUSH_STR(lit);
+                                        PUSH_STR("\", ");
+                                        PUSH_INT(static_cast<int64_t>(rlen));
+                                        PUSH_STR(") == 0) {\n");
+                                        return;
+                                    }
+                                }
                                 PUSH_STR("if (");
                                 emit_cond_op(&cond->condition_left);
                                 if (cond->comparison_op.length > 0) {

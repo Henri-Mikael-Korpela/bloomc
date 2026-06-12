@@ -1,0 +1,7 @@
+Color :: enum ->
+    RED
+    GREEN
+    BLUE
+
+main :: proc() ->
+    color := Color.RE

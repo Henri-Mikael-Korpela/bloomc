@@ -2039,11 +2039,43 @@ static auto parse_expression(
                     if (field_token->type != TokenType::IDENTIFIER) {
                         return err<BinaryOperand, ParseError>(PARSE_ERROR_CREATE(UNEXPECTED_TOKEN, field_token));
                     }
+                    Str const object_name = token->identifier.content;
+                    Str const field_name = field_token->identifier.content;
+                    for (size_t i = 0; i < nodes_block_iter->current_index; i++) {
+                        auto const *n = &nodes_block_iter->elements.data[i];
+                        if (n->type != ASTNodeType::ENUM_DEF || !str_equal(n->enum_def.name, object_name)) {
+                            continue;
+                        }
+                        bool found = false;
+                        for (size_t j = 0; j < n->enum_def.members.length; j++) {
+                            if (str_equal(n->enum_def.members.data[j].name, field_name)) {
+                                found = true;
+                                break;
+                            }
+                        }
+                        if (!found) {
+                            ParseError err_val = {
+                                .code = ParseErrorCode::ENUM_INVALID_KEY,
+                                .position = field_token->position,
+                                .src_code_line = __LINE__,
+                                .size_token_width = field_name.length,
+                                .enum_invalid_key_name = field_name,
+                                .enum_invalid_key_type = object_name,
+                                .enum_member_count = n->enum_def.members.length < 32
+                                    ? n->enum_def.members.length : 32,
+                            };
+                            for (size_t j = 0; j < err_val.enum_member_count; j++) {
+                                err_val.enum_member_names[j] = n->enum_def.members.data[j].name;
+                            }
+                            return err<BinaryOperand, ParseError>(err_val);
+                        }
+                        break;
+                    }
                     return ok<BinaryOperand, ParseError>(BinaryOperand {
                         .type = BinaryOperandType::MEMBER_ACCESS,
                         .member_access = {
-                            .object_name = token->identifier.content,
-                            .field_name = field_token->identifier.content,
+                            .object_name = object_name,
+                            .field_name = field_name,
                         },
                     });
                 }

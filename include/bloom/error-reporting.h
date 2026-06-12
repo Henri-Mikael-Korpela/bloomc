@@ -10,6 +10,7 @@ enum class ParseErrorCode {
     ARRAY_INDEX_OUT_OF_BOUNDS,
     ARRAY_LENGTH_MISMATCH,
     BOOL_IN_ADDITION,
+    ENUM_INVALID_KEY,
     PROC_ARG_TYPE_MISMATCH,
     STRUCT_MISSING_FIELDS,
     STRUCT_DUPLICATE_FIELD,
@@ -21,6 +22,7 @@ constexpr auto to_string(ParseErrorCode code) -> char const * {
         case ParseErrorCode::ARRAY_INDEX_OUT_OF_BOUNDS: return "array index out of bounds";
         case ParseErrorCode::ARRAY_LENGTH_MISMATCH:     return "array length mismatch";
         case ParseErrorCode::BOOL_IN_ADDITION:          return "bool in addition";
+        case ParseErrorCode::ENUM_INVALID_KEY:           return "enum invalid key";
         case ParseErrorCode::PROC_ARG_TYPE_MISMATCH:    return "proc arg type mismatch";
         case ParseErrorCode::STRUCT_MISSING_FIELDS:     return "struct missing fields";
         case ParseErrorCode::STRUCT_DUPLICATE_FIELD:    return "struct duplicate field";
@@ -54,6 +56,11 @@ struct ParseError {
     Str array_name;
     int64_t array_index;
     int64_t known_array_size;
+    // For ENUM_INVALID_KEY
+    Str enum_invalid_key_name;
+    Str enum_invalid_key_type;
+    Str enum_member_names[32];
+    size_t enum_member_count;
 };
 
 auto report_parse_errors(Array<ParseError> errors, bool *had_errors, Str source_content, Str filename) -> void;

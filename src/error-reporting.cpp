@@ -119,6 +119,27 @@ auto report_parse_errors(Array<ParseError> errors, bool *had_errors, Str source_
                 "%s    - Use an index between 0 and %lld (inclusive).%s\n",
                 ANSI_BLUE, (long long)(error->known_array_size - 1), ANSI_RESET);
         }
+        else if (error->code == ParseErrorCode::ENUM_INVALID_KEY) {
+            fprintf(stderr, "\n%sError: Invalid enum key:%s\n", ANSI_RED, ANSI_RESET);
+            fprintf(stderr,
+                "%s    '%.*s' is not a member of enum '%.*s'.%s\n",
+                ANSI_RED,
+                (int)error->enum_invalid_key_name.length, error->enum_invalid_key_name.data,
+                (int)error->enum_invalid_key_type.length, error->enum_invalid_key_type.data,
+                ANSI_RESET);
+            emit_error_location(filename, source_content, error);
+            fprintf(stderr, "\n%sHow to fix:%s\n", ANSI_BLUE, ANSI_RESET);
+            fprintf(stderr,
+                "%s    - Use one of the valid keys of '%.*s': ",
+                ANSI_BLUE,
+                (int)error->enum_invalid_key_type.length, error->enum_invalid_key_type.data);
+            for (size_t j = 0; j < error->enum_member_count; j++) {
+                if (j != 0) { fprintf(stderr, ", "); }
+                fprintf(stderr, "%.*s",
+                    (int)error->enum_member_names[j].length, error->enum_member_names[j].data);
+            }
+            fprintf(stderr, "%s\n", ANSI_RESET);
+        }
         else if (error->code == ParseErrorCode::ARRAY_LENGTH_MISMATCH) {
             fprintf(stderr, "\n%sError: Array length mismatch:%s\n", ANSI_RED, ANSI_RESET);
             fprintf(stderr,

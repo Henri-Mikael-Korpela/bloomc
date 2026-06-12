@@ -298,6 +298,12 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
                         arg->member_access.field_name == "temp_allocator") {
                         PUSH_STR("&__bloom_context.temp_allocator");
                     }
+                    else if (is_enum_type(arg->member_access.object_name)) {
+                        PUSH_STR("__bloom_");
+                        PUSH_STR(arg->member_access.object_name);
+                        PUSH_STR("_");
+                        PUSH_STR(arg->member_access.field_name);
+                    }
                     else {
                         PUSH_STR(arg->member_access.object_name);
                         PUSH_STR(is_pointer_var(arg->member_access.object_name) ? "->" : ".");
@@ -2025,22 +2031,26 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
                             break;
                         }
                         case ASTNodeType::IF_ELSE: {
+                            auto emit_cond_op = [&](ConditionOperand const *operand) {
+                                if (operand->is_enum_shorthand) {
+                                    PUSH_STR("__bloom_");
+                                    PUSH_STR(operand->enum_shorthand.enum_type_name);
+                                    PUSH_STR("_");
+                                    PUSH_STR(operand->enum_shorthand.member_name);
+                                }
+                                else if (operand->is_identifier) {
+                                    PUSH_STR(operand->identifier);
+                                }
+                                else {
+                                    PUSH_INT(operand->integer_literal.value);
+                                }
+                            };
                             auto emit_condition = [&](ASTNode *if_node) {
                                 auto *cond = &if_node->if_else;
                                 PUSH_STR("if (");
-                                if (cond->condition_left.is_identifier) {
-                                    PUSH_STR(cond->condition_left.identifier);
-                                }
-                                else {
-                                    PUSH_INT(cond->condition_left.integer_literal.value);
-                                }
+                                emit_cond_op(&cond->condition_left);
                                 PUSH_STR(" == ");
-                                if (cond->condition_right.is_identifier) {
-                                    PUSH_STR(cond->condition_right.identifier);
-                                }
-                                else {
-                                    PUSH_INT(cond->condition_right.integer_literal.value);
-                                }
+                                emit_cond_op(&cond->condition_right);
                                 PUSH_STR(") {\n");
                             };
 

@@ -3,6 +3,15 @@ Color :: enum ->
     GREEN
     BLUE
 
+print_color_in_finnish :: proc(color: Color) ->
+    // Enum type inference in comparison
+    if color == .RED ->
+        print("Punainen\n")
+    else if color == .GREEN ->
+        print("Vihreä\n")
+    else ->
+        print("Sininen\n")
+
 main :: proc() ->
     // Get key for the enum value
     color := Color.RED
@@ -11,3 +20,6 @@ main :: proc() ->
     // Get all keys in enum
     for member in type_info_of(color).members ->
         print("Color member {} with value {}\n", member.name, member.value)
+
+    // Enum type inference in procedure call
+    print_color_in_finnish(.GREEN)

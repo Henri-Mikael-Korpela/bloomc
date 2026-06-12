@@ -71,9 +71,14 @@ struct IntegerLiteralASTNode {
 
 struct ConditionOperand {
     bool is_identifier;
+    bool is_enum_shorthand;
     union {
         Str identifier;
         IntegerLiteralASTNode integer_literal;
+        struct {
+            Str enum_type_name;
+            Str member_name;
+        } enum_shorthand;
     };
 };
 

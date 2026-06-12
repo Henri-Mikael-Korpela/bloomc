@@ -1077,6 +1077,41 @@ static auto parse_proc_call_arguments(
                 arg_count++;
                 break;
             }
+            case TokenType::DOT: {
+                auto *member_tok = iter_next(tokens_iter);
+                if (member_tok->type != TokenType::IDENTIFIER) {
+                    append(errors, ParseError {
+                        .code = ParseErrorCode::UNEXPECTED_TOKEN,
+                        .position = member_tok->position,
+                        .src_code_line = __LINE__,
+                        .token_type = member_tok->type,
+                    });
+                    return false;
+                }
+                Str enum_type = {};
+                ASTNode const *callee_def = find_proc_def_node(nodes_block_iter, &proc_call_node->proc_call.caller_identifier);
+                if (callee_def != nullptr && arg_count < callee_def->proc_def.parameters.length) {
+                    Str const type_name = callee_def->proc_def.parameters.data[arg_count].type_name;
+                    for (size_t i = 0; i < nodes_block_iter->current_index; i++) {
+                        auto const *n = &nodes_block_iter->elements.data[i];
+                        if (n->type == ASTNodeType::ENUM_DEF && str_equal(n->enum_def.name, type_name)) {
+                            enum_type = type_name;
+                            break;
+                        }
+                    }
+                }
+                (void)iter_append(nodes_block_iter, ASTNode {
+                    .type = ASTNodeType::MEMBER_ACCESS,
+                    .parent = proc_call_node,
+                    .member_access = {
+                        .object_name = enum_type,
+                        .field_name = member_tok->identifier.content,
+                    },
+                });
+                if (!check_arg_type(next_token)) { return false; }
+                arg_count++;
+                break;
+            }
             default:
                 append(errors, ParseError {
                     .code = ParseErrorCode::UNEXPECTED_TOKEN,
@@ -3738,7 +3773,7 @@ static auto parse_statement(
             }
         };
 
-        ConditionOperand cond_left;
+        ConditionOperand cond_left = {};
         if (!parse_cond_operand(iter_next(tokens_iter), &cond_left)) {
             return false;
         }
@@ -3746,9 +3781,71 @@ static auto parse_statement(
             append(errors, PARSE_ERROR_CREATE(UNEXPECTED_TOKEN, iter_peek_prev(tokens_iter)));
             return false;
         }
-        ConditionOperand cond_right;
-        if (!parse_cond_operand(iter_next(tokens_iter), &cond_right)) {
-            return false;
+        ConditionOperand cond_right = {};
+        if (tokens_iter->current_index < tokens_iter->elements.length &&
+            iter_peek(tokens_iter)->type == TokenType::DOT)
+        {
+            (void)iter_next(tokens_iter); // consume DOT
+            auto *member_tok = iter_next(tokens_iter);
+            if (member_tok->type != TokenType::IDENTIFIER) {
+                append(errors, PARSE_ERROR_CREATE(UNEXPECTED_TOKEN, member_tok));
+                return false;
+            }
+            Str enum_type = {};
+            if (cond_left.is_identifier) {
+                for (size_t i = 0; i < nodes_block_iter->current_index; i++) {
+                    auto const *node = &nodes_block_iter->elements.data[i];
+                    if (node->type == ASTNodeType::VARIABLE_DEFINITION &&
+                        str_equal(node->variable_definition.name, cond_left.identifier))
+                    {
+                        ASTNode const *expr = node->variable_definition.expr;
+                        if (expr->type == ASTNodeType::MEMBER_ACCESS) {
+                            for (size_t j = 0; j < nodes_block_iter->current_index; j++) {
+                                auto const *n = &nodes_block_iter->elements.data[j];
+                                if (n->type == ASTNodeType::ENUM_DEF &&
+                                    str_equal(n->enum_def.name, expr->member_access.object_name))
+                                {
+                                    enum_type = n->enum_def.name;
+                                    break;
+                                }
+                            }
+                        }
+                        break;
+                    }
+                }
+                if (enum_type.length == 0) {
+                    ASTNode const *p = parent_node;
+                    while (p != nullptr) {
+                        if (p->type == ASTNodeType::PROC_DEF) {
+                            for (size_t i = 0; i < p->proc_def.parameters.length; i++) {
+                                auto const *param = &p->proc_def.parameters.data[i];
+                                if (str_equal(param->name, cond_left.identifier)) {
+                                    for (size_t j = 0; j < nodes_block_iter->current_index; j++) {
+                                        auto const *n = &nodes_block_iter->elements.data[j];
+                                        if (n->type == ASTNodeType::ENUM_DEF &&
+                                            str_equal(n->enum_def.name, param->type_name))
+                                        {
+                                            enum_type = n->enum_def.name;
+                                            break;
+                                        }
+                                    }
+                                    break;
+                                }
+                            }
+                            break;
+                        }
+                        p = p->parent;
+                    }
+                }
+            }
+            cond_right.is_enum_shorthand = true;
+            cond_right.enum_shorthand.enum_type_name = enum_type;
+            cond_right.enum_shorthand.member_name = member_tok->identifier.content;
+        }
+        else {
+            if (!parse_cond_operand(iter_next(tokens_iter), &cond_right)) {
+                return false;
+            }
         }
         if (!expect_arrow_newline(tokens_iter, errors)) { return false; }
 

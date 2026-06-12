@@ -20,6 +20,7 @@ context
 const
 defer
 else
+enum
 for
 foreign
 if
@@ -206,4 +207,82 @@ Access to `name` is transpiled to a C `BloomStr` string literal:
 
 ```
 type_info_of(events[0]).name   →   (BloomStr){.data = "Event", .length = 5}
+```
+
+## Enumerations
+
+An enumeration (enum) defines a named integer type whose values are restricted to a fixed set of named members. Members are ordered starting from 0.
+
+### Definition
+
+```
+Color :: enum ->
+    RED
+    GREEN
+    BLUE
+```
+
+This defines `Color` as an enum type with members `RED = 0`, `GREEN = 1`, and `BLUE = 2`.
+
+### Member access
+
+Enum members are accessed with the dot operator on the type name:
+
+```
+color := Color.RED
+```
+
+### Dot-prefix shorthand
+
+When the enum type can be inferred from context, members can be written with a dot prefix (`.MEMBER`) instead of the full `Type.MEMBER` form.
+
+In comparisons, the type is inferred from the left operand:
+
+```
+if color == .RED ->
+    print("red\n")
+```
+
+In procedure calls, the type is inferred from the declared parameter type:
+
+```
+print_color_in_finnish :: proc(color: Color) -> ...
+
+print_color_in_finnish(.GREEN)
+```
+
+### Reflection via type_info_of
+
+`type_info_of(value).members` returns an array of all enum members for the enum type of `value`. Each member has a `.name` field (`Str`) and a `.value` field (`Int`):
+
+```
+color := Color.RED
+
+// Access the name of the current member
+print("Key: {}\n", type_info_of(color).members[color].key)
+
+// Iterate over all members
+for member in type_info_of(color).members ->
+    print("Name: {}, Value: {}\n", member.name, member.value)
+```
+
+### Transpilation
+
+Enum definitions are transpiled to a C `typedef int` and per-member `static const int` constants:
+
+```
+Color :: enum ->    →   typedef int Color;
+    RED                 static int const __bloom_Color_RED = 0;
+    GREEN               static int const __bloom_Color_GREEN = 1;
+    BLUE                static int const __bloom_Color_BLUE = 2;
+```
+
+A member array is also generated for reflection:
+
+```
+static BloomEnumMember const __bloom_Color_members[] = {
+    {.name = {.data = "RED",   .length = 3}, .value = 0},
+    {.name = {.data = "GREEN", .length = 5}, .value = 1},
+    {.name = {.data = "BLUE",  .length = 4}, .value = 2},
+};
 ```

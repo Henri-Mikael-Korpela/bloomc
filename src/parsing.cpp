@@ -1198,28 +1198,57 @@ static auto parse_proc_params(
                     param_node->type_name = type_tok->identifier.content;
                 }
                 else if (maybe_caret->type == TokenType::BRACKET_OPEN) {
-                    auto *bracket_close = iter_next(tokens_iter);
-                    if (bracket_close->type != TokenType::BRACKET_CLOSE) {
+                    auto *inner_tok = iter_next(tokens_iter);
+                    if (inner_tok->type == TokenType::INTEGER_LITERAL) {
+                        // [N]Type parameter — fixed-size array
+                        auto *close_tok = iter_next(tokens_iter);
+                        if (close_tok->type != TokenType::BRACKET_CLOSE) {
+                            append(errors, ParseError {
+                                .code = ParseErrorCode::UNEXPECTED_TOKEN,
+                                .position = close_tok->position,
+                                .src_code_line = __LINE__,
+                                .token_type = close_tok->type,
+                            });
+                            return false;
+                        }
+                        auto *type_tok = iter_next(tokens_iter);
+                        if (type_tok->type != TokenType::IDENTIFIER) {
+                            append(errors, ParseError {
+                                .code = ParseErrorCode::UNEXPECTED_TOKEN,
+                                .position = type_tok->position,
+                                .src_code_line = __LINE__,
+                                .token_type = type_tok->type,
+                            });
+                            return false;
+                        }
+                        param_node->is_array = true;
+                        param_node->array_length = inner_tok->integer_literal.value;
+                        param_node->type_name = type_tok->identifier.content;
+                    }
+                    else if (inner_tok->type == TokenType::BRACKET_CLOSE) {
+                        // []Type parameter — slice
+                        auto *type_tok = iter_next(tokens_iter);
+                        if (type_tok->type != TokenType::IDENTIFIER) {
+                            append(errors, ParseError {
+                                .code = ParseErrorCode::UNEXPECTED_TOKEN,
+                                .position = type_tok->position,
+                                .src_code_line = __LINE__,
+                                .token_type = type_tok->type,
+                            });
+                            return false;
+                        }
+                        param_node->is_slice = true;
+                        param_node->type_name = type_tok->identifier.content;
+                    }
+                    else {
                         append(errors, ParseError {
                             .code = ParseErrorCode::UNEXPECTED_TOKEN,
-                            .position = bracket_close->position,
+                            .position = inner_tok->position,
                             .src_code_line = __LINE__,
-                            .token_type = bracket_close->type,
+                            .token_type = inner_tok->type,
                         });
                         return false;
                     }
-                    auto *type_tok = iter_next(tokens_iter);
-                    if (type_tok->type != TokenType::IDENTIFIER) {
-                        append(errors, ParseError {
-                            .code = ParseErrorCode::UNEXPECTED_TOKEN,
-                            .position = type_tok->position,
-                            .src_code_line = __LINE__,
-                            .token_type = type_tok->type,
-                        });
-                        return false;
-                    }
-                    param_node->is_slice = true;
-                    param_node->type_name = type_tok->identifier.content;
                 }
                 else {
                     param_node->type_name = maybe_caret->identifier.content;
@@ -2379,24 +2408,40 @@ static auto parse_expression(
                 });
             }
             else if (proc_return_type_token->type == TokenType::BRACKET_OPEN) {
-                auto *count_tok = iter_next(tokens_iter);
-                if (count_tok->type != TokenType::INTEGER_LITERAL) {
-                    return err<ASTNode, ParseError>(PARSE_ERROR_CREATE(UNEXPECTED_TOKEN, count_tok));
+                auto *inner_tok = iter_next(tokens_iter);
+                if (inner_tok->type == TokenType::INTEGER_LITERAL) {
+                    // [N]Type return
+                    auto *close_tok = iter_next(tokens_iter);
+                    if (close_tok->type != TokenType::BRACKET_CLOSE) {
+                        return err<ASTNode, ParseError>(PARSE_ERROR_CREATE(UNEXPECTED_TOKEN, close_tok));
+                    }
+                    auto *type_name_tok = iter_next(tokens_iter);
+                    if (type_name_tok->type != TokenType::IDENTIFIER) {
+                        return err<ASTNode, ParseError>(PARSE_ERROR_CREATE(UNEXPECTED_TOKEN, type_name_tok));
+                    }
+                    return_type_node = iter_append(types_iter, TypeASTNode {
+                        .name = type_name_tok->identifier.content,
+                        .is_pointer = false,
+                        .is_array = true,
+                        .array_length = inner_tok->integer_literal.value,
+                    });
                 }
-                auto *close_tok = iter_next(tokens_iter);
-                if (close_tok->type != TokenType::BRACKET_CLOSE) {
-                    return err<ASTNode, ParseError>(PARSE_ERROR_CREATE(UNEXPECTED_TOKEN, close_tok));
+                else if (inner_tok->type == TokenType::BRACKET_CLOSE) {
+                    // []Type return — slice
+                    auto *type_name_tok = iter_next(tokens_iter);
+                    if (type_name_tok->type != TokenType::IDENTIFIER) {
+                        return err<ASTNode, ParseError>(PARSE_ERROR_CREATE(UNEXPECTED_TOKEN, type_name_tok));
+                    }
+                    return_type_node = iter_append(types_iter, TypeASTNode {
+                        .name = type_name_tok->identifier.content,
+                        .is_pointer = false,
+                        .is_array = false,
+                        .is_slice = true,
+                    });
                 }
-                auto *type_name_tok = iter_next(tokens_iter);
-                if (type_name_tok->type != TokenType::IDENTIFIER) {
-                    return err<ASTNode, ParseError>(PARSE_ERROR_CREATE(UNEXPECTED_TOKEN, type_name_tok));
+                else {
+                    return err<ASTNode, ParseError>(PARSE_ERROR_CREATE(UNEXPECTED_TOKEN, inner_tok));
                 }
-                return_type_node = iter_append(types_iter, TypeASTNode {
-                    .name = type_name_tok->identifier.content,
-                    .is_pointer = false,
-                    .is_array = true,
-                    .array_length = count_tok->integer_literal.value,
-                });
                 if (
                     auto *arrow_tok = iter_next(tokens_iter);
                     arrow_tok->type != TokenType::ARROW
@@ -3340,6 +3385,53 @@ static auto parse_statement(
                 break;
             }
             case TokenType::BRACKET_OPEN: {
+                // Look ahead past the matching ] to decide: assignment (=) or return expression
+                // current_index points at [; scan from the token after [ with depth=1
+                {
+                    int scan_depth = 1;
+                    bool after_bracket_is_assign = false;
+                    for (size_t si = tokens_iter->current_index + 1;
+                         si < tokens_iter->elements.length; si++) {
+                        TokenType st = tokens_iter->elements.data[si].type;
+                        if (st == TokenType::BRACKET_OPEN) { scan_depth++; }
+                        else if (st == TokenType::BRACKET_CLOSE) {
+                            scan_depth--;
+                            if (scan_depth == 0) {
+                                if (si + 1 < tokens_iter->elements.length &&
+                                    tokens_iter->elements.data[si + 1].type == TokenType::EQUALS) {
+                                    after_bracket_is_assign = true;
+                                }
+                                break;
+                            }
+                        }
+                    }
+                    if (!after_bracket_is_assign) {
+                        // Return expression: back up to the identifier (one step before [)
+                        tokens_iter->current_index -= 1;
+                        Iterator<Token> expr_tokens_iter;
+                        if (!slice_expression_tokens(tokens_iter, errors, &expr_tokens_iter)) {
+                            return false;
+                        }
+                        auto expr_parse_result = parse_expression(
+                            &expr_tokens_iter, context, nodes_block_iter,
+                            proc_params_block, proc_params_iter, types_iter,
+                            operands_iter, array_elements_iter, errors
+                        );
+                        if (!is_ok(&expr_parse_result)) {
+                            append(errors, expr_parse_result.err);
+                            return false;
+                        }
+                        auto *slice_node_ptr = iter_append(nodes_block_iter, std::move(expr_parse_result.ok));
+                        slice_node_ptr->parent = parent_node;
+                        tokens_iter->current_index += expr_tokens_iter.current_index;
+                        assert(
+                            iter_current(tokens_iter)->type == TokenType::NEWLINE ||
+                            iter_current(tokens_iter)->type == TokenType::END &&
+                            "Expected newline or end token after slice return expression");
+                        (void)iter_next(tokens_iter);
+                        break;
+                    }
+                }
                 (void)iter_next(tokens_iter); // consume [
                 auto *index_token = iter_next(tokens_iter);
                 int64_t index = 0;

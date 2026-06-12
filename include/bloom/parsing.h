@@ -128,6 +128,8 @@ struct ProcParameterASTNode {
     Str type_name;
     bool is_pointer;
     bool is_slice;
+    bool is_array;
+    int64_t array_length;
 };
 
 struct TypeASTNode {
@@ -135,6 +137,7 @@ struct TypeASTNode {
     bool is_pointer;
     bool is_array;
     int64_t array_length;
+    bool is_slice;  // []Type return type
 };
 
 struct ASTNode {

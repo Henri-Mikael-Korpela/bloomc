@@ -12,6 +12,10 @@ foo_return_array :: proc() [3]Int ->
     a[0] = 4
     a
 
+// Returning an array slice
+foo_return_array_slice :: proc(a: [4]Int) []Int ->
+    a[1..<3]
+
 main :: proc() ->
     print_thing()
     printf("Sum: %i\n", sum(5, 10))
@@ -19,3 +23,8 @@ main :: proc() ->
     ->
         a := foo_return_array()
         print("A: {}, {}, {}\n", a[0], a[1], a[2])
+
+    ->
+        a := [4]Int{ 1, 2, 3, 4 }
+        as := foo_return_array_slice(a)
+        print("A: {}, {}\n", as[0], as[1])

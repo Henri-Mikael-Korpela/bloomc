@@ -4010,8 +4010,28 @@ static auto parse_statement(
         auto parse_cond_operand = [&](Token *token, ConditionOperand *out) -> bool {
             switch (token->type) {
                 case TokenType::IDENTIFIER:
-                    out->is_identifier = true;
-                    out->identifier = token->identifier.content;
+                    if (tokens_iter->current_index < tokens_iter->elements.length &&
+                        iter_peek(tokens_iter)->type == TokenType::PARENTHESIS_OPEN)
+                    {
+                        (void)iter_next(tokens_iter); // consume (
+                        out->is_proc_call = true;
+                        out->proc_call.caller = token->identifier.content;
+                        auto *arg_tok = iter_next(tokens_iter);
+                        if (arg_tok->type != TokenType::IDENTIFIER) {
+                            append(errors, PARSE_ERROR_CREATE(UNEXPECTED_TOKEN, arg_tok));
+                            return false;
+                        }
+                        out->proc_call.arg_identifier = arg_tok->identifier.content;
+                        auto *close_tok = iter_next(tokens_iter);
+                        if (close_tok->type != TokenType::PARENTHESIS_CLOSE) {
+                            append(errors, PARSE_ERROR_CREATE(UNEXPECTED_TOKEN, close_tok));
+                            return false;
+                        }
+                    }
+                    else {
+                        out->is_identifier = true;
+                        out->identifier = token->identifier.content;
+                    }
                     return true;
                 case TokenType::INTEGER_LITERAL:
                     out->is_identifier = false;
@@ -4027,8 +4047,16 @@ static auto parse_statement(
         if (!parse_cond_operand(iter_next(tokens_iter), &cond_left)) {
             return false;
         }
-        if (iter_next(tokens_iter)->type != TokenType::EQUAL_EQUAL) {
-            append(errors, PARSE_ERROR_CREATE(UNEXPECTED_TOKEN, iter_peek_prev(tokens_iter)));
+        auto *cond_op_tok = iter_next(tokens_iter);
+        Str comparison_op = {};
+        if (cond_op_tok->type == TokenType::EQUAL_EQUAL) {
+            // leave comparison_op empty; transpiler defaults to ==
+        }
+        else if (cond_op_tok->type == TokenType::LESS_THAN) {
+            comparison_op = cstr_to_str("<");
+        }
+        else {
+            append(errors, PARSE_ERROR_CREATE(UNEXPECTED_TOKEN, cond_op_tok));
             return false;
         }
         ConditionOperand cond_right = {};
@@ -4105,6 +4133,7 @@ static auto parse_statement(
             .if_else = {
                 .condition_left = cond_left,
                 .condition_right = cond_right,
+                .comparison_op = comparison_op,
                 .then_body = Array<ASTNode>(
                     nodes_block_iter->elements.data + nodes_block_iter->current_index + 1,
                     0

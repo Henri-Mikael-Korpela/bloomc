@@ -23,7 +23,10 @@ Event :: struct ->
     id: Int
     name: Str
 
-main :: proc() ->
+main :: proc(args: []Str) ->
+    if length(args) < 2 ->
+        print("Too few arguments given\n")
+
     EVENT_NAME_LENGTH_BYTE_COUNT :: 1
 
     EVENT_NAME_MAX_LENGTH :: EVENT_NAME_LENGTH_BYTE_COUNT * 256 - 1

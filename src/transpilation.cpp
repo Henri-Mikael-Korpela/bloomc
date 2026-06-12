@@ -869,6 +869,14 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
                 bool const has_return_type = node->proc_def.return_type != nullptr;
                 bool const has_array_return_type = has_return_type && node->proc_def.return_type->is_array;
                 bool const has_slice_return_type = has_return_type && node->proc_def.return_type->is_slice;
+                auto *params = &node->proc_def.parameters;
+                bool const is_main_with_str_args =
+                    node->proc_def.name.length == 4 &&
+                    strncmp(node->proc_def.name.data, "main", 4) == 0 &&
+                    params->length == 1 &&
+                    params->data[0].is_slice &&
+                    params->data[0].type_name.length == 3 &&
+                    strncmp(params->data[0].type_name.data, "Str", 3) == 0;
                 Str return_type_c = {};
                 if (has_return_type && !has_array_return_type && !has_slice_return_type) {
                     if (node->proc_def.return_type->name == "Int") {
@@ -888,7 +896,7 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
                     }
                 }
                 else if (!has_return_type) {
-                    return_type_c = cstr_to_str("void");
+                    return_type_c = is_main_with_str_args ? cstr_to_str("int") : cstr_to_str("void");
                 }
                 if (has_array_return_type) {
                     Str const &arr_elem = node->proc_def.return_type->name;
@@ -942,10 +950,18 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
                         if (emitted_slice_return_type_count < 16) {
                             emitted_slice_return_types[emitted_slice_return_type_count++] = slice_elem;
                         }
-                        bool const is_u8_sel = slice_elem.length == 2 &&
-                            slice_elem.data[0] == 'U' && slice_elem.data[1] == '8';
+                        char const *sl_typedef_c;
+                        if (slice_elem.length == 3 && strncmp(slice_elem.data, "Str", 3) == 0) {
+                            sl_typedef_c = "BloomStr";
+                        }
+                        else if (slice_elem.length == 2 && slice_elem.data[0] == 'U' && slice_elem.data[1] == '8') {
+                            sl_typedef_c = "uint8_t";
+                        }
+                        else {
+                            sl_typedef_c = "int";
+                        }
                         PUSH_STR("typedef struct { ");
-                        PUSH_STR(is_u8_sel ? "uint8_t" : "int");
+                        PUSH_STR(sl_typedef_c);
                         PUSH_STR(" *data; size_t length; } __bloom_Slice_");
                         PUSH_STR(slice_elem);
                         PUSH_STR(";\n");
@@ -959,54 +975,77 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
                 PUSH_STR(' ');
                 PUSH_STR(node->proc_def.name);
                 PUSH_STR('(');
-                auto *params = &node->proc_def.parameters;
-                for (size_t i = 0; i < params->length; i++) {
-                    auto *param = &params->data[i];
-                    if (i != 0) {
-                        PUSH_STR(", ");
-                    }
-                    if (param->is_array) {
-                        // [N]Type parameter — decays to pointer in C
-                        bool const is_u8_par = param->type_name.length == 2 &&
-                            param->type_name.data[0] == 'U' && param->type_name.data[1] == '8';
-                        PUSH_STR(is_u8_par ? "uint8_t" : "int");
-                        PUSH_STR(" *");
-                    }
-                    else if (param->is_slice) {
-                        PUSH_STR("BloomSliceU8 ");
-                    }
-                    else if (param->type_name == "Int") {
-                        PUSH_STR("int ");
-                    }
-                    else if (param->type_name == "U8") {
-                        PUSH_STR("uint8_t ");
-                    }
-                    else if (param->type_name == "Bool") {
-                        PUSH_STR("bool ");
-                    }
-                    else if (param->type_name == "Str") {
-                        PUSH_STR("BloomStr ");
-                    }
-                    else if (param->type_name == "CStr") {
-                        PUSH_STR("char *");
-                    }
-                    else {
-                        PUSH_STR(param->type_name);
-                        if (param->is_pointer) {
+                if (is_main_with_str_args) {
+                    PUSH_STR("int argc, char const **argv");
+                }
+                else {
+                    for (size_t i = 0; i < params->length; i++) {
+                        auto *param = &params->data[i];
+                        if (i != 0) {
+                            PUSH_STR(", ");
+                        }
+                        if (param->is_array) {
+                            // [N]Type parameter — decays to pointer in C
+                            bool const is_u8_par = param->type_name.length == 2 &&
+                                param->type_name.data[0] == 'U' && param->type_name.data[1] == '8';
+                            PUSH_STR(is_u8_par ? "uint8_t" : "int");
                             PUSH_STR(" *");
                         }
-                        else {
-                            PUSH_STR(" ");
+                        else if (param->is_slice) {
+                            PUSH_STR("BloomSliceU8 ");
                         }
+                        else if (param->type_name == "Int") {
+                            PUSH_STR("int ");
+                        }
+                        else if (param->type_name == "U8") {
+                            PUSH_STR("uint8_t ");
+                        }
+                        else if (param->type_name == "Bool") {
+                            PUSH_STR("bool ");
+                        }
+                        else if (param->type_name == "Str") {
+                            PUSH_STR("BloomStr ");
+                        }
+                        else if (param->type_name == "CStr") {
+                            PUSH_STR("char *");
+                        }
+                        else {
+                            PUSH_STR(param->type_name);
+                            if (param->is_pointer) {
+                                PUSH_STR(" *");
+                            }
+                            else {
+                                PUSH_STR(" ");
+                            }
+                        }
+                        PUSH_STR(param->name);
                     }
-                    PUSH_STR(param->name);
                 }
                 PUSH_STR(')');
                 PUSH_STR("{\n");
                 PUSH_STR("\tBloomContext __bloom_context = {0};\n");
+                if (is_main_with_str_args) {
+                    Str const &param_name = params->data[0].name;
+                    PUSH_STR("\tBloomStr *__bloom_");
+                    PUSH_STR(param_name);
+                    PUSH_STR("_data = (BloomStr *)(__bloom_context.temp_allocator.buf + __bloom_context.temp_allocator.offset);\n");
+                    PUSH_STR("\t__bloom_context.temp_allocator.offset += (size_t)argc * sizeof(BloomStr);\n");
+                    PUSH_STR("\tfor (int __bloom_args_i = 0; __bloom_args_i < argc; __bloom_args_i++) {\n");
+                    PUSH_STR("\t\t__bloom_");
+                    PUSH_STR(param_name);
+                    PUSH_STR("_data[__bloom_args_i] = (BloomStr){ .data = argv[__bloom_args_i], .length = (size_t)strlen(argv[__bloom_args_i]) };\n");
+                    PUSH_STR("\t}\n");
+                    PUSH_STR("\tsize_t __bloom_");
+                    PUSH_STR(param_name);
+                    PUSH_STR("_len = (size_t)argc;\n");
+                    if (slice_var_count < 32) {
+                        slice_vars[slice_var_count++] = { .name = param_name, .element_type = cstr_to_str("Str") };
+                    }
+                }
                 for (size_t pi = 0; pi < params->length; pi++) {
                     auto *param = &params->data[pi];
                     if (param->is_slice) {
+                        if (is_main_with_str_args) { continue; }
                         PUSH_STR("\tuint8_t *");
                         PUSH_STR(param->name);
                         PUSH_STR("_cstr = (uint8_t*)");
@@ -1031,7 +1070,9 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
                         continue;
                     }
                     if (param->is_slice) {
-                        register_var(param->name, VarKind::SLICE_U8);
+                        if (!is_main_with_str_args) {
+                            register_var(param->name, VarKind::SLICE_U8);
+                        }
                         continue;
                     }
                     if (param->is_pointer) {
@@ -1766,8 +1807,16 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
                                     break;
                                 }
                                 if (ret_type != nullptr && ret_type->is_slice) {
-                                    bool const is_u8_sl = ret_type->name.length == 2 &&
-                                        ret_type->name.data[0] == 'U' && ret_type->name.data[1] == '8';
+                                    char const *sl_unpack_c;
+                                    if (ret_type->name.length == 3 && strncmp(ret_type->name.data, "Str", 3) == 0) {
+                                        sl_unpack_c = "BloomStr";
+                                    }
+                                    else if (ret_type->name.length == 2 && ret_type->name.data[0] == 'U' && ret_type->name.data[1] == '8') {
+                                        sl_unpack_c = "uint8_t";
+                                    }
+                                    else {
+                                        sl_unpack_c = "int";
+                                    }
                                     if (slice_var_count < 32) {
                                         slice_vars[slice_var_count++] = {
                                             .name = stmt->variable_definition.name,
@@ -1783,7 +1832,7 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
                                     emit_expression(expr);
                                     PUSH_STR(";\n");
                                     push_tabs();
-                                    PUSH_STR(is_u8_sl ? "uint8_t" : "int");
+                                    PUSH_STR(sl_unpack_c);
                                     PUSH_STR(" *__bloom_");
                                     PUSH_STR(stmt->variable_definition.name);
                                     PUSH_STR("_data = __bloom_tmp_");
@@ -2379,6 +2428,35 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
                                     PUSH_STR("_");
                                     PUSH_STR(operand->enum_shorthand.member_name);
                                 }
+                                else if (operand->is_proc_call) {
+                                    Str const &callee = operand->proc_call.caller;
+                                    Str const &arg = operand->proc_call.arg_identifier;
+                                    bool const is_length = callee.length == 6 &&
+                                        strncmp(callee.data, "length", 6) == 0;
+                                    if (is_length) {
+                                        bool found_slice = false;
+                                        for (size_t si = 0; si < slice_var_count; si++) {
+                                            if (slice_vars[si].name.length == arg.length &&
+                                                strncmp(slice_vars[si].name.data, arg.data, arg.length) == 0)
+                                            {
+                                                PUSH_STR("__bloom_");
+                                                PUSH_STR(arg);
+                                                PUSH_STR("_len");
+                                                found_slice = true;
+                                                break;
+                                            }
+                                        }
+                                        if (!found_slice) {
+                                            PUSH_INT(static_cast<intmax_t>(find_array_size(arg)));
+                                        }
+                                    }
+                                    else {
+                                        PUSH_STR(callee);
+                                        PUSH_STR('(');
+                                        PUSH_STR(arg);
+                                        PUSH_STR(')');
+                                    }
+                                }
                                 else if (operand->is_identifier) {
                                     PUSH_STR(operand->identifier);
                                 }
@@ -2390,7 +2468,14 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
                                 auto *cond = &if_node->if_else;
                                 PUSH_STR("if (");
                                 emit_cond_op(&cond->condition_left);
-                                PUSH_STR(" == ");
+                                if (cond->comparison_op.length > 0) {
+                                    PUSH_STR(' ');
+                                    PUSH_STR(cond->comparison_op);
+                                    PUSH_STR(' ');
+                                }
+                                else {
+                                    PUSH_STR(" == ");
+                                }
                                 emit_cond_op(&cond->condition_right);
                                 PUSH_STR(") {\n");
                             };
@@ -2521,6 +2606,9 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
                 };
 
                 emit_body(&node->proc_def.body, node, 1, has_return_type);
+                if (is_main_with_str_args) {
+                    PUSH_STR("\treturn 0;\n");
+                }
                 PUSH_STR("}\n\n");
                 break;
             }

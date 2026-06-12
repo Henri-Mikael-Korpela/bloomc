@@ -72,6 +72,7 @@ struct IntegerLiteralASTNode {
 struct ConditionOperand {
     bool is_identifier;
     bool is_enum_shorthand;
+    bool is_proc_call;
     union {
         Str identifier;
         IntegerLiteralASTNode integer_literal;
@@ -79,6 +80,10 @@ struct ConditionOperand {
             Str enum_type_name;
             Str member_name;
         } enum_shorthand;
+        struct {
+            Str caller;
+            Str arg_identifier;
+        } proc_call;
     };
 };
 
@@ -166,6 +171,7 @@ struct ASTNode {
         struct {
             ConditionOperand condition_left;
             ConditionOperand condition_right;
+            Str comparison_op;
             Array<ASTNode> then_body;
             Array<ASTNode> else_body;
         } if_else;

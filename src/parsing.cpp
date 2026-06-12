@@ -2378,6 +2378,32 @@ static auto parse_expression(
                     .name = proc_return_type_token->identifier.content,
                 });
             }
+            else if (proc_return_type_token->type == TokenType::BRACKET_OPEN) {
+                auto *count_tok = iter_next(tokens_iter);
+                if (count_tok->type != TokenType::INTEGER_LITERAL) {
+                    return err<ASTNode, ParseError>(PARSE_ERROR_CREATE(UNEXPECTED_TOKEN, count_tok));
+                }
+                auto *close_tok = iter_next(tokens_iter);
+                if (close_tok->type != TokenType::BRACKET_CLOSE) {
+                    return err<ASTNode, ParseError>(PARSE_ERROR_CREATE(UNEXPECTED_TOKEN, close_tok));
+                }
+                auto *type_name_tok = iter_next(tokens_iter);
+                if (type_name_tok->type != TokenType::IDENTIFIER) {
+                    return err<ASTNode, ParseError>(PARSE_ERROR_CREATE(UNEXPECTED_TOKEN, type_name_tok));
+                }
+                return_type_node = iter_append(types_iter, TypeASTNode {
+                    .name = type_name_tok->identifier.content,
+                    .is_pointer = false,
+                    .is_array = true,
+                    .array_length = count_tok->integer_literal.value,
+                });
+                if (
+                    auto *arrow_tok = iter_next(tokens_iter);
+                    arrow_tok->type != TokenType::ARROW
+                ) {
+                    return err<ASTNode, ParseError>(PARSE_ERROR_CREATE(UNEXPECTED_TOKEN, arrow_tok));
+                }
+            }
             bool is_foreign_proc = false;
             {
                 auto *after_arrow = iter_next(tokens_iter);
@@ -3447,6 +3473,17 @@ static auto parse_statement(
                     iter_current(tokens_iter)->type == TokenType::END &&
                     "Expected newline or end token after array element assignment");
                 (void)iter_next(tokens_iter);
+                break;
+            }
+            case TokenType::NEWLINE:
+            case TokenType::END: {
+                // Bare identifier as statement — typically the return value of a procedure
+                (void)iter_append(nodes_block_iter, ASTNode {
+                    .type = ASTNodeType::IDENTIFIER,
+                    .parent = parent_node,
+                    .identifier = next_token->identifier.content,
+                });
+                (void)iter_next(tokens_iter); // consume NEWLINE/END
                 break;
             }
             case TokenType::BRACE_OPEN: {

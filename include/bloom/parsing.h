@@ -133,6 +133,8 @@ struct ProcParameterASTNode {
 struct TypeASTNode {
     Str name;
     bool is_pointer;
+    bool is_array;
+    int64_t array_length;
 };
 
 struct ASTNode {

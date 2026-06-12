@@ -6,6 +6,16 @@ print_thing :: proc() ->
 sum :: proc(a: Int, b: Int) Int ->
     a + b
 
+// Returning an array from procedure
+foo_return_array :: proc() [3]Int ->
+    a := [3]Int{ 2, 8, 12 }
+    a[0] = 4
+    a
+
 main :: proc() ->
     print_thing()
     printf("Sum: %i\n", sum(5, 10))
+
+    ->
+        a := foo_return_array()
+        print("A: {}, {}, {}\n", a[0], a[1], a[2])

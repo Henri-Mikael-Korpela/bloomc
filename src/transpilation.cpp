@@ -34,6 +34,13 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
     SliceVarEntry slice_vars[32];
     size_t slice_var_count = 0;
 
+    struct ArrayReturnTypeEntry {
+        Str element_type;
+        int64_t count;
+    };
+    ArrayReturnTypeEntry emitted_array_return_types[16];
+    size_t emitted_array_return_type_count = 0;
+
     enum class VarKind : uint8_t { INT, BOOL, BLOOM_STR, BLOOM_CHAR, SIZE_T, STRUCT, PTR, PTR_STRUCT, SLICE_U8 };
     struct VarEntry {
         Str name;
@@ -793,11 +800,13 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
                     break;
                 }
                 array_var_count = 0;
+                slice_var_count = 0;
                 var_type_count = 0;
                 size_t for_in_counter = 0;
                 bool const has_return_type = node->proc_def.return_type != nullptr;
+                bool const has_array_return_type = has_return_type && node->proc_def.return_type->is_array;
                 Str return_type_c = {};
-                if (has_return_type) {
+                if (has_return_type && !has_array_return_type) {
                     if (node->proc_def.return_type->name == "Int") {
                         return_type_c = cstr_to_str("int");
                     }
@@ -814,10 +823,49 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
                         return_type_c = node->proc_def.return_type->name;
                     }
                 }
-                else {
+                else if (!has_return_type) {
                     return_type_c = cstr_to_str("void");
                 }
-                PUSH_STR(return_type_c);
+                if (has_array_return_type) {
+                    Str const &arr_elem = node->proc_def.return_type->name;
+                    int64_t const arr_len = node->proc_def.return_type->array_length;
+                    bool already_emitted = false;
+                    for (size_t i = 0; i < emitted_array_return_type_count; i++) {
+                        if (emitted_array_return_types[i].count == arr_len &&
+                            emitted_array_return_types[i].element_type.length == arr_elem.length &&
+                            strncmp(emitted_array_return_types[i].element_type.data, arr_elem.data, arr_elem.length) == 0)
+                        {
+                            already_emitted = true;
+                            break;
+                        }
+                    }
+                    if (!already_emitted) {
+                        if (emitted_array_return_type_count < 16) {
+                            emitted_array_return_types[emitted_array_return_type_count++] = {
+                                .element_type = arr_elem,
+                                .count = arr_len,
+                            };
+                        }
+                        bool const is_u8_elem = arr_elem.length == 2 &&
+                            arr_elem.data[0] == 'U' && arr_elem.data[1] == '8';
+                        PUSH_STR("typedef struct { ");
+                        PUSH_STR(is_u8_elem ? "uint8_t" : "int");
+                        PUSH_STR(" data[");
+                        PUSH_INT(arr_len);
+                        PUSH_STR("]; } __bloom_Array_");
+                        PUSH_STR(arr_elem);
+                        PUSH_STR("_");
+                        PUSH_INT(arr_len);
+                        PUSH_STR(";\n");
+                    }
+                    PUSH_STR("__bloom_Array_");
+                    PUSH_STR(arr_elem);
+                    PUSH_STR("_");
+                    PUSH_INT(arr_len);
+                }
+                else {
+                    PUSH_STR(return_type_c);
+                }
                 PUSH_STR(' ');
                 PUSH_STR(node->proc_def.name);
                 PUSH_STR('(');
@@ -1562,6 +1610,34 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
                             }
                             if (expr->type == ASTNodeType::PROC_CALL) {
                                 TypeASTNode *ret_type = lookup_proc_return_type(expr->proc_call.caller_identifier);
+                                if (ret_type != nullptr && ret_type->is_array) {
+                                    bool const is_u8_arr = ret_type->name == "U8";
+                                    if (array_var_count < 64) {
+                                        array_vars[array_var_count++] = {
+                                            .name = stmt->variable_definition.name,
+                                            .count = (size_t)ret_type->array_length,
+                                            .element_type = ret_type->name,
+                                        };
+                                    }
+                                    register_var(stmt->variable_definition.name, VarKind::INT);
+                                    PUSH_STR("__bloom_Array_");
+                                    PUSH_STR(ret_type->name);
+                                    PUSH_STR("_");
+                                    PUSH_INT(ret_type->array_length);
+                                    PUSH_STR(" __bloom_tmp_");
+                                    PUSH_STR(stmt->variable_definition.name);
+                                    PUSH_STR(" = ");
+                                    emit_expression(expr);
+                                    PUSH_STR(";\n");
+                                    push_tabs();
+                                    PUSH_STR(is_u8_arr ? "uint8_t" : "int");
+                                    PUSH_STR(" *");
+                                    PUSH_STR(stmt->variable_definition.name);
+                                    PUSH_STR(" = __bloom_tmp_");
+                                    PUSH_STR(stmt->variable_definition.name);
+                                    PUSH_STR(".data;\n");
+                                    break;
+                                }
                                 if (ret_type != nullptr && ret_type->is_pointer) {
                                     register_var(stmt->variable_definition.name, VarKind::PTR);
                                     PUSH_STR(ret_type->name);
@@ -2198,6 +2274,37 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
                                     break;
                                 }
                             }
+                            break;
+                        }
+                        case ASTNodeType::IDENTIFIER: {
+                            if (!emit_as_return) {
+                                break;
+                            }
+                            // Check if identifier refers to an array variable
+                            for (size_t i = array_var_count; i-- > 0;) {
+                                if (array_vars[i].name.length == stmt->identifier.length &&
+                                    strncmp(array_vars[i].name.data, stmt->identifier.data, stmt->identifier.length) == 0)
+                                {
+                                    int64_t const arr_count_val = (int64_t)array_vars[i].count;
+                                    push_tabs();
+                                    PUSH_STR("__bloom_Array_");
+                                    PUSH_STR(array_vars[i].element_type);
+                                    PUSH_STR("_");
+                                    PUSH_INT(arr_count_val);
+                                    PUSH_STR(" __bloom_ret;\n");
+                                    push_tabs();
+                                    PUSH_STR("memcpy(__bloom_ret.data, ");
+                                    PUSH_STR(stmt->identifier);
+                                    PUSH_STR(", sizeof(__bloom_ret.data));\n");
+                                    push_tabs();
+                                    PUSH_STR("return __bloom_ret;\n");
+                                    return;
+                                }
+                            }
+                            push_tabs();
+                            PUSH_STR("return ");
+                            PUSH_STR(stmt->identifier);
+                            PUSH_STR(";\n");
                             break;
                         }
                         case ASTNodeType::DEFER: {

@@ -120,6 +120,10 @@ auto tokenize(Str *input, ArenaAllocator *allocator) -> Array<Token> {
                 append_token_of_type(TokenType::KEYWORD_PROC);
                 continue;
             }
+            if (word == TOKEN_KEYWORD_RETURN) {
+                append_token_of_type(TokenType::KEYWORD_RETURN);
+                continue;
+            }
             if (word == TOKEN_KEYWORD_STRUCT) {
                 append_token_of_type(TokenType::KEYWORD_STRUCT);
                 continue;

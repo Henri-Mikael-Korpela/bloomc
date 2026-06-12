@@ -3941,6 +3941,33 @@ static auto parse_statement(
         }
         break;
     }
+    case TokenType::KEYWORD_RETURN: {
+        auto *value_tok = iter_next(tokens_iter);
+        ASTNode value_node = {};
+        if (value_tok->type == TokenType::INTEGER_LITERAL) {
+            value_node = ASTNode {
+                .type = ASTNodeType::INTEGER_LITERAL,
+                .parent = nullptr,
+                .integer_literal = { .value = { .value = value_tok->integer_literal.value } },
+            };
+        }
+        else {
+            append(errors, PARSE_ERROR_CREATE(UNEXPECTED_TOKEN, value_tok));
+            return false;
+        }
+        auto *value_ptr = iter_append(nodes_block_iter, std::move(value_node));
+        auto *nl = iter_next(tokens_iter);
+        if (nl->type != TokenType::NEWLINE && nl->type != TokenType::END) {
+            append(errors, PARSE_ERROR_CREATE(UNEXPECTED_TOKEN, nl));
+            return false;
+        }
+        (void)iter_append(nodes_block_iter, ASTNode {
+            .type = ASTNodeType::RETURN,
+            .parent = parent_node,
+            .return_value = value_ptr,
+        });
+        break;
+    }
     case TokenType::KEYWORD_BREAK:
         (void)iter_append(nodes_block_iter, ASTNode {
             .type = ASTNodeType::BREAK,

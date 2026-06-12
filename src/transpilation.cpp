@@ -2050,6 +2050,18 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
                             }
                             break;
                         }
+                        case ASTNodeType::RETURN: {
+                            push_tabs();
+                            PUSH_STR("return");
+                            if (stmt->return_value != nullptr &&
+                                stmt->return_value->type == ASTNodeType::INTEGER_LITERAL)
+                            {
+                                PUSH_STR(' ');
+                                PUSH_INT(stmt->return_value->integer_literal.value.value);
+                            }
+                            PUSH_STR(";\n");
+                            break;
+                        }
                         case ASTNodeType::BREAK: {
                             push_tabs();
                             PUSH_STR("break;\n");

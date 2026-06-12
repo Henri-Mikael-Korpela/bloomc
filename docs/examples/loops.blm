@@ -18,6 +18,10 @@ main :: proc() ->
     // For loop with counted range
     for i in 2..+5 ->
         print("Counted range, index: {}\n", i)
+
+    x := 4
+    for i in 2..+x ->
+        print("Counted range with x, index: {}\n", i)
     
     // For if loop which is like while loop in C
     j := 0

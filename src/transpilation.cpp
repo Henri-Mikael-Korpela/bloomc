@@ -2021,7 +2021,15 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
                             PUSH_STR("; ");
                             PUSH_STR(*elem);
                             PUSH_STR(" < ");
-                            PUSH_INT(stmt->for_range_loop.range_end);
+                            if (stmt->for_range_loop.range_count_identifier.length > 0) {
+                                PUSH_INT(stmt->for_range_loop.range_start);
+                                PUSH_STR(" + ");
+                                PUSH_STR(stmt->for_range_loop.range_count_identifier);
+                                PUSH_STR(" + 1");
+                            }
+                            else {
+                                PUSH_INT(stmt->for_range_loop.range_end);
+                            }
                             PUSH_STR("; ");
                             PUSH_STR(*elem);
                             PUSH_STR("++) {\n");

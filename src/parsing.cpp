@@ -3480,10 +3480,25 @@ static auto parse_statement(
 
                     auto *range_op_token = iter_next(tokens_iter);
                     int64_t range_end;
+                    Str range_count_identifier = {};
                     if (range_op_token->type == TokenType::RANGE_COUNTED) {
-                        auto *count_token = expect_token_or_append_error(tokens_iter, TokenType::INTEGER_LITERAL, errors);
-                        if (count_token == nullptr) { return false; }
-                        range_end = range_start + count_token->integer_literal.value + 1;
+                        auto *count_token = iter_next(tokens_iter);
+                        if (count_token->type == TokenType::INTEGER_LITERAL) {
+                            range_end = range_start + count_token->integer_literal.value + 1;
+                        }
+                        else if (count_token->type == TokenType::IDENTIFIER) {
+                            range_count_identifier = count_token->identifier.content;
+                            range_end = 0;
+                        }
+                        else {
+                            append(errors, ParseError {
+                                .code = ParseErrorCode::UNEXPECTED_TOKEN,
+                                .position = count_token->position,
+                                .src_code_line = __LINE__,
+                                .token_type = count_token->type,
+                            });
+                            return false;
+                        }
                     }
                     else if (range_op_token->type == TokenType::RANGE_EXCLUSIVE) {
                         auto *end_token = expect_token_or_append_error(tokens_iter, TokenType::INTEGER_LITERAL, errors);
@@ -3514,6 +3529,7 @@ static auto parse_statement(
                             .element_name = elem_token->identifier.content,
                             .range_start = range_start,
                             .range_end = range_end,
+                            .range_count_identifier = range_count_identifier,
                             .body = Array<ASTNode>(
                                 nodes_block_iter->elements.data + nodes_block_iter->current_index + 1,
                                 0

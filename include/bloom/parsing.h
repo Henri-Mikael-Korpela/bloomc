@@ -202,6 +202,7 @@ struct ASTNode {
             Str element_name;
             int64_t range_start;
             int64_t range_end;
+            Str range_count_identifier;
             Array<ASTNode> body;
         } for_range_loop;
         struct {

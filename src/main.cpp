@@ -33,8 +33,40 @@ static auto allocate_null_terminated_str_from_str(ArenaAllocator *allocator, Str
     return c_str;
 }
 
-auto run(char const *input_file_path_cstr) -> int {
-    auto input_file_path = std::filesystem::path(input_file_path_cstr);
+static auto shell_quote(std::string const &arg) -> std::string {
+    std::string result = "'";
+    for (char c : arg) {
+        if (c == '\'') {
+            result += "'\\''";
+        }
+        else {
+            result += c;
+        }
+    }
+    result += "'";
+    return result;
+}
+
+auto run(int argc, char* argv[]) -> int {
+    char const *input_file = nullptr;
+    int pass_args_start = argc;
+
+    for (int i = 2; i < argc; i++) {
+        if (strncmp(argv[i], "--input-file", 12) == 0 && i + 1 < argc) {
+            input_file = argv[++i];
+        }
+        else {
+            pass_args_start = i;
+            break;
+        }
+    }
+
+    if (input_file == nullptr) {
+        eprint("Error: --input-file is required\n");
+        return 1;
+    }
+
+    auto input_file_path = std::filesystem::path(input_file);
 
     if (!std::filesystem::exists(input_file_path)) {
         eprint("Error: Input file does not exist\n");
@@ -70,7 +102,7 @@ auto run(char const *input_file_path_cstr) -> int {
     auto input_file_content = cstr_to_str(reinterpret_cast<char*>(mapped_memory));
     Array<Token> tokens = tokenize(&input_file_content, &main_allocator);
     bool had_parse_errors = false;
-    auto ast_nodes = parse(&tokens, &main_allocator, input_file_content, cstr_to_str(input_file_path_cstr), &had_parse_errors);
+    auto ast_nodes = parse(&tokens, &main_allocator, input_file_content, cstr_to_str(input_file), &had_parse_errors);
     if (had_parse_errors) {
         delete_allocator(&main_allocator);
         return 1;
@@ -82,11 +114,11 @@ auto run(char const *input_file_path_cstr) -> int {
 
     if (temp_fd == -1) {
         eprint("Error creating temporary file\n");
+        delete_allocator(&main_allocator);
         return 1;
     }
 
     auto c_code = transpile_to_c(&ast_nodes, &main_allocator);
-    print("Transpiled C code:\n%\n", c_code);
     write(temp_fd, c_code.data, c_code.length);
     close(temp_fd);
 
@@ -96,10 +128,18 @@ auto run(char const *input_file_path_cstr) -> int {
     if (system(gcc_cmd.c_str()) != 0) {
         eprint("Error compiling generated C code\n");
         std::filesystem::remove(temp_c_file);
+        std::filesystem::remove(temp_binary);
+        delete_allocator(&main_allocator);
         return 1;
     }
 
-    int exit_code = system(temp_binary.c_str());
+    std::string run_cmd = shell_quote(temp_binary);
+    for (int i = pass_args_start; i < argc; i++) {
+        run_cmd += ' ';
+        run_cmd += shell_quote(argv[i]);
+    }
+
+    int exit_code = system(run_cmd.c_str());
 
     std::filesystem::remove(temp_c_file);
     std::filesystem::remove(temp_binary);
@@ -385,7 +425,7 @@ auto main(int argc, char* argv[]) -> int {
     }
 
     if (strncmp(argv[1], "run", 3) == 0) {
-        return run(argv[2]);
+        return run(argc, argv);
     }
     else if (strncmp(argv[1], "transpile", 9) == 0) {
         if (argc < 3) {

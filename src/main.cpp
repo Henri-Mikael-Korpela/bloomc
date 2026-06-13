@@ -289,9 +289,98 @@ auto transpile(char const *input_file_path_cstr, char const *output_file_path_cs
     return 0;
 }
 
+auto build(int argc, char* argv[]) -> int {
+    char const *input_file = nullptr;
+    char const *output_file = nullptr;
+
+    for (int i = 2; i < argc; i++) {
+        if (strncmp(argv[i], "--input-file", 12) == 0 && i + 1 < argc) {
+            input_file = argv[++i];
+        }
+        else if (strncmp(argv[i], "--output-file", 13) == 0 && i + 1 < argc) {
+            output_file = argv[++i];
+        }
+    }
+
+    if (input_file == nullptr) {
+        eprint("Error: --input-file is required\n");
+        return 1;
+    }
+    if (output_file == nullptr) {
+        eprint("Error: --output-file is required\n");
+        return 1;
+    }
+
+    auto input_file_path = std::filesystem::path(input_file);
+    if (!std::filesystem::exists(input_file_path)) {
+        eprint("Error: Input file does not exist\n");
+        return 1;
+    }
+    input_file_path = std::filesystem::absolute(input_file_path);
+
+    int src_fd = open(input_file_path.c_str(), O_RDONLY);
+    if (src_fd == -1) {
+        eprint("Error opening the input source file\n");
+        return 1;
+    }
+
+    struct stat file_stat;
+    if (fstat(src_fd, &file_stat) == -1) {
+        eprint("Error getting the input source file status\n");
+        close(src_fd);
+        return 1;
+    }
+
+    byte *mapped_memory = static_cast<byte*>(mmap(nullptr, file_stat.st_size, PROT_READ, MAP_PRIVATE, src_fd, 0));
+    defer(munmap(mapped_memory, file_stat.st_size));
+    close(src_fd);
+
+    if (mapped_memory == MAP_FAILED) {
+        eprint("Error mapping the input source file\n");
+        return 1;
+    }
+
+    auto main_allocator = ArenaAllocator(MAIN_MEMORY_SIZE);
+
+    auto input_file_content = cstr_to_str(reinterpret_cast<char*>(mapped_memory));
+    Array<Token> tokens = tokenize(&input_file_content, &main_allocator);
+    bool had_parse_errors = false;
+    auto ast_nodes = parse(&tokens, &main_allocator, input_file_content, cstr_to_str(input_file), &had_parse_errors);
+    if (had_parse_errors) {
+        delete_allocator(&main_allocator);
+        return 1;
+    }
+
+    std::filesystem::create_directories("build/tmp");
+    char temp_c_file[] = "build/tmp/transpiled_XXXXXX.c";
+    int temp_fd = mkstemps(temp_c_file, 2);
+    if (temp_fd == -1) {
+        eprint("Error creating temporary file\n");
+        delete_allocator(&main_allocator);
+        return 1;
+    }
+
+    auto c_code = transpile_to_c(&ast_nodes, &main_allocator);
+    write(temp_fd, c_code.data, c_code.length);
+    close(temp_fd);
+
+    std::string gcc_cmd = std::string("gcc -o ") + output_file + " " + temp_c_file;
+    int gcc_result = system(gcc_cmd.c_str());
+
+    std::filesystem::remove(temp_c_file);
+    delete_allocator(&main_allocator);
+
+    if (gcc_result != 0) {
+        eprint("Error compiling generated C code\n");
+        return 1;
+    }
+
+    return 0;
+}
+
 auto main(int argc, char* argv[]) -> int {
     if (argc < 2) {
-        eprint("Usage: % run|transpile <args...>\n", argv[0]);
+        eprint("Usage: % run|transpile|build <args...>\n", argv[0]);
         return 1;
     }
 
@@ -305,8 +394,11 @@ auto main(int argc, char* argv[]) -> int {
         }
         return transpile(argv[2], argv[3]);
     }
+    else if (strncmp(argv[1], "build", 5) == 0) {
+        return build(argc, argv);
+    }
     else {
-        eprint("Error: First argument must be 'run' or 'transpile'\n");
+        eprint("Error: First argument must be 'run', 'transpile', or 'build'\n");
         return 1;
     }
 }

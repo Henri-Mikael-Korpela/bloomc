@@ -1243,6 +1243,35 @@ static auto parse_proc_call_arguments(
         }
     }
 
+    // Check for too many arguments compared to the procedure definition.
+    {
+        ASTNode const *proc_def = find_proc_def_node(nodes_block_iter, &proc_call_node->proc_call.caller_identifier);
+        if (proc_def != nullptr &&
+            !proc_def->proc_def.is_foreign &&
+            arg_count > proc_def->proc_def.parameters.length)
+        {
+            size_t const required = proc_def->proc_def.parameters.length;
+            ParseError too_many_err = {};
+            too_many_err.code = ParseErrorCode::PROC_TOO_MANY_ARGS;
+            too_many_err.position = call_pos;
+            too_many_err.src_code_line = __LINE__;
+            too_many_err.size_token_width = proc_call_node->proc_call.caller_identifier.length;
+            too_many_err.proc_call_name = proc_call_node->proc_call.caller_identifier;
+            too_many_err.proc_given_arg_count = arg_count;
+            too_many_err.proc_required_arg_count = required;
+            too_many_err.proc_param_count = required < 8 ? required : 8;
+            for (size_t pi = 0; pi < too_many_err.proc_param_count; pi++) {
+                ProcParameterASTNode const *p = &proc_def->proc_def.parameters.data[pi];
+                too_many_err.proc_param_names[pi] = p->name;
+                too_many_err.proc_param_type_names[pi] = p->type_name;
+                too_many_err.proc_param_is_pointer[pi] = p->is_pointer;
+                too_many_err.proc_param_is_slice[pi] = p->is_slice;
+            }
+            append(errors, too_many_err);
+            return false;
+        }
+    }
+
     // Set the arguments array to the contiguous slice of top-level argument nodes only.
     proc_call_node->proc_call.arguments = Array<ASTNode>(
         nodes_block_iter->elements.data + proc_call_nodes_begin_index,

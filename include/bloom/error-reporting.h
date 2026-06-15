@@ -13,6 +13,7 @@ enum class ParseErrorCode {
     ENUM_INVALID_KEY,
     PROC_ARG_TYPE_MISMATCH,
     PROC_TOO_FEW_ARGS,
+    PROC_TOO_MANY_ARGS,
     STRUCT_MISSING_FIELDS,
     STRUCT_DUPLICATE_FIELD,
 };
@@ -26,6 +27,7 @@ constexpr auto to_string(ParseErrorCode code) -> char const * {
         case ParseErrorCode::ENUM_INVALID_KEY:           return "enum invalid key";
         case ParseErrorCode::PROC_ARG_TYPE_MISMATCH:    return "proc arg type mismatch";
         case ParseErrorCode::PROC_TOO_FEW_ARGS:         return "proc too few args";
+        case ParseErrorCode::PROC_TOO_MANY_ARGS:        return "proc too many args";
         case ParseErrorCode::STRUCT_MISSING_FIELDS:     return "struct missing fields";
         case ParseErrorCode::STRUCT_DUPLICATE_FIELD:    return "struct duplicate field";
     }

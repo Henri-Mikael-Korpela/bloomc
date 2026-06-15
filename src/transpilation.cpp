@@ -2670,23 +2670,22 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
                                     PUSH_INT(operand->integer_literal.value);
                                 }
                             };
-                            auto emit_condition = [&](ASTNode *if_node) {
-                                auto *cond = &if_node->if_else;
-                                bool const is_equality = cond->comparison_op.length == 0;
-                                // BloomStr element == string literal: use strncmp
+                            // Emit a single comparison term (without surrounding if/braces).
+                            auto emit_comparison = [&](ConditionOperand const *left, Str const &op, ConditionOperand const *right) {
+                                bool const is_equality = op.length == 0;
                                 if (is_equality &&
-                                    cond->condition_left.is_array_access &&
-                                    cond->condition_right.is_string_literal)
+                                    left->is_array_access &&
+                                    right->is_string_literal)
                                 {
-                                    Str const &var = cond->condition_left.array_access.variable_name;
-                                    int64_t const idx = cond->condition_left.array_access.index;
-                                    Str const &lit = cond->condition_right.string_literal;
+                                    Str const &var = left->array_access.variable_name;
+                                    int64_t const idx = left->array_access.index;
+                                    Str const &lit = right->string_literal;
                                     Str const elem_type = slice_elem_type_for(var);
                                     bool const is_str_slice = elem_type.length == 3 &&
                                         strncmp(elem_type.data, "Str", 3) == 0;
                                     if (is_str_slice) {
                                         size_t const rlen = str_literal_runtime_length(lit);
-                                        PUSH_STR("if (__bloom_");
+                                        PUSH_STR("__bloom_");
                                         PUSH_STR(var);
                                         PUSH_STR("_data[");
                                         PUSH_INT(idx);
@@ -2700,21 +2699,32 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
                                         PUSH_STR(lit);
                                         PUSH_STR("\", ");
                                         PUSH_INT(static_cast<int64_t>(rlen));
-                                        PUSH_STR(") == 0) {\n");
+                                        PUSH_STR(") == 0");
                                         return;
                                     }
                                 }
-                                PUSH_STR("if (");
-                                emit_cond_op(&cond->condition_left);
-                                if (cond->comparison_op.length > 0) {
+                                emit_cond_op(left);
+                                if (op.length > 0) {
                                     PUSH_STR(' ');
-                                    PUSH_STR(cond->comparison_op);
+                                    PUSH_STR(op);
                                     PUSH_STR(' ');
                                 }
                                 else {
                                     PUSH_STR(" == ");
                                 }
-                                emit_cond_op(&cond->condition_right);
+                                emit_cond_op(right);
+                            };
+                            auto emit_condition = [&](ASTNode *if_node) {
+                                auto *cond = &if_node->if_else;
+                                PUSH_STR("if (");
+                                emit_comparison(&cond->condition_left, cond->comparison_op, &cond->condition_right);
+                                for (size_t ai = 0; ai < cond->and_count; ai++) {
+                                    PUSH_STR(" && ");
+                                    emit_comparison(
+                                        &cond->and_condition_lefts[ai],
+                                        cond->and_comparison_ops[ai],
+                                        &cond->and_condition_rights[ai]);
+                                }
                                 PUSH_STR(") {\n");
                             };
 

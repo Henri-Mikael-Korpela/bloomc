@@ -15,6 +15,7 @@ Identifiers are used for names for types and variables.
 ## Keywords
 
 ```
+and
 break
 context
 const
@@ -57,6 +58,7 @@ Bloom has the following operators:
 |`..<`   |Exclusive range |
 |`..=`   |Inclusive range |
 |`..+`   |Counted range   |
+|`and`   |Logical and     |
 
 And here are the operators by precendence (from highest to lowest):
 
@@ -66,6 +68,7 @@ And here are the operators by precendence (from highest to lowest):
 |2    |`+`, `-`            |                               |
 |3    |`..<`, `..=`, `..+` |                               |
 |4    |`==`, `<`           |Comparison, all non-associative|
+|5    |`and`               |                               |
 
 ## Loops
 

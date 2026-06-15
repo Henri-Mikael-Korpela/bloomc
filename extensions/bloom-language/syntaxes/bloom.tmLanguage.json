@@ -76,7 +76,7 @@
       "patterns": [
         {
           "name": "keyword.control.bloom",
-          "match": "\\b(break|else|for|if|in|pass|return)\\b"
+          "match": "\\b(and|break|else|for|if|in|pass|return)\\b"
         },
         {
           "name": "keyword.other.bloom",

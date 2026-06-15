@@ -1,0 +1,13 @@
+main :: proc() ->
+    x := 5
+    y := 10
+    z := 3
+
+    if x < 10 and y == 10 ->
+        print("x is less than 10 and y equals 10\n")
+
+    if x < 10 and y == 10 and z < 5 ->
+        print("all three conditions are true\n")
+
+    if x == 5 and z == 3 ->
+        print("x is 5 and z is 3\n")

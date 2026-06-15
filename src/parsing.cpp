@@ -4324,22 +4324,78 @@ static auto parse_statement(
                 return false;
             }
         }
+
+        // Parse 'and' chains: collect additional conditions before the arrow
+        ConditionOperand and_lefts[4] = {};
+        ConditionOperand and_rights[4] = {};
+        Str and_ops[4] = {};
+        size_t and_count = 0;
+        while (and_count < 4 &&
+               tokens_iter->current_index < tokens_iter->elements.length &&
+               iter_peek(tokens_iter)->type == TokenType::KEYWORD_AND)
+        {
+            (void)iter_next(tokens_iter); // consume 'and'
+            ConditionOperand and_left = {};
+            if (!parse_cond_operand(iter_next(tokens_iter), &and_left)) {
+                return false;
+            }
+            auto *and_op_tok = iter_next(tokens_iter);
+            Str and_op = {};
+            if (and_op_tok->type == TokenType::EQUAL_EQUAL) {
+                // leave empty; transpiler defaults to ==
+            }
+            else if (and_op_tok->type == TokenType::LESS_THAN) {
+                and_op = cstr_to_str("<");
+            }
+            else {
+                append(errors, PARSE_ERROR_CREATE(UNEXPECTED_TOKEN, and_op_tok));
+                return false;
+            }
+            ConditionOperand and_right = {};
+            if (iter_peek(tokens_iter)->type == TokenType::DOT) {
+                (void)iter_next(tokens_iter); // consume DOT
+                auto *member_tok = iter_next(tokens_iter);
+                if (member_tok->type != TokenType::IDENTIFIER) {
+                    append(errors, PARSE_ERROR_CREATE(UNEXPECTED_TOKEN, member_tok));
+                    return false;
+                }
+                and_right.is_enum_shorthand = true;
+                and_right.enum_shorthand.member_name = member_tok->identifier.content;
+            }
+            else {
+                if (!parse_cond_operand(iter_next(tokens_iter), &and_right)) {
+                    return false;
+                }
+            }
+            and_lefts[and_count] = and_left;
+            and_rights[and_count] = and_right;
+            and_ops[and_count] = and_op;
+            and_count++;
+        }
+
         if (!expect_arrow_newline(tokens_iter, errors)) { return false; }
 
-        auto *if_else_node = iter_append(nodes_block_iter, ASTNode {
+        ASTNode if_node_data = {
             .type = ASTNodeType::IF_ELSE,
             .parent = parent_node,
             .if_else = {
                 .condition_left = cond_left,
                 .condition_right = cond_right,
                 .comparison_op = comparison_op,
+                .and_count = and_count,
                 .then_body = Array<ASTNode>(
                     nodes_block_iter->elements.data + nodes_block_iter->current_index + 1,
                     0
                 ),
                 .else_body = Array<ASTNode>(nullptr, 0),
             },
-        });
+        };
+        for (size_t ai = 0; ai < and_count; ai++) {
+            if_node_data.if_else.and_condition_lefts[ai]  = and_lefts[ai];
+            if_node_data.if_else.and_condition_rights[ai] = and_rights[ai];
+            if_node_data.if_else.and_comparison_ops[ai]   = and_ops[ai];
+        }
+        auto *if_else_node = iter_append(nodes_block_iter, std::move(if_node_data));
 
         if (!parse_indented_body(tokens_iter, context, nodes_block_iter, if_else_node,
                                  proc_params_block, proc_params_iter, types_iter,

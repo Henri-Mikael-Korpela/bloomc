@@ -39,6 +39,7 @@ enum class TokenType : uint8_t {
     IDENTIFIER,
     INDENT,
     INTEGER_LITERAL,
+    KEYWORD_AND,
     KEYWORD_BREAK,
     KEYWORD_CONST,
     KEYWORD_ELSE,
@@ -59,6 +60,7 @@ enum class TokenType : uint8_t {
     VAR_DEF,
 };
 
+constexpr auto TOKEN_KEYWORD_AND     = "and";
 constexpr auto TOKEN_KEYWORD_BREAK   = "break";
 constexpr auto TOKEN_KEYWORD_DEFER   = "defer";
 constexpr auto TOKEN_KEYWORD_CONST   = "const";
@@ -126,6 +128,7 @@ constexpr auto to_string(TokenType type) -> Str {
         case TokenType::IDENTIFIER:        return STR("identifier");
         case TokenType::INDENT:            return STR("indent");
         case TokenType::INTEGER_LITERAL:   return STR("integer_literal");
+        case TokenType::KEYWORD_AND:       return STR(TOKEN_KEYWORD_AND);
         case TokenType::KEYWORD_BREAK:     return STR(TOKEN_KEYWORD_BREAK);
         case TokenType::KEYWORD_CONST:     return STR(TOKEN_KEYWORD_CONST);
         case TokenType::KEYWORD_ELSE:      return STR(TOKEN_KEYWORD_ELSE);

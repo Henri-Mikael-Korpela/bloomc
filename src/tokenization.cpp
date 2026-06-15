@@ -72,6 +72,10 @@ auto tokenize(Str *input, ArenaAllocator *allocator) -> Array<Token> {
 
             // If the text is a keyword
             auto word = str_slice(input, begin, identifier_len);
+            if (word == TOKEN_KEYWORD_AND) {
+                append_token_of_type(TokenType::KEYWORD_AND);
+                continue;
+            }
             if (word == TOKEN_KEYWORD_BREAK) {
                 append_token_of_type(TokenType::KEYWORD_BREAK);
                 continue;

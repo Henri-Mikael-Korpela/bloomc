@@ -180,6 +180,10 @@ struct ASTNode {
             ConditionOperand condition_left;
             ConditionOperand condition_right;
             Str comparison_op;
+            ConditionOperand and_condition_lefts[4];
+            ConditionOperand and_condition_rights[4];
+            Str and_comparison_ops[4];
+            size_t and_count;
             Array<ASTNode> then_body;
             Array<ASTNode> else_body;
         } if_else;

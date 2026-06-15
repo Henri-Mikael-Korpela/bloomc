@@ -169,20 +169,24 @@ function inferExprType(text: string, expr: string, depth: number): string | null
     // Boolean literal
     if (s === 'true' || s === 'false') return 'Bool';
 
-    // Array init: [const]Type{ or [N]Type{
-    const arrayInitMatch = s.match(/^\[(\w+)\](\w+)\s*\{/);
+    // Array init: [const]Type{ or [N]Type{ or [expr]Type{
+    const arrayInitMatch = s.match(/^\[([^\]]*)\](\w+)\s*\{/);
     if (arrayInitMatch) {
         const lenSpec = arrayInitMatch[1];
         const typeName = arrayInitMatch[2];
         if (/^\d+$/.test(lenSpec)) {
             return `[${lenSpec}]${typeName}`;
         }
-        // lenSpec === 'const': count elements from the array body
-        const body = extractArrayBody(text, s);
-        if (body !== null) {
-            return `[const = ${countArrayElements(body)}]${typeName}`;
+        if (lenSpec === 'const') {
+            // count elements from the array body
+            const body = extractArrayBody(text, s);
+            if (body !== null) {
+                return `[const = ${countArrayElements(body)}]${typeName}`;
+            }
+            return `[const]${typeName}`;
         }
-        return `[const]${typeName}`;
+        // Complex expression size (e.g. N + M or CONST_NAME)
+        return `[expr]${typeName}`;
     }
 
     // Address-of: %varname
@@ -213,6 +217,18 @@ function inferExprType(text: string, expr: string, depth: number): string | null
         // Strip leading ^ for pointer dereference
         const baseType = objType.startsWith('^') ? objType.slice(1) : objType;
         return lookupStructFieldType(text, baseType, memberMatch[2]);
+    }
+
+    // Array slice: arr[N..+VAR], arr[..<N], arr[N..M], arr[..], etc.
+    const arraySliceMatch = s.match(/^(\w+)\[.*\.\./);
+    if (arraySliceMatch) {
+        const arrType = inferVarType(text, arraySliceMatch[1], depth + 1);
+        if (arrType) {
+            const elemMatch = arrType.match(/^\[[^\]]*\](\w+)$/);
+            if (elemMatch) return '[]' + elemMatch[1];
+            if (arrType.startsWith('[]')) return arrType;
+        }
+        return null;
     }
 
     // Array access: arr[idx]

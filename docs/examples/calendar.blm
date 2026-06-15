@@ -51,8 +51,8 @@ get_event :: proc() ->
     print("Event ID: {}\n", event_id)
     print("Event name length: {}\n", event_name_len)
 
-    file_read_bytes_into_buffer(%f, buffer[5..+event_name_len])
     event_name_raw := buffer[5..+event_name_len]
+    file_read_bytes_into_buffer(%f, event_name_raw)
     event_name := utf8_decode_to_str(event_name_raw)
     print("Event name: {}\n", event_name)
 

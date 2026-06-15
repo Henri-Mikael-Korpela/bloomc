@@ -248,24 +248,22 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
             auto *arg = &(*arguments)[i];
             switch (arg->type) {
                 case ASTNodeType::IDENTIFIER: {
-                    if (callee_name == "utf8_decode_to_str") {
-                        bool is_sv = false;
-                        for (size_t si = 0; si < slice_var_count; si++) {
-                            if (slice_vars[si].name.length == arg->identifier.length &&
-                                strncmp(slice_vars[si].name.data, arg->identifier.data, arg->identifier.length) == 0)
-                            {
-                                is_sv = true;
-                                break;
-                            }
-                        }
-                        if (is_sv) {
-                            PUSH_STR("(BloomSliceU8){.data = __bloom_");
-                            PUSH_STR(arg->identifier);
-                            PUSH_STR("_data, .length = __bloom_");
-                            PUSH_STR(arg->identifier);
-                            PUSH_STR("_len}");
+                    bool is_sv = false;
+                    for (size_t si = 0; si < slice_var_count; si++) {
+                        if (slice_vars[si].name.length == arg->identifier.length &&
+                            strncmp(slice_vars[si].name.data, arg->identifier.data, arg->identifier.length) == 0)
+                        {
+                            is_sv = true;
                             break;
                         }
+                    }
+                    if (is_sv) {
+                        PUSH_STR("(BloomSliceU8){.data = __bloom_");
+                        PUSH_STR(arg->identifier);
+                        PUSH_STR("_data, .length = __bloom_");
+                        PUSH_STR(arg->identifier);
+                        PUSH_STR("_len}");
+                        break;
                     }
                     PUSH_STR(arg->identifier);
                     break;

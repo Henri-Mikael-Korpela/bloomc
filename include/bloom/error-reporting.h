@@ -12,6 +12,7 @@ enum class ParseErrorCode {
     BOOL_IN_ADDITION,
     ENUM_INVALID_KEY,
     PROC_ARG_TYPE_MISMATCH,
+    PROC_TOO_FEW_ARGS,
     STRUCT_MISSING_FIELDS,
     STRUCT_DUPLICATE_FIELD,
 };
@@ -24,6 +25,7 @@ constexpr auto to_string(ParseErrorCode code) -> char const * {
         case ParseErrorCode::BOOL_IN_ADDITION:          return "bool in addition";
         case ParseErrorCode::ENUM_INVALID_KEY:           return "enum invalid key";
         case ParseErrorCode::PROC_ARG_TYPE_MISMATCH:    return "proc arg type mismatch";
+        case ParseErrorCode::PROC_TOO_FEW_ARGS:         return "proc too few args";
         case ParseErrorCode::STRUCT_MISSING_FIELDS:     return "struct missing fields";
         case ParseErrorCode::STRUCT_DUPLICATE_FIELD:    return "struct duplicate field";
     }
@@ -61,6 +63,15 @@ struct ParseError {
     Str enum_invalid_key_type;
     Str enum_member_names[32];
     size_t enum_member_count;
+    // For PROC_TOO_FEW_ARGS
+    Str proc_call_name;
+    size_t proc_given_arg_count;
+    size_t proc_required_arg_count;
+    Str proc_param_names[8];
+    Str proc_param_type_names[8];
+    bool proc_param_is_pointer[8];
+    bool proc_param_is_slice[8];
+    size_t proc_param_count;
 };
 
 auto report_parse_errors(Array<ParseError> errors, bool *had_errors, Str source_content, Str filename) -> void;

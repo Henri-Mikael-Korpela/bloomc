@@ -1,0 +1,5 @@
+greet :: proc(name: Str, times: Int) ->
+    print("Hello, {}! (x{})\n", name, times)
+
+main :: proc() ->
+    greet("World")

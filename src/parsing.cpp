@@ -321,7 +321,8 @@ static auto parse_proc_call_arguments(
     Iterator<ASTNode> *nodes_block_iter,
     Context *context,
     Iterator<BinaryOperand> *operands_iter,
-    DynamicArray<ParseError> *errors
+    DynamicArray<ParseError> *errors,
+    Token::Position call_pos = {}
 ) -> bool {
     assert(proc_call_node->type == ASTNodeType::PROC_CALL &&
         "Procedure call node should be of PROC_CALL type after parsing arguments");
@@ -334,6 +335,7 @@ static auto parse_proc_call_arguments(
         ASTNode *node;
         size_t token_begin;
         size_t token_end;
+        Token::Position identifier_pos;
     };
     constexpr size_t MAX_PENDING_NESTED_CALLS = 16;
     PendingNestedCall pending_nested_calls[MAX_PENDING_NESTED_CALLS];
@@ -1091,6 +1093,7 @@ static auto parse_proc_call_arguments(
                             nested_node,
                             nested_tokens_begin,
                             static_cast<size_t>(close_paren_idx),
+                            next_token->position,
                         };
                         tokens_iter->current_index = static_cast<size_t>(close_paren_idx) + 1;
                     }
@@ -1206,7 +1209,36 @@ static auto parse_proc_call_arguments(
             pending->token_begin,
             static_cast<int64_t>(pending->token_end)
         );
-        if (!parse_proc_call_arguments(&nested_args_iter, pending->node, nodes_block_iter, context, operands_iter, errors)) {
+        if (!parse_proc_call_arguments(&nested_args_iter, pending->node, nodes_block_iter, context, operands_iter, errors, pending->identifier_pos)) {
+            return false;
+        }
+    }
+
+    // Check for too few arguments compared to the procedure definition.
+    {
+        ASTNode const *proc_def = find_proc_def_node(nodes_block_iter, &proc_call_node->proc_call.caller_identifier);
+        if (proc_def != nullptr &&
+            !proc_def->proc_def.is_foreign &&
+            arg_count < proc_def->proc_def.parameters.length)
+        {
+            size_t const required = proc_def->proc_def.parameters.length;
+            ParseError too_few_err = {};
+            too_few_err.code = ParseErrorCode::PROC_TOO_FEW_ARGS;
+            too_few_err.position = call_pos;
+            too_few_err.src_code_line = __LINE__;
+            too_few_err.size_token_width = proc_call_node->proc_call.caller_identifier.length;
+            too_few_err.proc_call_name = proc_call_node->proc_call.caller_identifier;
+            too_few_err.proc_given_arg_count = arg_count;
+            too_few_err.proc_required_arg_count = required;
+            too_few_err.proc_param_count = required < 8 ? required : 8;
+            for (size_t pi = 0; pi < too_few_err.proc_param_count; pi++) {
+                ProcParameterASTNode const *p = &proc_def->proc_def.parameters.data[pi];
+                too_few_err.proc_param_names[pi] = p->name;
+                too_few_err.proc_param_type_names[pi] = p->type_name;
+                too_few_err.proc_param_is_pointer[pi] = p->is_pointer;
+                too_few_err.proc_param_is_slice[pi] = p->is_slice;
+            }
+            append(errors, too_few_err);
             return false;
         }
     }
@@ -2081,7 +2113,7 @@ static auto parse_expression(
                         .parent = nullptr,
                         .proc_call = { .caller_identifier = token->identifier.content },
                     };
-                    if (!parse_proc_call_arguments(&arg_tokens_iter, &temp_node, nodes_block_iter, context, operands_iter, errors)) {
+                    if (!parse_proc_call_arguments(&arg_tokens_iter, &temp_node, nodes_block_iter, context, operands_iter, errors, token->position)) {
                         return err<BinaryOperand, ParseError>(PARSE_ERROR_CREATE(UNEXPECTED_TOKEN, token));
                     }
                     tokens_iter->current_index = close_paren_index + 1;
@@ -3134,7 +3166,8 @@ static auto parse_statement(
                     nodes_block_iter,
                     context,
                     operands_iter,
-                    errors
+                    errors,
+                    next_token->position
                 );
                 if (!proc_call_args_parsed_ok) {
                     if (errors->length == 0) {
@@ -4097,7 +4130,7 @@ static auto parse_statement(
             .parent = parent_node,
             .proc_call = { .caller_identifier = proc_name_token->identifier.content },
         };
-        if (!parse_proc_call_arguments(&arg_tokens_iter, &temp_node, nodes_block_iter, context, operands_iter, errors)) {
+        if (!parse_proc_call_arguments(&arg_tokens_iter, &temp_node, nodes_block_iter, context, operands_iter, errors, proc_name_token->position)) {
             if (errors->length == 0) {
                 append(errors, PARSE_ERROR_CREATE(UNEXPECTED_TOKEN, iter_current(tokens_iter)));
             }

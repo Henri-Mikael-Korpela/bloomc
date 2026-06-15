@@ -263,6 +263,49 @@ auto report_parse_errors(Array<ParseError> errors, bool *had_errors, Str source_
                 (int)error->struct_type_name.length, error->struct_type_name.data,
                 ANSI_RESET);
         }
+        else if (error->code == ParseErrorCode::PROC_TOO_FEW_ARGS) {
+            size_t const given = error->proc_given_arg_count;
+            size_t const required = error->proc_required_arg_count;
+            fprintf(stderr, "\n%sError: Too few arguments in procedure call:%s\n", ANSI_RED, ANSI_RESET);
+            fprintf(stderr,
+                "%s    Called '%.*s' with %zu %s, but it requires %zu.%s\n",
+                ANSI_RED,
+                (int)error->proc_call_name.length, error->proc_call_name.data,
+                given, given == 1 ? "argument" : "arguments",
+                required,
+                ANSI_RESET);
+            emit_error_location(filename, source_content, error);
+            fprintf(stderr, "\n%sProcedure:%s %.*s :: proc(",
+                ANSI_CYAN, ANSI_RESET,
+                (int)error->proc_call_name.length, error->proc_call_name.data);
+            for (size_t j = 0; j < error->proc_param_count; j++) {
+                if (j != 0) { fprintf(stderr, ", "); }
+                if (j >= given) { fprintf(stderr, "%s", ANSI_ORANGE); }
+                if (error->proc_param_is_pointer[j]) { fprintf(stderr, "^"); }
+                if (error->proc_param_is_slice[j]) { fprintf(stderr, "[]"); }
+                fprintf(stderr, "%.*s: %.*s",
+                    (int)error->proc_param_names[j].length, error->proc_param_names[j].data,
+                    (int)error->proc_param_type_names[j].length, error->proc_param_type_names[j].data);
+                if (j >= given) { fprintf(stderr, "%s", ANSI_RESET); }
+            }
+            fprintf(stderr, ")\n");
+            fprintf(stderr, "\n%sHow to fix:%s\n", ANSI_BLUE, ANSI_RESET);
+            fprintf(stderr,
+                "%s    - Provide all %zu required arguments for '%.*s'. Missing:%s\n",
+                ANSI_BLUE, required,
+                (int)error->proc_call_name.length, error->proc_call_name.data,
+                ANSI_RESET);
+            for (size_t j = given; j < error->proc_param_count; j++) {
+                fprintf(stderr, "%s        %.*s: ",
+                    ANSI_BLUE,
+                    (int)error->proc_param_names[j].length, error->proc_param_names[j].data);
+                if (error->proc_param_is_pointer[j]) { fprintf(stderr, "^"); }
+                if (error->proc_param_is_slice[j]) { fprintf(stderr, "[]"); }
+                fprintf(stderr, "%.*s%s\n",
+                    (int)error->proc_param_type_names[j].length, error->proc_param_type_names[j].data,
+                    ANSI_RESET);
+            }
+        }
         else if (error->code == ParseErrorCode::UNEXPECTED_TOKEN) {
             Str const token_type_str = to_string(error->token_type);
             fprintf(stderr, "\n%sError: Unexpected token:%s\n", ANSI_RED, ANSI_RESET);

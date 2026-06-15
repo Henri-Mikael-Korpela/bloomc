@@ -15,7 +15,7 @@
 constexpr auto kb(size_t n) -> size_t { return n * 1024; }
 constexpr auto mb(size_t n) -> size_t { return n * 1024 * 1024; }
 
-constexpr size_t MAIN_MEMORY_SIZE = kb(256);
+constexpr size_t MAIN_MEMORY_SIZE = mb(1);
 
 /**
  * Allocates a null-terminated C string.
@@ -54,6 +54,10 @@ auto run(int argc, char* argv[]) -> int {
     for (int i = 2; i < argc; i++) {
         if (strncmp(argv[i], "--input-file", 12) == 0 && i + 1 < argc) {
             input_file = argv[++i];
+        }
+        else if (strcmp(argv[i], "--") == 0) {
+            pass_args_start = i + 1;
+            break;
         }
         else {
             pass_args_start = i;

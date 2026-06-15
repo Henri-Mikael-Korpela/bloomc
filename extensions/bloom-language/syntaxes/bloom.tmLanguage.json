@@ -90,7 +90,7 @@
     },
     "builtin-types": {
       "name": "support.type.bloom",
-      "match": "\\b(Bool|CStr|FILE|Int|Str|U8)\\b"
+      "match": "\\b(Bool|CStr|FILE|Int|RawPtr|Str|U8)\\b"
     },
     "special-variable": {
       "name": "variable.language.bloom",

@@ -26,11 +26,12 @@ connection.onInitialize((_params: InitializeParams): InitializeResult => {
 });
 
 const BUILTIN_TYPES: Record<string, string> = {
-    Bool: 'built-in boolean type',
-    CStr: 'built-in null-terminated C string type',
-    Int:  'built-in signed integer type',
-    Str:  'built-in UTF-8 string type',
-    U8:   'built-in unsigned 8-bit integer type',
+    Bool:   'built-in boolean type',
+    CStr:   'built-in null-terminated C string type',
+    Int:    'built-in signed integer type',
+    RawPtr: 'built-in raw (untyped) pointer type, equivalent to void* in C',
+    Str:    'built-in UTF-8 string type',
+    U8:     'built-in unsigned 8-bit integer type',
 };
 
 function escapeRegex(s: string): string {
@@ -64,9 +65,10 @@ function getWordAtPosition(
 }
 
 const BUILTIN_PROC_RETURN_TYPES: Record<string, string> = {
-    clone_to_cstr:    'CStr',
-    length:           'Int',
-    length_in_bytes:  'Int',
+    clone_to_cstr:       'CStr',
+    length:              'Int',
+    length_in_bytes:     'Int',
+    try_parse_int_le:    'Int',
 };
 
 // Returns the declared return type of a proc, e.g. "File" or "^FILE" or null.

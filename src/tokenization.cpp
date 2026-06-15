@@ -375,6 +375,5 @@ auto tokenize(Str *input, ArenaAllocator *allocator) -> Array<Token> {
     // The final token count is known now, shrink the allocation
     tokens_block = shrink_last_allocation(allocator, &tokens_block, current_token_index);
     result.length = tokens_block.length;
-    print("Tokens block allocation size: % (% tokens)\n", allocation_size(&tokens_block), tokens_block.length);
     return result;
 }

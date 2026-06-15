@@ -1,6 +1,7 @@
 // Simple calendar keeping app
 fclose :: proc(stream: ^FILE) -> foreign
 fopen  :: proc(path: CStr, mode: CStr) ^FILE -> foreign
+fread  :: proc(buffer: RawPtr, size: Int, count: Int, stream: ^FILE) Int -> foreign
 fwrite :: proc(content: CStr, size: Int, count: Int, stream: ^FILE) Int -> foreign
 
 File :: struct ->
@@ -10,11 +11,23 @@ File :: struct ->
 file_close :: proc(file: ^File) ->
     fclose(file._ptr)
 
+file_open_for_read :: proc(path: Str) File ->
+    path_cstr := clone_to_cstr(path, context.temp_allocator)
+    mode := clone_to_cstr("r", context.temp_allocator)
+    fptr := fopen(path_cstr, mode)
+    File { path = path, _ptr = fptr }
+
 file_open_for_write :: proc(path: Str) File ->
     path_cstr := clone_to_cstr(path, context.temp_allocator)
     mode := clone_to_cstr("w", context.temp_allocator)
     fptr := fopen(path_cstr, mode)
     File { path = path, _ptr = fptr }
+
+file_read_bytes_into_buffer :: proc(file: ^File, target_buffer: []U8) ->
+    BUFFER_ELEMENT_TYPE_SIZE :: type_info_of(target_buffer[0]).size_in_bytes
+
+    buffer_raw := RawPtr(target_buffer)
+    fread(buffer_raw, BUFFER_ELEMENT_TYPE_SIZE, length(target_buffer), file._ptr)
 
 file_write :: proc(file: ^File, content: []U8) ->
     fwrite(CStr(content), 1, length(content), file._ptr)
@@ -23,20 +36,27 @@ Event :: struct ->
     id: Int
     name: Str
 
-main :: proc(args: []Str) ->
-    if length(args) < 2 ->
-        print("Too few arguments given\n")
-        return 1
+EVENT_NAME_LENGTH_BYTE_COUNT :: 1
+EVENT_NAME_MAX_LENGTH :: EVENT_NAME_LENGTH_BYTE_COUNT * 256 - 1
+
+get_event :: proc() ->
+    f := file_open_for_read("calendar-db")
+    defer file_close(%f)
+
+    buffer := [5 + EVENT_NAME_MAX_LENGTH]U8{}
+    file_read_bytes_into_buffer(%f, buffer[..<5])
     
-    if args[1] == "get" ->
-        print("Get mode\n")
-    else if args[1] == "insert" ->
-        print("Insert mode\n")
+    event_id := Int(try_parse_int_le(buffer[0..<4]))
+    event_name_len := buffer[4]
+    print("Event ID: {}\n", event_id)
+    print("Event name length: {}\n", event_name_len)
 
-    EVENT_NAME_LENGTH_BYTE_COUNT :: 1
+    file_read_bytes_into_buffer(%f, buffer[5..+event_name_len])
+    event_name_raw := buffer[5..+event_name_len]
+    event_name := utf8_decode_to_str(event_name_raw)
+    print("Event name: {}\n", event_name)
 
-    EVENT_NAME_MAX_LENGTH :: EVENT_NAME_LENGTH_BYTE_COUNT * 256 - 1
-
+insert_events :: proc() ->
     events := [const]Event {
         .{ id = 1, name = "My event" },
         .{ id = 2, name = "My other event" },
@@ -60,3 +80,14 @@ main :: proc(args: []Str) ->
         buffer[5..+name_len] = []U8(event.name)
         buffer_len := EVENT_ID_BYTE_COUNT + 1 + name_len
         file_write(%f, buffer[0..+buffer_len])
+
+main :: proc(args: []Str) ->
+    if length(args) < 2 ->
+        print("Too few arguments given\n")
+        return 1
+    
+    if args[1] == "get" ->
+        get_event()
+    else if args[1] == "insert" ->
+        insert_events()
+

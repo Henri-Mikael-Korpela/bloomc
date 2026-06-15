@@ -247,9 +247,29 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
             if (i != 0) { PUSH_STR(", "); }
             auto *arg = &(*arguments)[i];
             switch (arg->type) {
-                case ASTNodeType::IDENTIFIER:
+                case ASTNodeType::IDENTIFIER: {
+                    if (callee_name == "utf8_decode_to_str") {
+                        bool is_sv = false;
+                        for (size_t si = 0; si < slice_var_count; si++) {
+                            if (slice_vars[si].name.length == arg->identifier.length &&
+                                strncmp(slice_vars[si].name.data, arg->identifier.data, arg->identifier.length) == 0)
+                            {
+                                is_sv = true;
+                                break;
+                            }
+                        }
+                        if (is_sv) {
+                            PUSH_STR("(BloomSliceU8){.data = __bloom_");
+                            PUSH_STR(arg->identifier);
+                            PUSH_STR("_data, .length = __bloom_");
+                            PUSH_STR(arg->identifier);
+                            PUSH_STR("_len}");
+                            break;
+                        }
+                    }
                     PUSH_STR(arg->identifier);
                     break;
+                }
                 case ASTNodeType::ARRAY_ACCESS: {
                     bool const is_sv = [&]() {
                         for (size_t i = slice_var_count; i-- > 0;) {
@@ -317,6 +337,25 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
                         PUSH_STR("(char const *)");
                         PUSH_STR(arg->proc_call.arguments.data[0].identifier);
                         PUSH_STR(".data");
+                    }
+                    else if (arg->proc_call.caller_identifier == "RawPtr" &&
+                        arg->proc_call.arguments.length == 1 &&
+                        arg->proc_call.arguments.data[0].type == ASTNodeType::IDENTIFIER &&
+                        lookup_var_kind(arg->proc_call.arguments.data[0].identifier) == VarKind::SLICE_U8)
+                    {
+                        PUSH_STR("(void *)");
+                        PUSH_STR(arg->proc_call.arguments.data[0].identifier);
+                        PUSH_STR(".data");
+                    }
+                    else if (arg->proc_call.caller_identifier == "try_parse_int_le") {
+                        PUSH_STR("__bloom_try_parse_int_le(");
+                        emit_proc_call_args(&arg->proc_call.arguments, arg->proc_call.caller_identifier);
+                        PUSH_STR(")");
+                    }
+                    else if (arg->proc_call.caller_identifier == "utf8_decode_to_str") {
+                        PUSH_STR("__bloom_utf8_decode_to_str(");
+                        emit_proc_call_args(&arg->proc_call.arguments, arg->proc_call.caller_identifier);
+                        PUSH_STR(")");
                     }
                     else {
                         PUSH_STR(arg->proc_call.caller_identifier);
@@ -387,6 +426,28 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
                     PUSH_STR("].");
                     PUSH_STR(arg->array_element_member_access.field_name);
                     break;
+                case ASTNodeType::TYPE_INFO_SIZE: {
+                    Str tn = arg->type_info_size.type_name;
+                    PUSH_STR("sizeof(");
+                    if (tn == "Int")         { PUSH_STR("int"); }
+                    else if (tn == "U8")     { PUSH_STR("uint8_t"); }
+                    else if (tn == "Bool")   { PUSH_STR("bool"); }
+                    else if (tn == "Str")    { PUSH_STR("BloomStr"); }
+                    else if (tn == "CStr")   { PUSH_STR("char const *"); }
+                    else if (tn == "RawPtr") { PUSH_STR("void *"); }
+                    else                     { PUSH_STR(tn); }
+                    PUSH_STR(")");
+                    break;
+                }
+                case ASTNodeType::TYPE_INFO_NAME: {
+                    Str tn = arg->type_info_name.type_name;
+                    PUSH_STR("(BloomStr){.data = \"");
+                    PUSH_STR(tn);
+                    PUSH_STR("\", .length = ");
+                    PUSH_INT(static_cast<intmax_t>(tn.length));
+                    PUSH_STR("}");
+                    break;
+                }
                 default:
                     assert(false && "Unsupported argument type in emit_proc_call_args");
             }
@@ -495,6 +556,27 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
                     PUSH_STR("(char const *)");
                     PUSH_STR(expr->proc_call.arguments.data[0].identifier);
                     PUSH_STR(".data");
+                }
+                else if (expr->proc_call.caller_identifier == "RawPtr" &&
+                    expr->proc_call.arguments.length == 1 &&
+                    expr->proc_call.arguments.data[0].type == ASTNodeType::IDENTIFIER &&
+                    lookup_var_kind(expr->proc_call.arguments.data[0].identifier) == VarKind::SLICE_U8)
+                {
+                    PUSH_STR("(void *)");
+                    PUSH_STR(expr->proc_call.arguments.data[0].identifier);
+                    PUSH_STR(".data");
+                }
+                else if (expr->proc_call.caller_identifier == "try_parse_int_le") {
+                    assert(expr->proc_call.arguments.length == 1 && "try_parse_int_le() requires exactly one argument");
+                    PUSH_STR("__bloom_try_parse_int_le(");
+                    emit_proc_call_args(&expr->proc_call.arguments, expr->proc_call.caller_identifier);
+                    PUSH_STR(")");
+                }
+                else if (expr->proc_call.caller_identifier == "utf8_decode_to_str") {
+                    assert(expr->proc_call.arguments.length == 1 && "utf8_decode_to_str() requires exactly one argument");
+                    PUSH_STR("__bloom_utf8_decode_to_str(");
+                    emit_proc_call_args(&expr->proc_call.arguments, expr->proc_call.caller_identifier);
+                    PUSH_STR(")");
                 }
                 else if (expr->proc_call.caller_identifier == "Int") {
                     assert(expr->proc_call.arguments.length == 1 && "Int() cast requires exactly one argument");
@@ -614,12 +696,13 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
             case ASTNodeType::TYPE_INFO_SIZE: {
                 Str tn = expr->type_info_size.type_name;
                 PUSH_STR("sizeof(");
-                if (tn == "Int")       { PUSH_STR("int"); }
-                else if (tn == "U8")   { PUSH_STR("uint8_t"); }
-                else if (tn == "Bool") { PUSH_STR("bool"); }
-                else if (tn == "Str")  { PUSH_STR("BloomStr"); }
-                else if (tn == "CStr") { PUSH_STR("char const *"); }
-                else                   { PUSH_STR(tn); } // custom struct — same name in C
+                if (tn == "Int")         { PUSH_STR("int"); }
+                else if (tn == "U8")     { PUSH_STR("uint8_t"); }
+                else if (tn == "Bool")   { PUSH_STR("bool"); }
+                else if (tn == "Str")    { PUSH_STR("BloomStr"); }
+                else if (tn == "CStr")   { PUSH_STR("char const *"); }
+                else if (tn == "RawPtr") { PUSH_STR("void *"); }
+                else                     { PUSH_STR(tn); } // custom struct — same name in C
                 PUSH_STR(")");
                 break;
             }
@@ -777,7 +860,15 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
     PUSH_STR("#else\n");
     PUSH_STR("#  define __bloom_u32_le(x) ((uint32_t)(x))\n");
     PUSH_STR("#  define __bloom_u32_be(x) ((uint32_t)__builtin_bswap32((uint32_t)(x)))\n");
-    PUSH_STR("#endif\n\n");
+    PUSH_STR("#endif\n");
+    PUSH_STR("static uint32_t __bloom_try_parse_int_le(BloomSliceU8 s) {\n");
+    PUSH_STR("\tuint32_t v = 0;\n");
+    PUSH_STR("\tif (s.length == sizeof(uint32_t)) { memcpy(&v, s.data, sizeof(uint32_t)); }\n");
+    PUSH_STR("\treturn __bloom_u32_le(v);\n");
+    PUSH_STR("}\n");
+    PUSH_STR("static BloomStr __bloom_utf8_decode_to_str(BloomSliceU8 s) {\n");
+    PUSH_STR("\treturn (BloomStr){.data = (char const *)s.data, .length = s.length};\n");
+    PUSH_STR("}\n\n");
 
     for (size_t ni = 0; ni < ast_nodes->length; ni++) {
         auto *node = &ast_nodes->data[ni];
@@ -1008,6 +1099,9 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
                         }
                         else if (param->type_name == "CStr") {
                             PUSH_STR("char *");
+                        }
+                        else if (param->type_name == "RawPtr") {
+                            PUSH_STR("void *");
                         }
                         else {
                             PUSH_STR(param->type_name);
@@ -1628,11 +1722,12 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
                                 PUSH_STR("\", .length = ");
                                 PUSH_INT(static_cast<intmax_t>(tn.length));
                                 PUSH_STR("}, .size_in_bytes = (int)sizeof(");
-                                if (tn == "Int")       { PUSH_STR("int"); }
-                                else if (tn == "U8")   { PUSH_STR("uint8_t"); }
-                                else if (tn == "Bool") { PUSH_STR("bool"); }
-                                else if (tn == "Str")  { PUSH_STR("BloomStr"); }
-                                else if (tn == "CStr") { PUSH_STR("char const *"); }
+                                if (tn == "Int")         { PUSH_STR("int"); }
+                                else if (tn == "U8")     { PUSH_STR("uint8_t"); }
+                                else if (tn == "Bool")   { PUSH_STR("bool"); }
+                                else if (tn == "Str")    { PUSH_STR("BloomStr"); }
+                                else if (tn == "CStr")   { PUSH_STR("char const *"); }
+                                else if (tn == "RawPtr") { PUSH_STR("void *"); }
                                 else                   { PUSH_STR(tn); }
                                 PUSH_STR(")};\n");
                                 break;
@@ -1766,11 +1861,55 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
                                 break;
                             }
                             if (expr->type == ASTNodeType::PROC_CALL &&
+                                expr->proc_call.caller_identifier == "CStr" &&
+                                expr->proc_call.arguments.length == 1 &&
+                                expr->proc_call.arguments.data[0].type == ASTNodeType::IDENTIFIER)
+                            {
+                                Str const &arg_name = expr->proc_call.arguments.data[0].identifier;
+                                bool const is_slice = (lookup_var_kind(arg_name) == VarKind::SLICE_U8);
+                                register_var(stmt->variable_definition.name, VarKind::PTR);
+                                push_tabs();
+                                PUSH_STR("char const *");
+                                PUSH_STR(stmt->variable_definition.name);
+                                PUSH_STR(" = (char const *)");
+                                PUSH_STR(arg_name);
+                                if (is_slice) { PUSH_STR(".data"); }
+                                PUSH_STR(";\n");
+                                break;
+                            }
+                            if (expr->type == ASTNodeType::PROC_CALL &&
+                                expr->proc_call.caller_identifier == "RawPtr" &&
+                                expr->proc_call.arguments.length == 1 &&
+                                expr->proc_call.arguments.data[0].type == ASTNodeType::IDENTIFIER)
+                            {
+                                Str const &arg_name = expr->proc_call.arguments.data[0].identifier;
+                                bool const is_slice = (lookup_var_kind(arg_name) == VarKind::SLICE_U8);
+                                register_var(stmt->variable_definition.name, VarKind::PTR);
+                                push_tabs();
+                                PUSH_STR("void *");
+                                PUSH_STR(stmt->variable_definition.name);
+                                PUSH_STR(" = (void *)");
+                                PUSH_STR(arg_name);
+                                if (is_slice) { PUSH_STR(".data"); }
+                                PUSH_STR(";\n");
+                                break;
+                            }
+                            if (expr->type == ASTNodeType::PROC_CALL &&
                                 expr->proc_call.caller_identifier == "clone_to_cstr") {
                                 register_var(stmt->variable_definition.name, VarKind::PTR);
                                 PUSH_STR("char *");
                                 PUSH_STR(stmt->variable_definition.name);
                                 PUSH_STR(" = __bloom_clone_to_cstr(");
+                                emit_proc_call_args(&expr->proc_call.arguments, expr->proc_call.caller_identifier);
+                                PUSH_STR(");\n");
+                                break;
+                            }
+                            if (expr->type == ASTNodeType::PROC_CALL &&
+                                expr->proc_call.caller_identifier == "utf8_decode_to_str") {
+                                register_var(stmt->variable_definition.name, VarKind::BLOOM_STR);
+                                PUSH_STR("BloomStr ");
+                                PUSH_STR(stmt->variable_definition.name);
+                                PUSH_STR(" = __bloom_utf8_decode_to_str(");
                                 emit_proc_call_args(&expr->proc_call.arguments, expr->proc_call.caller_identifier);
                                 PUSH_STR(");\n");
                                 break;
@@ -1911,7 +2050,12 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
                                 PUSH_STR("size_t __bloom_");
                                 PUSH_STR(varname);
                                 PUSH_STR("_len = ");
-                                PUSH_INT(end - start);
+                                if (expr->array_slice.count_identifier.data != nullptr) {
+                                    PUSH_STR(expr->array_slice.count_identifier);
+                                }
+                                else {
+                                    PUSH_INT(end - start);
+                                }
                                 PUSH_STR(";\n");
                                 break;
                             }

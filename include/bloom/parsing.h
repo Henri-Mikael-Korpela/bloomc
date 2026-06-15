@@ -129,6 +129,7 @@ struct BinaryOperand {
             Str variable_name;
             int64_t start_index;
             int64_t end_index;
+            Str count_identifier;
         } array_slice;
         Str string_literal;
         ASTNode *expr_node;

@@ -39,22 +39,28 @@ Event :: struct ->
 EVENT_NAME_LENGTH_BYTE_COUNT :: 1
 EVENT_NAME_MAX_LENGTH :: EVENT_NAME_LENGTH_BYTE_COUNT * 256 - 1
 
-get_event :: proc() ->
+get_event :: proc(id: Int) ->
     f := file_open_for_read("calendar-db")
     defer file_close(%f)
 
-    buffer := [5 + EVENT_NAME_MAX_LENGTH]U8{}
-    file_read_bytes_into_buffer(%f, buffer[..<5])
-    
-    event_id := Int(try_parse_int_le(buffer[0..<4]))
-    event_name_len := buffer[4]
-    print("Event ID: {}\n", event_id)
-    print("Event name length: {}\n", event_name_len)
+    for ->
+        buffer := [5 + EVENT_NAME_MAX_LENGTH]U8{}
+        file_read_bytes_into_buffer(%f, buffer[..<5])
 
-    event_name_raw := buffer[5..+event_name_len]
-    file_read_bytes_into_buffer(%f, event_name_raw)
-    event_name := utf8_decode_to_str(event_name_raw)
-    print("Event name: {}\n", event_name)
+        event_name_len := buffer[4]
+        if event_name_len == 0 ->
+            break
+
+        event_id := Int(try_parse_int_le(buffer[0..<4]))
+        event_name_raw := buffer[5..+event_name_len]
+        file_read_bytes_into_buffer(%f, event_name_raw)
+        event_name := utf8_decode_to_str(event_name_raw)
+        
+        if event_id == id ->
+            print("Event ID: {}\n", event_id)
+            print("Event name length: {}\n", event_name_len)
+            print("Event name: {}\n", event_name)
+            return
 
 insert_events :: proc() ->
     events := [const]Event {
@@ -85,9 +91,9 @@ main :: proc(args: []Str) ->
     if length(args) < 2 ->
         print("Too few arguments given\n")
         return 1
-    
-    if args[1] == "get" ->
-        get_event()
+    else if length(args) == 3 ->
+        if args[1] == "get" ->
+            event_id := try_parse_int(args[2])
+            get_event(event_id)
     else if args[1] == "insert" ->
         insert_events()
-

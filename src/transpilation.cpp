@@ -350,6 +350,11 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
                         emit_proc_call_args(&arg->proc_call.arguments, arg->proc_call.caller_identifier);
                         PUSH_STR(")");
                     }
+                    else if (arg->proc_call.caller_identifier == "try_parse_int") {
+                        PUSH_STR("__bloom_try_parse_int(");
+                        emit_proc_call_args(&arg->proc_call.arguments, arg->proc_call.caller_identifier);
+                        PUSH_STR(")");
+                    }
                     else if (arg->proc_call.caller_identifier == "utf8_decode_to_str") {
                         PUSH_STR("__bloom_utf8_decode_to_str(");
                         emit_proc_call_args(&arg->proc_call.arguments, arg->proc_call.caller_identifier);
@@ -567,6 +572,12 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
                 else if (expr->proc_call.caller_identifier == "try_parse_int_le") {
                     assert(expr->proc_call.arguments.length == 1 && "try_parse_int_le() requires exactly one argument");
                     PUSH_STR("__bloom_try_parse_int_le(");
+                    emit_proc_call_args(&expr->proc_call.arguments, expr->proc_call.caller_identifier);
+                    PUSH_STR(")");
+                }
+                else if (expr->proc_call.caller_identifier == "try_parse_int") {
+                    assert(expr->proc_call.arguments.length == 1 && "try_parse_int() requires exactly one argument");
+                    PUSH_STR("__bloom_try_parse_int(");
                     emit_proc_call_args(&expr->proc_call.arguments, expr->proc_call.caller_identifier);
                     PUSH_STR(")");
                 }
@@ -820,6 +831,7 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
     PUSH_STR("#include <stddef.h>\n");
     PUSH_STR("#include <stdint.h>\n");
     PUSH_STR("#include <stdio.h>\n");
+    PUSH_STR("#include <stdlib.h>\n");
     PUSH_STR("#include <string.h>\n\n");
     PUSH_STR("typedef struct { char const *data; size_t length; } BloomStr;\n");
     PUSH_STR("typedef struct { uint8_t *data; size_t length; } BloomSliceU8;\n");
@@ -866,6 +878,13 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
     PUSH_STR("}\n");
     PUSH_STR("static BloomStr __bloom_utf8_decode_to_str(BloomSliceU8 s) {\n");
     PUSH_STR("\treturn (BloomStr){.data = (char const *)s.data, .length = s.length};\n");
+    PUSH_STR("}\n");
+    PUSH_STR("static int __bloom_try_parse_int(BloomStr s) {\n");
+    PUSH_STR("\tchar buf[32];\n");
+    PUSH_STR("\tsize_t n = s.length < sizeof(buf) - 1 ? s.length : sizeof(buf) - 1;\n");
+    PUSH_STR("\tmemcpy(buf, s.data, n);\n");
+    PUSH_STR("\tbuf[n] = '\\0';\n");
+    PUSH_STR("\treturn (int)strtol(buf, NULL, 10);\n");
     PUSH_STR("}\n\n");
 
     for (size_t ni = 0; ni < ast_nodes->length; ni++) {

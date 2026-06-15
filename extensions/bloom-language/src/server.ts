@@ -68,6 +68,7 @@ const BUILTIN_PROC_RETURN_TYPES: Record<string, string> = {
     clone_to_cstr:       'CStr',
     length:              'Int',
     length_in_bytes:     'Int',
+    try_parse_int:       'Int',
     try_parse_int_le:    'Int',
 };
 

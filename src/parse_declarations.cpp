@@ -272,9 +272,7 @@ auto parse_proc_call_arguments(
                         // [N..<M] — exclusive range: start at N, up to but not including M
                         int64_t const start_index = idx_tok->integer_literal.value;
                         (void)iter_next(tokens_iter); // consume ..<
-                        if (tokens_iter->current_index >= tokens_iter->elements.length ||
-                            iter_peek(tokens_iter)->type != TokenType::INTEGER_LITERAL)
-                        {
+                        if (tokens_iter->current_index >= tokens_iter->elements.length) {
                             return err<BinaryOperand, ParseError>(ParseError {
                                 .code = ParseErrorCode::UNEXPECTED_TOKEN,
                                 .position = idx_tok->position,
@@ -282,7 +280,37 @@ auto parse_proc_call_arguments(
                                 .token_type = idx_tok->type,
                             });
                         }
-                        int64_t const end_index = iter_next(tokens_iter)->integer_literal.value;
+                        auto *end_tok = iter_next(tokens_iter);
+                        int64_t end_index = 0;
+                        if (end_tok->type == TokenType::INTEGER_LITERAL) {
+                            end_index = end_tok->integer_literal.value;
+                        }
+                        else if (end_tok->type == TokenType::IDENTIFIER) {
+                            bool found = false;
+                            for (size_t i = 0; i < context->constant_count; i++) {
+                                if (str_equal(context->constants[i].name, end_tok->identifier.content)) {
+                                    end_index = context->constants[i].value;
+                                    found = true;
+                                    break;
+                                }
+                            }
+                            if (!found) {
+                                return err<BinaryOperand, ParseError>(ParseError {
+                                    .code = ParseErrorCode::UNEXPECTED_TOKEN,
+                                    .position = end_tok->position,
+                                    .src_code_line = __LINE__,
+                                    .token_type = end_tok->type,
+                                });
+                            }
+                        }
+                        else {
+                            return err<BinaryOperand, ParseError>(ParseError {
+                                .code = ParseErrorCode::UNEXPECTED_TOKEN,
+                                .position = end_tok->position,
+                                .src_code_line = __LINE__,
+                                .token_type = end_tok->type,
+                            });
+                        }
                         auto *cl_tok = iter_next(tokens_iter);
                         if (cl_tok->type != TokenType::BRACKET_CLOSE) {
                             return err<BinaryOperand, ParseError>(ParseError {

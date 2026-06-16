@@ -873,7 +873,24 @@ auto parse_expression(
                         // a[N..<M] — exclusive range slice
                         (void)iter_next(tokens_iter); // consume ..<
                         auto *end_tok = iter_next(tokens_iter);
-                        if (end_tok->type != TokenType::INTEGER_LITERAL) {
+                        int64_t end_value = 0;
+                        if (end_tok->type == TokenType::INTEGER_LITERAL) {
+                            end_value = end_tok->integer_literal.value;
+                        }
+                        else if (end_tok->type == TokenType::IDENTIFIER) {
+                            bool found = false;
+                            for (size_t i = 0; i < context->constant_count; i++) {
+                                if (str_equal(context->constants[i].name, end_tok->identifier.content)) {
+                                    end_value = context->constants[i].value;
+                                    found = true;
+                                    break;
+                                }
+                            }
+                            if (!found) {
+                                return err<BinaryOperand, ParseError>(PARSE_ERROR_CREATE(UNEXPECTED_TOKEN, end_tok));
+                            }
+                        }
+                        else {
                             return err<BinaryOperand, ParseError>(PARSE_ERROR_CREATE(UNEXPECTED_TOKEN, end_tok));
                         }
                         auto *close_tok = iter_next(tokens_iter);
@@ -885,7 +902,7 @@ auto parse_expression(
                             .array_slice = {
                                 .variable_name = token->identifier.content,
                                 .start_index = index_token->integer_literal.value,
-                                .end_index = end_tok->integer_literal.value,
+                                .end_index = end_value,
                             },
                         });
                     }
@@ -924,7 +941,24 @@ auto parse_expression(
                         }
                         return err<BinaryOperand, ParseError>(PARSE_ERROR_CREATE(UNEXPECTED_TOKEN, count_tok));
                     }
-                    if (index_token->type != TokenType::INTEGER_LITERAL) {
+                    int64_t index_value = 0;
+                    if (index_token->type == TokenType::INTEGER_LITERAL) {
+                        index_value = index_token->integer_literal.value;
+                    }
+                    else if (index_token->type == TokenType::IDENTIFIER) {
+                        bool found = false;
+                        for (size_t i = 0; i < context->constant_count; i++) {
+                            if (str_equal(context->constants[i].name, index_token->identifier.content)) {
+                                index_value = context->constants[i].value;
+                                found = true;
+                                break;
+                            }
+                        }
+                        if (!found) {
+                            return err<BinaryOperand, ParseError>(PARSE_ERROR_CREATE(UNEXPECTED_TOKEN, index_token));
+                        }
+                    }
+                    else {
                         return err<BinaryOperand, ParseError>(PARSE_ERROR_CREATE(UNEXPECTED_TOKEN, index_token));
                     }
                     auto *close_token = iter_next(tokens_iter);
@@ -935,7 +969,7 @@ auto parse_expression(
                         .type = BinaryOperandType::ARRAY_ACCESS,
                         .array_access = {
                             .variable_name = token->identifier.content,
-                            .index = index_token->integer_literal.value,
+                            .index = index_value,
                         },
                     });
                 }

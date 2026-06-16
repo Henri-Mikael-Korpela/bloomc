@@ -37,6 +37,7 @@ Event :: struct ->
     name: Str
 
 EVENT_NAME_LENGTH_BYTE_COUNT :: 1
+EVENT_NAME_LENGTH_INDEX :: 4
 EVENT_NAME_MAX_LENGTH :: EVENT_NAME_LENGTH_BYTE_COUNT * 256 - 1
 
 get_event :: proc(id: Int, allocator := context.allocator) Event ->
@@ -44,23 +45,22 @@ get_event :: proc(id: Int, allocator := context.allocator) Event ->
     defer file_close(%f)
 
     for ->
-        buffer := [5 + EVENT_NAME_MAX_LENGTH]U8{}
-        file_read_bytes_into_buffer(%f, buffer[..<5])
+        buffer := [5]U8{}
+        file_read_bytes_into_buffer(%f, buffer[..])
 
-        event_name_len := buffer[4]
+        event_name_len := buffer[EVENT_NAME_LENGTH_INDEX]
         if event_name_len == 0 ->
             break
 
-        event_id := Int(try_parse_int_le(buffer[0..<4]))
+        event_id := Int(try_parse_int_le(buffer[0..<EVENT_NAME_LENGTH_INDEX]))
         event_name_raw := make([]U8, event_name_len, allocator)
-        event_name_raw[..] = buffer[5..+event_name_len]
         file_read_bytes_into_buffer(%f, event_name_raw)
         event_name := utf8_decode_to_str(event_name_raw)
 
         if event_id == id ->
             return Event{ id = event_id, name = event_name }
 
-    return Event{ id = 0, name = "" }
+    return Event{}
 
 insert_events :: proc() ->
     context.allocator = general_purpose_allocator
@@ -103,7 +103,7 @@ main :: proc(args: []Str) ->
 
         event_id := try_parse_int(args[2])
         event := get_event(event_id, arena_allocator)
-        print("Event ID: {}\n", event_id)
+        print("Event ID: {}\n", event.id)
         print("Event name: {}\n", event.name)
     else if args[1] == "insert" ->
         insert_events()

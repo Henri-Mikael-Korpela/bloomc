@@ -39,7 +39,7 @@ Event :: struct ->
 EVENT_NAME_LENGTH_BYTE_COUNT :: 1
 EVENT_NAME_MAX_LENGTH :: EVENT_NAME_LENGTH_BYTE_COUNT * 256 - 1
 
-get_event :: proc(id: Int) ->
+get_event :: proc(id: Int, allocator := context.allocator) Event ->
     f := file_open_for_read("calendar-db")
     defer file_close(%f)
 
@@ -52,17 +52,17 @@ get_event :: proc(id: Int) ->
             break
 
         event_id := Int(try_parse_int_le(buffer[0..<4]))
-        event_name_raw := buffer[5..+event_name_len]
+        event_name_raw := make([]U8, event_name_len, allocator)
+        event_name_raw[..] = buffer[5..+event_name_len]
         file_read_bytes_into_buffer(%f, event_name_raw)
         event_name := utf8_decode_to_str(event_name_raw)
-        
+
         if event_id == id ->
-            print("Event ID: {}\n", event_id)
-            print("Event name length: {}\n", event_name_len)
-            print("Event name: {}\n", event_name)
-            return
+            return Event{ id = event_id, name = event_name }
 
 insert_events :: proc() ->
+    context.allocator = general_purpose_allocator
+
     events := [const]Event {
         .{ id = 1, name = "My event" },
         .{ id = 2, name = "My other event" },
@@ -92,7 +92,16 @@ main :: proc(args: []Str) ->
         print("Too few arguments given\n")
         return 1
     else if length(args) == 3 and args[1] == "get" ->
+        // Create an arena allocator to store event name
+        arena : Arena
+        arena_mem := make([]U8, 64)
+        arena_allocator := arena_allocator_init(%arena, %arena_mem)
+        defer free(arena_mem)
+        defer arena_allocator_destroy(%arena)
+
         event_id := try_parse_int(args[2])
-        get_event(event_id)
+        event := get_event(event_id, arena_allocator)
+        print("Event ID: {}\n", event_id)
+        print("Event name: {}\n", event.name)
     else if args[1] == "insert" ->
         insert_events()

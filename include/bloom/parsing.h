@@ -34,6 +34,7 @@ enum class ASTNodeType : uint8_t {
     FOR_LOOP,
     FOR_RANGE_LOOP,
     IF_ELSE,
+    MAKE_SLICE,
     SCOPE,
     IDENTIFIER,
     INTEGER_LITERAL,
@@ -48,6 +49,7 @@ enum class ASTNodeType : uint8_t {
     SLICE_CAST,
     STRUCT_DEF,
     STRUCT_INIT,
+    TYPED_VAR_DECL,
     TYPE_INFO_ENUM_MEMBER_KEY,
     TYPE_INFO_NAME,
     TYPE_INFO_SIZE,
@@ -142,6 +144,7 @@ struct ProcParameterASTNode {
     bool is_pointer;
     bool is_slice;
     bool is_array;
+    bool has_default_context_allocator;  // param := context.allocator
     int64_t array_length;
 };
 
@@ -262,6 +265,7 @@ struct ASTNode {
         struct {
             Str variable_name;
             int64_t start_index;
+            bool is_full_slice;  // slice[..] = src: dest is a slice, copy its full extent
             ASTNode *value_expr;
         } array_range_assign;
         struct {
@@ -310,6 +314,17 @@ struct ASTNode {
             Array<ProcParameterASTNode> field_names;
             Array<BinaryOperand> field_values;
         } struct_init;
+        struct {
+            Str name;
+            Str type_name;  // "Arena" etc.
+        } typed_var_decl;
+        struct {
+            bool size_is_literal;
+            int64_t size_literal;
+            Str size_identifier;
+            bool has_explicit_allocator;
+            Str allocator_identifier;
+        } make_slice;
     };
 };
 
@@ -346,6 +361,7 @@ constexpr auto to_string(ASTNodeType type) -> Str {
         case ASTNodeType::FOR_IN_LOOP:         return STR("for_in_loop");
         case ASTNodeType::FOR_LOOP:            return STR("for_loop");
         case ASTNodeType::FOR_RANGE_LOOP:      return STR("for_range_loop");
+        case ASTNodeType::MAKE_SLICE:          return STR("make_slice");
         case ASTNodeType::SCOPE:               return STR("scope");
         case ASTNodeType::IF_ELSE:             return STR("if_else");
         case ASTNodeType::IDENTIFIER:          return STR("identifier");
@@ -360,6 +376,7 @@ constexpr auto to_string(ASTNodeType type) -> Str {
         case ASTNodeType::SLICE_CAST:          return STR("slice_cast");
         case ASTNodeType::STRUCT_DEF:          return STR("struct_def");
         case ASTNodeType::STRUCT_INIT:         return STR("struct_init");
+        case ASTNodeType::TYPED_VAR_DECL:      return STR("typed_var_decl");
         case ASTNodeType::TYPE_INFO_ENUM_MEMBER_KEY: return STR("type_info_enum_member_key");
         case ASTNodeType::TYPE_INFO_NAME:      return STR("type_info_name");
         case ASTNodeType::TYPE_INFO_SIZE:      return STR("type_info_size");

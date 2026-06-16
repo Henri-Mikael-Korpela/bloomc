@@ -319,6 +319,122 @@ Access to `name` is transpiled to a C `BloomStr` string literal:
 type_info_of(events[0]).name   →   (BloomStr){.data = "Event", .length = 5}
 ```
 
+## Memory allocation
+
+### The context and default allocator
+
+Every procedure has an implicit `context` value that carries per-call ambient state. The most important field is `context.allocator`, which holds the allocator that built-in allocation functions use by default.
+
+At program start, `context.allocator` is set to `general_purpose_allocator` — a malloc-backed allocator suitable for general use.
+
+You can replace the allocator for the current scope:
+
+```
+context.allocator = general_purpose_allocator
+```
+
+### Allocator type
+
+`Allocator` is a built-in struct that represents an abstract allocation strategy. It holds function pointers for allocation and deallocation together with an opaque context pointer. User code rarely constructs an `Allocator` directly — instead, built-in factories such as `arena_allocator_init` produce one.
+
+### make
+
+`make` allocates a slice of bytes and returns a `[]U8`:
+
+```
+buf := make([]U8, 64)                    // allocate 64 bytes using context.allocator
+buf := make([]U8, size, my_allocator)    // allocate using an explicit allocator
+```
+
+The returned slice is guaranteed to have `length` equal to the requested size.
+
+### free
+
+`free` releases a `[]U8` slice that was previously allocated with `make`:
+
+```
+buf := make([]U8, 64)
+defer free(buf)
+```
+
+### Full-slice copy
+
+The `[..] =` syntax copies the entire contents of one byte slice into another:
+
+```
+dst[..] = src[5..+length]   // memcpy from src[5..5+length] into dst
+```
+
+The destination must be a `[]U8` slice (produced by `make`). The right-hand side is any array slice expression. The lengths are not checked at compile time — the caller is responsible for ensuring the destination is large enough.
+
+### Arena allocator
+
+An arena allocator allocates memory from a fixed-size backing buffer in a bump-pointer style. It is fast and produces no fragmentation; the entire arena is released at once when destroyed.
+
+#### Typed variable declaration
+
+An `Arena` variable is declared with a type annotation and is zero-initialized:
+
+```
+arena : Arena
+```
+
+#### Initialization
+
+`arena_allocator_init` wires an `Arena` to a backing buffer and returns an `Allocator`:
+
+```
+arena : Arena
+arena_mem := make([]U8, 1024)
+arena_allocator := arena_allocator_init(%arena, %arena_mem)
+```
+
+Both arguments are passed by address (`%`). The returned `Allocator` can be passed to `make` or to procedures that accept an allocator parameter.
+
+#### Destruction
+
+`arena_allocator_destroy` cleans up the arena bookkeeping. The backing buffer itself must be freed separately with `free`:
+
+```
+defer free(arena_mem)
+defer arena_allocator_destroy(%arena)
+```
+
+Deferred calls run in last-in, first-out order, so in the example above `arena_allocator_destroy` runs before `free`.
+
+### Default allocator parameters
+
+A procedure parameter can default to `context.allocator` using `:=` syntax:
+
+```
+get_event :: proc(id: Int, allocator := context.allocator) Event ->
+    buf := make([]U8, 256, allocator)
+    ...
+```
+
+The defaulting parameter must use `context.allocator` as the default value. Callers may omit it (using `context.allocator` implicitly) or supply an explicit allocator:
+
+```
+event := get_event(id)                       // uses context.allocator
+event := get_event(id, arena_allocator)      // uses arena_allocator
+```
+
+### Example: arena-backed lookup
+
+```
+main :: proc(args: []Str) ->
+    arena : Arena
+    arena_mem := make([]U8, 256)
+    arena_allocator := arena_allocator_init(%arena, %arena_mem)
+    defer free(arena_mem)
+    defer arena_allocator_destroy(%arena)
+
+    event := get_event(event_id, arena_allocator)
+    print("Event name: {}\n", event.name)
+```
+
+All strings allocated inside `get_event` live in the arena. They remain valid until `arena_allocator_destroy` runs, which happens before `free` releases the backing buffer.
+
 ## Enumerations
 
 An enumeration (enum) defines a named integer type whose values are restricted to a fixed set of named members. Members are ordered starting from 0.

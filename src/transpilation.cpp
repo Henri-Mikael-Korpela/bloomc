@@ -376,6 +376,10 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
                         arg->member_access.field_name == "temp_allocator") {
                         PUSH_STR("&__bloom_context.temp_allocator");
                     }
+                    else if (arg->member_access.object_name == "context" &&
+                             arg->member_access.field_name == "allocator") {
+                        PUSH_STR("__bloom_context.allocator");
+                    }
                     else if (is_enum_type(arg->member_access.object_name)) {
                         PUSH_STR("__bloom_");
                         PUSH_STR(arg->member_access.object_name);
@@ -470,7 +474,12 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
                 PUSH_BOOL(expr->boolean_literal.value);
                 break;
             case ASTNodeType::IDENTIFIER:
-                PUSH_STR(expr->identifier);
+                if (expr->identifier == "general_purpose_allocator") {
+                    PUSH_STR("__bloom_general_purpose_allocator");
+                }
+                else {
+                    PUSH_STR(expr->identifier);
+                }
                 break;
             case ASTNodeType::ARRAY_ACCESS: {
                 bool is_slice_acc = false;
@@ -837,7 +846,9 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
     PUSH_STR("typedef struct { uint8_t *data; size_t length; } BloomSliceU8;\n");
     PUSH_STR("typedef struct { char bytes[4]; uint8_t len; } BloomChar;\n");
     PUSH_STR("typedef struct { char buf[4096]; size_t offset; } BloomTempAllocator;\n");
-    PUSH_STR("typedef struct { BloomTempAllocator temp_allocator; } BloomContext;\n");
+    PUSH_STR("typedef struct { void *(*alloc)(size_t, void*); void (*dealloc)(void*, void*); void *ctx; } BloomAllocator;\n");
+    PUSH_STR("typedef struct { uint8_t *buf; size_t cap; size_t offset; } BloomArena;\n");
+    PUSH_STR("typedef struct { BloomTempAllocator temp_allocator; BloomAllocator allocator; } BloomContext;\n");
     PUSH_STR("typedef struct { BloomStr name; int size_in_bytes; } BloomTypeInfo;\n");
     PUSH_STR("typedef struct { BloomStr name; int value; } BloomEnumMember;\n");
 
@@ -885,7 +896,29 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
     PUSH_STR("\tmemcpy(buf, s.data, n);\n");
     PUSH_STR("\tbuf[n] = '\\0';\n");
     PUSH_STR("\treturn (int)strtol(buf, NULL, 10);\n");
-    PUSH_STR("}\n\n");
+    PUSH_STR("}\n");
+    PUSH_STR("static void *__bloom_gpa_alloc(size_t n, void *ctx) { (void)ctx; return malloc(n); }\n");
+    PUSH_STR("static void __bloom_gpa_dealloc(void *ptr, void *ctx) { (void)ctx; free(ptr); }\n");
+    PUSH_STR("static BloomAllocator const __bloom_general_purpose_allocator = {.alloc = __bloom_gpa_alloc, .dealloc = __bloom_gpa_dealloc, .ctx = NULL};\n");
+    PUSH_STR("static BloomSliceU8 __bloom_make_u8_slice(size_t n, BloomAllocator alloc) {\n");
+    PUSH_STR("\tuint8_t *ptr = (uint8_t*)alloc.alloc(n, alloc.ctx);\n");
+    PUSH_STR("\treturn (BloomSliceU8){.data = ptr, .length = n};\n");
+    PUSH_STR("}\n");
+    PUSH_STR("static void *__bloom_arena_alloc(size_t n, void *ctx) {\n");
+    PUSH_STR("\tBloomArena *a = (BloomArena *)ctx;\n");
+    PUSH_STR("\tif (a->offset + n > a->cap) { return NULL; }\n");
+    PUSH_STR("\tvoid *ptr = a->buf + a->offset;\n");
+    PUSH_STR("\ta->offset += n;\n");
+    PUSH_STR("\treturn ptr;\n");
+    PUSH_STR("}\n");
+    PUSH_STR("static void __bloom_arena_dealloc(void *ptr, void *ctx) { (void)ptr; (void)ctx; }\n");
+    PUSH_STR("static BloomAllocator __bloom_arena_allocator_init(BloomArena *arena, BloomSliceU8 *mem) {\n");
+    PUSH_STR("\tarena->buf = mem->data;\n");
+    PUSH_STR("\tarena->cap = mem->length;\n");
+    PUSH_STR("\tarena->offset = 0;\n");
+    PUSH_STR("\treturn (BloomAllocator){.alloc = __bloom_arena_alloc, .dealloc = __bloom_arena_dealloc, .ctx = arena};\n");
+    PUSH_STR("}\n");
+    PUSH_STR("static void __bloom_arena_allocator_destroy(BloomArena *arena) { (void)arena; }\n\n");
 
     for (size_t ni = 0; ni < ast_nodes->length; ni++) {
         auto *node = &ast_nodes->data[ni];
@@ -1092,7 +1125,10 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
                         if (i != 0) {
                             PUSH_STR(", ");
                         }
-                        if (param->is_array) {
+                        if (param->has_default_context_allocator) {
+                            PUSH_STR("BloomAllocator ");
+                        }
+                        else if (param->is_array) {
                             // [N]Type parameter — decays to pointer in C
                             bool const is_u8_par = param->type_name.length == 2 &&
                                 param->type_name.data[0] == 'U' && param->type_name.data[1] == '8';
@@ -1134,7 +1170,7 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
                 }
                 PUSH_STR(')');
                 PUSH_STR("{\n");
-                PUSH_STR("\tBloomContext __bloom_context = {0};\n");
+                PUSH_STR("\tBloomContext __bloom_context = {.allocator = __bloom_general_purpose_allocator};\n");
                 if (is_main_with_str_args) {
                     Str const &param_name = params->data[0].name;
                     PUSH_STR("\tBloomStr *__bloom_");
@@ -1168,6 +1204,10 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
                 // Register proc parameters so member access and pointer checks work inside the body
                 for (size_t pi = 0; pi < params->length; pi++) {
                     auto *param = &params->data[pi];
+                    if (param->has_default_context_allocator) {
+                        register_struct_var(param->name, cstr_to_str("BloomAllocator"));
+                        continue;
+                    }
                     if (param->is_array) {
                         // Register as array var so element access and slicing work inside the body
                         if (array_var_count < 64) {
@@ -1261,7 +1301,25 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
 
                     // When defers coexist with a return value, capture the return value
                     // into a temp variable first, run the defers, then return the variable.
-                    bool const needs_return_var = last_as_return && has_defers && last_non_defer_bi < body->length;
+                    // Only applies when the last non-defer stmt is an expression (not a
+                    // control-flow statement like a for loop that uses explicit returns).
+                    bool last_stmt_is_expr = false;
+                    if (last_non_defer_bi < body->length) {
+                        ASTNodeType const lt = body->data[last_non_defer_bi].type;
+                        last_stmt_is_expr = (
+                            lt == ASTNodeType::INTEGER_LITERAL ||
+                            lt == ASTNodeType::STRUCT_INIT ||
+                            lt == ASTNodeType::BINARY_ADD ||
+                            lt == ASTNodeType::BINARY_DIV ||
+                            lt == ASTNodeType::BINARY_MUL ||
+                            lt == ASTNodeType::BINARY_SUB ||
+                            lt == ASTNodeType::PROC_CALL ||
+                            lt == ASTNodeType::IDENTIFIER ||
+                            lt == ASTNodeType::ARRAY_SLICE ||
+                            lt == ASTNodeType::MEMBER_ACCESS
+                        );
+                    }
+                    bool const needs_return_var = last_as_return && has_defers && last_stmt_is_expr;
 
                     for (size_t bi = 0; bi < body->length; bi++) {
                         auto *s = &body->data[bi];
@@ -1270,7 +1328,22 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
                             push_tabs();
                             PUSH_STR(return_type_c);
                             PUSH_STR(" __bloom_return_val = ");
-                            PUSH_INT(s->integer_literal.value.value);
+                            if (s->type == ASTNodeType::INTEGER_LITERAL) {
+                                PUSH_INT(s->integer_literal.value.value);
+                            }
+                            else if (s->type == ASTNodeType::STRUCT_INIT) {
+                                PUSH_STR("(");
+                                PUSH_STR(s->struct_init.type_name);
+                                PUSH_STR("){");
+                                for (size_t fi = 0; fi < s->struct_init.field_names.length; fi++) {
+                                    if (fi != 0) { PUSH_STR(", "); }
+                                    PUSH_STR(".");
+                                    PUSH_STR(s->struct_init.field_names.data[fi].name);
+                                    PUSH_STR(" = ");
+                                    emit_binary_operand(&s->struct_init.field_values.data[fi]);
+                                }
+                                PUSH_STR("}");
+                            }
                             PUSH_STR(";\n");
                         }
                         else {
@@ -1685,6 +1758,22 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
                                     push_tabs();
                                     PUSH_STR("}\n");
                                 }
+                                else if (stmt->proc_call.caller_identifier == "free" &&
+                                         stmt->proc_call.arguments.length == 1 &&
+                                         stmt->proc_call.arguments.data[0].type == ASTNodeType::IDENTIFIER &&
+                                         lookup_var_kind(stmt->proc_call.arguments.data[0].identifier) == VarKind::SLICE_U8)
+                                {
+                                    push_tabs();
+                                    PUSH_STR("free(__bloom_");
+                                    PUSH_STR(stmt->proc_call.arguments.data[0].identifier);
+                                    PUSH_STR("_data);\n");
+                                }
+                                else if (stmt->proc_call.caller_identifier == "arena_allocator_destroy") {
+                                    push_tabs();
+                                    PUSH_STR("__bloom_arena_allocator_destroy(");
+                                    emit_proc_call_args(&stmt->proc_call.arguments, stmt->proc_call.caller_identifier);
+                                    PUSH_STR(");\n");
+                                }
                                 else {
                                     push_tabs();
                                     if (emit_as_return) { PUSH_STR("return "); }
@@ -2076,6 +2165,53 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
                                 PUSH_STR(";\n");
                                 break;
                             }
+                            if (expr->type == ASTNodeType::MAKE_SLICE) {
+                                Str const varname = stmt->variable_definition.name;
+                                if (slice_var_count < 32) {
+                                    slice_vars[slice_var_count++] = { .name = varname, .element_type = cstr_to_str("U8") };
+                                }
+                                register_var(varname, VarKind::SLICE_U8);
+                                PUSH_STR("BloomSliceU8 ");
+                                PUSH_STR(varname);
+                                PUSH_STR(" = __bloom_make_u8_slice(");
+                                if (expr->make_slice.size_is_literal) {
+                                    PUSH_INT(expr->make_slice.size_literal);
+                                }
+                                else {
+                                    PUSH_STR(expr->make_slice.size_identifier);
+                                }
+                                PUSH_STR(", ");
+                                if (expr->make_slice.has_explicit_allocator) {
+                                    PUSH_STR(expr->make_slice.allocator_identifier);
+                                }
+                                else {
+                                    PUSH_STR("__bloom_general_purpose_allocator");
+                                }
+                                PUSH_STR(");\n");
+                                push_tabs();
+                                PUSH_STR("uint8_t *__bloom_");
+                                PUSH_STR(varname);
+                                PUSH_STR("_data = ");
+                                PUSH_STR(varname);
+                                PUSH_STR(".data;\n");
+                                push_tabs();
+                                PUSH_STR("size_t __bloom_");
+                                PUSH_STR(varname);
+                                PUSH_STR("_len = ");
+                                PUSH_STR(varname);
+                                PUSH_STR(".length;\n");
+                                break;
+                            }
+                            if (expr->type == ASTNodeType::PROC_CALL &&
+                                expr->proc_call.caller_identifier == "arena_allocator_init") {
+                                register_struct_var(stmt->variable_definition.name, cstr_to_str("BloomAllocator"));
+                                PUSH_STR("BloomAllocator ");
+                                PUSH_STR(stmt->variable_definition.name);
+                                PUSH_STR(" = __bloom_arena_allocator_init(");
+                                emit_proc_call_args(&expr->proc_call.arguments, expr->proc_call.caller_identifier);
+                                PUSH_STR(");\n");
+                                break;
+                            }
                             char const *c_type = nullptr;
                             VarKind var_kind = VarKind::INT;
                             if (expr->type == ASTNodeType::BOOLEAN_LITERAL) {
@@ -2146,9 +2282,15 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
                         }
                         case ASTNodeType::MEMBER_ASSIGN: {
                             push_tabs();
-                            PUSH_STR(stmt->member_assign.object_name);
-                            PUSH_STR(is_pointer_var(stmt->member_assign.object_name) ? "->" : ".");
-                            PUSH_STR(stmt->member_assign.field_name);
+                            if (stmt->member_assign.object_name == "context") {
+                                PUSH_STR("__bloom_context.");
+                                PUSH_STR(stmt->member_assign.field_name);
+                            }
+                            else {
+                                PUSH_STR(stmt->member_assign.object_name);
+                                PUSH_STR(is_pointer_var(stmt->member_assign.object_name) ? "->" : ".");
+                                PUSH_STR(stmt->member_assign.field_name);
+                            }
                             PUSH_STR(" = ");
                             emit_expression(stmt->member_assign.expr);
                             PUSH_STR(";\n");
@@ -2169,11 +2311,35 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
                             push_tabs();
                             ASTNode *val = stmt->array_range_assign.value_expr;
                             ASTNode *inner = (val->type == ASTNodeType::SLICE_CAST) ? val->slice_cast.expr : val;
-                            PUSH_STR("memcpy((uint8_t*)");
-                            PUSH_STR(stmt->array_range_assign.variable_name);
-                            PUSH_STR(" + ");
-                            PUSH_INT(stmt->array_range_assign.start_index);
+                            PUSH_STR("memcpy(");
+                            if (stmt->array_range_assign.is_full_slice) {
+                                PUSH_STR(stmt->array_range_assign.variable_name);
+                                PUSH_STR(".data");
+                            }
+                            else {
+                                PUSH_STR("(uint8_t*)");
+                                PUSH_STR(stmt->array_range_assign.variable_name);
+                                PUSH_STR(" + ");
+                                PUSH_INT(stmt->array_range_assign.start_index);
+                            }
                             PUSH_STR(", ");
+                            if (inner->type == ASTNodeType::ARRAY_SLICE) {
+                                int64_t const offset = inner->array_slice.start_index < 0 ? 0 : inner->array_slice.start_index;
+                                PUSH_STR(inner->array_slice.variable_name);
+                                if (offset > 0) {
+                                    PUSH_STR(" + ");
+                                    PUSH_INT(offset);
+                                }
+                                PUSH_STR(", ");
+                                if (inner->array_slice.count_identifier.data != nullptr) {
+                                    PUSH_STR(inner->array_slice.count_identifier);
+                                }
+                                else {
+                                    PUSH_INT(inner->array_slice.end_index - offset);
+                                }
+                                PUSH_STR(");\n");
+                                break;
+                            }
                             if (inner->type == ASTNodeType::INTLE_CAST ||
                                 inner->type == ASTNodeType::INTBE_CAST)
                             {
@@ -2211,14 +2377,43 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
                             }
                             break;
                         }
+                        case ASTNodeType::TYPED_VAR_DECL: {
+                            push_tabs();
+                            if (stmt->typed_var_decl.type_name == "Arena") {
+                                PUSH_STR("BloomArena ");
+                                register_struct_var(stmt->typed_var_decl.name, cstr_to_str("BloomArena"));
+                            }
+                            else {
+                                PUSH_STR(stmt->typed_var_decl.type_name);
+                                PUSH_STR(" ");
+                                register_struct_var(stmt->typed_var_decl.name, stmt->typed_var_decl.type_name);
+                            }
+                            PUSH_STR(stmt->typed_var_decl.name);
+                            PUSH_STR(" = {0};\n");
+                            break;
+                        }
                         case ASTNodeType::RETURN: {
                             push_tabs();
                             PUSH_STR("return");
-                            if (stmt->return_value != nullptr &&
-                                stmt->return_value->type == ASTNodeType::INTEGER_LITERAL)
-                            {
-                                PUSH_STR(' ');
-                                PUSH_INT(stmt->return_value->integer_literal.value.value);
+                            if (stmt->return_value != nullptr) {
+                                if (stmt->return_value->type == ASTNodeType::INTEGER_LITERAL) {
+                                    PUSH_STR(' ');
+                                    PUSH_INT(stmt->return_value->integer_literal.value.value);
+                                }
+                                else if (stmt->return_value->type == ASTNodeType::STRUCT_INIT) {
+                                    auto *si = &stmt->return_value->struct_init;
+                                    PUSH_STR(" (");
+                                    PUSH_STR(si->type_name);
+                                    PUSH_STR("){");
+                                    for (size_t fi = 0; fi < si->field_names.length; fi++) {
+                                        if (fi != 0) { PUSH_STR(", "); }
+                                        PUSH_STR(".");
+                                        PUSH_STR(si->field_names.data[fi].name);
+                                        PUSH_STR(" = ");
+                                        emit_binary_operand(&si->field_values.data[fi]);
+                                    }
+                                    PUSH_STR("}");
+                                }
                             }
                             PUSH_STR(";\n");
                             break;

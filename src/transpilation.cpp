@@ -3055,6 +3055,8 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
                 PUSH_STR("}\n\n");
                 break;
             }
+            case ASTNodeType::PACKAGE_DEF:
+                break;
             default:
                 break;
         }

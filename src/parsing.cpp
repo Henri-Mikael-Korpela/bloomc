@@ -157,6 +157,49 @@ auto parse(Array<Token> *tokens, ArenaAllocator *allocator, Str source_content, 
             break;
         }
 
+        if (current_token->type == TokenType::KEYWORD_PACKAGE) {
+            auto *id_tok = iter_next(&tokens_iter);
+            if (id_tok->type != TokenType::IDENTIFIER) {
+                append(&errors, ParseError {
+                    .code = ParseErrorCode::UNEXPECTED_TOKEN,
+                    .position = id_tok->position,
+                    .src_code_line = __LINE__,
+                    .token_type = id_tok->type,
+                });
+                goto after_parsing;
+            }
+            Str package_name = id_tok->identifier.content;
+            while (tokens_iter.current_index < tokens_iter.elements.length &&
+                   iter_peek(&tokens_iter)->type == TokenType::DOT)
+            {
+                (void)iter_next(&tokens_iter); // consume dot
+                auto *next_id = iter_next(&tokens_iter);
+                if (next_id->type != TokenType::IDENTIFIER) {
+                    append(&errors, ParseError {
+                        .code = ParseErrorCode::UNEXPECTED_TOKEN,
+                        .position = next_id->position,
+                        .src_code_line = __LINE__,
+                        .token_type = next_id->type,
+                    });
+                    goto after_parsing;
+                }
+                package_name.length = static_cast<size_t>(
+                    next_id->identifier.content.data - package_name.data
+                ) + next_id->identifier.content.length;
+            }
+            if (tokens_iter.current_index < tokens_iter.elements.length &&
+                iter_peek(&tokens_iter)->type == TokenType::NEWLINE)
+            {
+                (void)iter_next(&tokens_iter);
+            }
+            (void)iter_append(&nodes_block_iter, ASTNode {
+                .type = ASTNodeType::PACKAGE_DEF,
+                .parent = nullptr,
+                .package_def = { .name = package_name },
+            });
+            continue;
+        }
+
         // Parse top-level nodes
         parse_top_level_node:
             if (current_token->type == TokenType::IDENTIFIER) {

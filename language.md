@@ -4,6 +4,22 @@
 
 Bloom source code is stored in UTF-8 encoded text files.
 
+## Packages
+
+A `package` statement declares the namespace that a source file belongs to. It must appear at the top of the file, before any other declarations.
+
+```
+package myapp.utils
+```
+
+Subpackages are separated by dots. Each component is a valid identifier.
+
+```
+package henri.http_server
+```
+
+The package name is informational — it identifies the module but does not affect the compiled output or the names of procedures and types defined in the file.
+
 ## Statements
 
 In Bloom like in Python, statements are grouped by indentation. Indentation uses 4 spaces.
@@ -26,6 +42,7 @@ for
 foreign
 if
 in
+package
 proc
 return
 struct

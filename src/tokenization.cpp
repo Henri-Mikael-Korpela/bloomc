@@ -116,6 +116,10 @@ auto tokenize(Str *input, ArenaAllocator *allocator) -> Array<Token> {
                 append_token_of_type(TokenType::KEYWORD_IN);
                 continue;
             }
+            if (word == TOKEN_KEYWORD_PACKAGE) {
+                append_token_of_type(TokenType::KEYWORD_PACKAGE);
+                continue;
+            }
             if (word == TOKEN_KEYWORD_PASS) {
                 append_token_of_type(TokenType::KEYWORD_PASS);
                 continue;

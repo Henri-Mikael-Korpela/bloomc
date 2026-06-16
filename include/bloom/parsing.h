@@ -41,6 +41,7 @@ enum class ASTNodeType : uint8_t {
     MEMBER_ACCESS,
     MEMBER_ASSIGN,
     ADD_ASSIGN,
+    PACKAGE_DEF,
     PASS,
     PROC_CALL,
     PROC_DEF,
@@ -173,6 +174,9 @@ struct ASTNode {
             Array<BinaryOperand> operands;
         } binary_operation;
         Str identifier;
+        struct {
+            Str name;
+        } package_def;
         struct {
             bool value;
         } boolean_literal;
@@ -371,6 +375,7 @@ constexpr auto to_string(ASTNodeType type) -> Str {
         case ASTNodeType::INTEGER_LITERAL:     return STR("integer_literal");
         case ASTNodeType::MEMBER_ACCESS:       return STR("member_access");
         case ASTNodeType::MEMBER_ASSIGN:       return STR("member_assign");
+        case ASTNodeType::PACKAGE_DEF:         return STR("package_def");
         case ASTNodeType::PASS:                return STR("pass");
         case ASTNodeType::PROC_CALL:           return STR("procedure call");
         case ASTNodeType::PROC_DEF:            return STR("procedure definition");

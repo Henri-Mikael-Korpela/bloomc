@@ -60,6 +60,8 @@ get_event :: proc(id: Int, allocator := context.allocator) Event ->
         if event_id == id ->
             return Event{ id = event_id, name = event_name }
 
+    return Event{ id = 0, name = "" }
+
 insert_events :: proc() ->
     context.allocator = general_purpose_allocator
 

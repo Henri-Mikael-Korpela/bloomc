@@ -38,6 +38,136 @@ auto parse_indented_body(
     return true;
 }
 
+struct ReturnAnalysis {
+    bool returns;
+    Token::Position failing_pos;
+    bool has_failing_pos;
+    bool failing_is_after_stmt;  // true = return must come AFTER the statement at failing_pos
+};
+
+static auto proc_call_has_return_type(
+    Str proc_name,
+    Iterator<ASTNode> const *nodes_block_iter
+) -> bool {
+    for (size_t i = 0; i < nodes_block_iter->current_index; i++) {
+        ASTNode const *node = &nodes_block_iter->elements.data[i];
+        if (node->type == ASTNodeType::PROC_DEF &&
+            str_equal(node->proc_def.name, proc_name))
+        {
+            return node->proc_def.return_type != nullptr;
+        }
+    }
+    return false;
+}
+
+// Returns true if the body contains a BREAK that would exit a loop whose node is
+// body_parent. Recurses into if_else branches but not into nested loops (a break
+// inside a nested loop exits that loop, not the outer one).
+static auto body_has_breakout(
+    Array<ASTNode> const body,
+    ASTNode const *body_parent
+) -> bool {
+    for (size_t i = 0; i < body.length; i++) {
+        ASTNode const *node = &body.data[i];
+        if (node->parent != body_parent) {
+            continue;
+        }
+        if (node->type == ASTNodeType::BREAK) {
+            return true;
+        }
+        if (node->type == ASTNodeType::IF_ELSE) {
+            if (body_has_breakout(node->if_else.then_body, node)) {
+                return true;
+            }
+            if (body_has_breakout(node->if_else.else_body, node)) {
+                return true;
+            }
+        }
+        // Do not recurse into nested loops — their breaks don't exit the outer loop
+    }
+    return false;
+}
+
+// The body array is a flat arena slice that includes both direct-child statements
+// and their sub-nodes (expression args, etc.). Use the parent pointer to find the
+// last direct child: iterate backward until we hit a node whose parent == body_parent.
+static auto find_last_stmt(
+    Array<ASTNode> const body,
+    ASTNode const *body_parent
+) -> ASTNode const * {
+    for (size_t i = body.length; i > 0; i--) {
+        if (body.data[i - 1].parent == body_parent) {
+            return &body.data[i - 1];
+        }
+    }
+    return nullptr;
+}
+
+static auto check_returns_on_all_paths(
+    Array<ASTNode> const body,
+    ASTNode const *body_parent,
+    Iterator<ASTNode> const *nodes_block_iter
+) -> ReturnAnalysis {
+    ASTNode const *last = find_last_stmt(body, body_parent);
+    if (last == nullptr) {
+        return { false, {}, false, false };
+    }
+    switch (last->type) {
+        case ASTNodeType::RETURN:
+            return { last->return_value != nullptr, {}, false, false };
+        case ASTNodeType::IF_ELSE: {
+            if (last->if_else.else_body.length == 0) {
+                return { false, last->if_else.if_pos, true, false };
+            }
+            ReturnAnalysis then_r = check_returns_on_all_paths(
+                last->if_else.then_body, last, nodes_block_iter);
+            ReturnAnalysis else_r = check_returns_on_all_paths(
+                last->if_else.else_body, last, nodes_block_iter);
+            if (then_r.returns && else_r.returns) {
+                return { true, {}, false, false };
+            }
+            if (!then_r.returns) {
+                Token::Position pos = then_r.has_failing_pos ? then_r.failing_pos : last->if_else.if_pos;
+                bool is_after = then_r.has_failing_pos && then_r.failing_is_after_stmt;
+                return { false, pos, true, is_after };
+            }
+            Token::Position pos = else_r.has_failing_pos ? else_r.failing_pos : last->if_else.else_pos;
+            bool is_after = else_r.has_failing_pos && else_r.failing_is_after_stmt;
+            return { false, pos, true, is_after };
+        }
+        case ASTNodeType::FOR_LOOP:
+            // An infinite loop that contains a direct break can exit without returning.
+            // The fix is to add a return AFTER the loop, not inside it.
+            if (body_has_breakout(last->for_loop.body, last)) {
+                return { false, last->for_loop.for_pos, true, true };
+            }
+            return { true, {}, false, false };
+        case ASTNodeType::FOR_IN_LOOP:
+        case ASTNodeType::FOR_RANGE_LOOP:
+        case ASTNodeType::FOR_COND_LOOP:
+            return { true, {}, false, false };
+        case ASTNodeType::PROC_CALL: {
+            bool const has_ret = proc_call_has_return_type(last->proc_call.caller_identifier, nodes_block_iter);
+            return { has_ret, {}, false, false };
+        }
+        case ASTNodeType::BINARY_ADD:
+        case ASTNodeType::BINARY_SUB:
+        case ASTNodeType::BINARY_MUL:
+        case ASTNodeType::BINARY_DIV:
+        case ASTNodeType::IDENTIFIER:
+        case ASTNodeType::INTEGER_LITERAL:
+        case ASTNodeType::BOOLEAN_LITERAL:
+        case ASTNodeType::STRING_LITERAL:
+        case ASTNodeType::MEMBER_ACCESS:
+        case ASTNodeType::ARRAY_ACCESS:
+        case ASTNodeType::ARRAY_SLICE:
+        case ASTNodeType::STRUCT_INIT:
+            return { true, {}, false, false };
+        default:
+            return { false, {}, false, false };
+    }
+}
+
 auto parse_expression(
     Iterator<Token> *tokens_iter,
     Context *context,
@@ -1241,6 +1371,27 @@ auto parse_expression(
             assert(
                 nodes_block_iter->elements[nodes_block_iter->current_index].type == ASTNodeType::UNKNOWN &&
                 "Next node after procedure body should be of UNKNOWN type");
+
+            if (return_type_node != nullptr) {
+                ReturnAnalysis analysis = check_returns_on_all_paths(
+                    proc_node->proc_def.body, proc_node, nodes_block_iter
+                );
+                if (!analysis.returns) {
+                    ParseError missing_ret_err = {};
+                    missing_ret_err.code = ParseErrorCode::PROC_MISSING_RETURN;
+                    missing_ret_err.position = context->current_identifier->position;
+                    missing_ret_err.src_code_line = __LINE__;
+                    missing_ret_err.token_type = context->current_identifier->type;
+                    missing_ret_err.size_token_width = proc_node->proc_def.name.length;
+                    missing_ret_err.missing_return_proc_name = proc_node->proc_def.name;
+                    missing_ret_err.missing_return_type_name = return_type_node->name;
+                    missing_ret_err.missing_return_branch_pos = analysis.failing_pos;
+                    missing_ret_err.missing_return_has_branch_pos = analysis.has_failing_pos;
+                    missing_ret_err.missing_return_is_after_stmt = analysis.failing_is_after_stmt;
+                    append(errors, missing_ret_err);
+                }
+            }
+
             return ok<ASTNode, ParseError>(*proc_node);
         }
         case TokenType::ADDRESS_OF: {

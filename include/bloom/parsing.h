@@ -189,6 +189,8 @@ struct ASTNode {
             size_t and_count;
             Array<ASTNode> then_body;
             Array<ASTNode> else_body;
+            Token::Position if_pos;
+            Token::Position else_pos;
         } if_else;
         struct {
             Array<ASTNode> arguments;
@@ -229,6 +231,7 @@ struct ASTNode {
         } for_cond_loop;
         struct {
             Array<ASTNode> body;
+            Token::Position for_pos;
         } for_loop;
         struct {
             Str element_name;

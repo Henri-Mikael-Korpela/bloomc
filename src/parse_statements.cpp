@@ -1040,6 +1040,7 @@ auto parse_statement(
                         nodes_block_iter->elements.data + nodes_block_iter->current_index + 1,
                         0
                     ),
+                    .for_pos = next_token->position,
                 },
             });
 
@@ -1060,6 +1061,21 @@ auto parse_statement(
                 .type = ASTNodeType::INTEGER_LITERAL,
                 .parent = nullptr,
                 .integer_literal = { .value = { .value = value_tok->integer_literal.value } },
+            };
+            value_ptr = iter_append(nodes_block_iter, std::move(value_node));
+            auto *nl = iter_next(tokens_iter);
+            if (nl->type != TokenType::NEWLINE && nl->type != TokenType::END) {
+                append(errors, PARSE_ERROR_CREATE(UNEXPECTED_TOKEN, nl));
+                return false;
+            }
+        }
+        else if (value_tok->type == TokenType::KEYWORD_TRUE ||
+                 value_tok->type == TokenType::KEYWORD_FALSE)
+        {
+            ASTNode value_node = ASTNode {
+                .type = ASTNodeType::BOOLEAN_LITERAL,
+                .parent = nullptr,
+                .boolean_literal = { .value = value_tok->type == TokenType::KEYWORD_TRUE },
             };
             value_ptr = iter_append(nodes_block_iter, std::move(value_node));
             auto *nl = iter_next(tokens_iter);
@@ -1089,6 +1105,19 @@ auto parse_statement(
             value_ptr = iter_append(nodes_block_iter, std::move(expr_result.ok));
             value_ptr->parent = nullptr;
             tokens_iter->current_index += expr_tokens_iter.current_index;
+            auto *nl = iter_next(tokens_iter);
+            if (nl->type != TokenType::NEWLINE && nl->type != TokenType::END) {
+                append(errors, PARSE_ERROR_CREATE(UNEXPECTED_TOKEN, nl));
+                return false;
+            }
+        }
+        else if (value_tok->type == TokenType::IDENTIFIER)
+        {
+            value_ptr = iter_append(nodes_block_iter, ASTNode {
+                .type = ASTNodeType::IDENTIFIER,
+                .parent = nullptr,
+                .identifier = value_tok->identifier.content,
+            });
             auto *nl = iter_next(tokens_iter);
             if (nl->type != TokenType::NEWLINE && nl->type != TokenType::END) {
                 append(errors, PARSE_ERROR_CREATE(UNEXPECTED_TOKEN, nl));
@@ -1376,6 +1405,7 @@ auto parse_statement(
                     0
                 ),
                 .else_body = Array<ASTNode>(nullptr, 0),
+                .if_pos = next_token->position,
             },
         };
         for (size_t ai = 0; ai < and_count; ai++) {
@@ -1400,7 +1430,8 @@ auto parse_statement(
         );
         if (has_else) {
             iter_next(tokens_iter); // INDENT before else
-            iter_next(tokens_iter); // KEYWORD_ELSE
+            auto *else_token = iter_next(tokens_iter); // KEYWORD_ELSE
+            if_else_node->if_else.else_pos = else_token->position;
 
             bool const has_else_if = (
                 tokens_iter->current_index < tokens_iter->elements.length &&

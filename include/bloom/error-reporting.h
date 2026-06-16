@@ -16,6 +16,7 @@ enum class ParseErrorCode {
     PROC_TOO_MANY_ARGS,
     STRUCT_MISSING_FIELDS,
     STRUCT_DUPLICATE_FIELD,
+    PROC_MISSING_RETURN,
 };
 
 constexpr auto to_string(ParseErrorCode code) -> char const * {
@@ -30,6 +31,7 @@ constexpr auto to_string(ParseErrorCode code) -> char const * {
         case ParseErrorCode::PROC_TOO_MANY_ARGS:        return "proc too many args";
         case ParseErrorCode::STRUCT_MISSING_FIELDS:     return "struct missing fields";
         case ParseErrorCode::STRUCT_DUPLICATE_FIELD:    return "struct duplicate field";
+        case ParseErrorCode::PROC_MISSING_RETURN:       return "proc missing return";
     }
     return "unknown error";
 }
@@ -60,6 +62,12 @@ struct ParseError {
     Str array_name;
     int64_t array_index;
     int64_t known_array_size;
+    // For PROC_MISSING_RETURN
+    Str missing_return_proc_name;
+    Str missing_return_type_name;
+    Token::Position missing_return_branch_pos;
+    bool missing_return_has_branch_pos;
+    bool missing_return_is_after_stmt;
     // For ENUM_INVALID_KEY
     Str enum_invalid_key_name;
     Str enum_invalid_key_type;

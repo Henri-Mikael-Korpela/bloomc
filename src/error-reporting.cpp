@@ -346,5 +346,52 @@ auto report_parse_errors(Array<ParseError> errors, bool *had_errors, Str source_
                 ANSI_RED, (int)token_type_str.length, token_type_str.data, ANSI_RESET);
             emit_error_location(filename, source_content, error);
         }
+        else if (error->code == ParseErrorCode::PROC_MISSING_RETURN) {
+            fprintf(stderr, "\n%sError: Missing return value in procedure '%.*s':%s\n",
+                ANSI_RED,
+                (int)error->missing_return_proc_name.length, error->missing_return_proc_name.data,
+                ANSI_RESET);
+            fprintf(stderr,
+                "%s    Not all control flow paths return a value of type '%.*s'.%s\n",
+                ANSI_RED,
+                (int)error->missing_return_type_name.length, error->missing_return_type_name.data,
+                ANSI_RESET);
+            emit_error_location(filename, source_content, error);
+            if (error->missing_return_has_branch_pos) {
+                if (error->missing_return_is_after_stmt) {
+                    fprintf(stderr, "\n%sMissing return after this statement:%s\n", ANSI_CYAN, ANSI_RESET);
+                }
+                else {
+                    fprintf(stderr, "\n%sMissing return on this path:%s\n", ANSI_CYAN, ANSI_RESET);
+                }
+                fprintf(stderr, "%s    In file %.*s, line %llu, column %llu:%s\n",
+                    ANSI_CYAN, (int)filename.length, filename.data,
+                    (unsigned long long)error->missing_return_branch_pos.line,
+                    (unsigned long long)(error->missing_return_branch_pos.col - 1),
+                    ANSI_RESET);
+                emit_source_context(source_content,
+                    error->missing_return_branch_pos.line,
+                    error->missing_return_branch_pos.col,
+                    0, {}, {});
+            }
+            fprintf(stderr, "\n%sHow to fix:%s\n", ANSI_BLUE, ANSI_RESET);
+            if (error->missing_return_has_branch_pos && error->missing_return_is_after_stmt) {
+                fprintf(stderr,
+                    "%s    - Add a 'return' statement after the highlighted statement"
+                    " to handle the case where it exits without returning a value of type '%.*s'.%s\n",
+                    ANSI_BLUE,
+                    (int)error->missing_return_type_name.length, error->missing_return_type_name.data,
+                    ANSI_RESET);
+            }
+            else {
+                fprintf(stderr,
+                    "%s    - Ensure every branch in '%.*s' ends with a 'return' statement"
+                    " that returns a value of type '%.*s'.%s\n",
+                    ANSI_BLUE,
+                    (int)error->missing_return_proc_name.length, error->missing_return_proc_name.data,
+                    (int)error->missing_return_type_name.length, error->missing_return_type_name.data,
+                    ANSI_RESET);
+            }
+        }
     }
 }

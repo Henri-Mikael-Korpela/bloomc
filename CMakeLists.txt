@@ -15,6 +15,9 @@ add_executable(bloomc
     src/allocation.cpp
     src/error-reporting.cpp
     src/parsing.cpp
+    src/parse_declarations.cpp
+    src/parse_expressions.cpp
+    src/parse_statements.cpp
     src/string.cpp
     src/tokenization.cpp
     src/transpilation.cpp

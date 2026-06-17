@@ -167,6 +167,18 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
         return 0;
     };
 
+    auto is_array_var = [&](Str var_name) -> bool {
+        for (size_t i = 0; i < array_var_count; i++) {
+            Str const *name = &array_vars[i].name;
+            if (name->length == var_name.length &&
+                strncmp(name->data, var_name.data, name->length) == 0)
+            {
+                return true;
+            }
+        }
+        return false;
+    };
+
     // Returns the runtime byte length of a string literal content,
     // treating backslash-escape pairs as a single byte.
     auto str_literal_runtime_length = [](Str content) -> size_t {
@@ -241,6 +253,30 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
         return nullptr;
     };
 
+    auto lookup_proc_node = [&](Str name) -> ASTNode * {
+        for (size_t ni = 0; ni < ast_nodes->length; ni++) {
+            auto *n = &ast_nodes->data[ni];
+            if (n->type == ASTNodeType::PROC_DEF &&
+                n->proc_def.name.length == name.length &&
+                strncmp(n->proc_def.name.data, name.data, name.length) == 0)
+            {
+                return n;
+            }
+        }
+        return nullptr;
+    };
+
+    auto is_foreign_rawptr_param = [&](Str callee_name, size_t param_index) -> bool {
+        auto *proc_node = lookup_proc_node(callee_name);
+        if (proc_node == nullptr || !proc_node->proc_def.is_foreign) {
+            return false;
+        }
+        if (param_index >= proc_node->proc_def.parameters.length) {
+            return false;
+        }
+        return proc_node->proc_def.parameters.data[param_index].type_name == "RawPtr";
+    };
+
     std::function<void(Array<ASTNode>*, Str)> emit_proc_call_args = [&](Array<ASTNode> *arguments, Str callee_name) {
         bool const wrap_strings = is_user_proc(callee_name) || callee_name == "clone_to_cstr";
         for (size_t i = 0; i < arguments->length; i++) {
@@ -264,6 +300,9 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
                         PUSH_STR(arg->identifier);
                         PUSH_STR("_len}");
                         break;
+                    }
+                    if (is_array_var(arg->identifier) && is_foreign_rawptr_param(callee_name, i)) {
+                        PUSH_STR("(void *)");
                     }
                     PUSH_STR(arg->identifier);
                     break;
@@ -368,7 +407,12 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
                     }
                     break;
                 case ASTNodeType::ADDRESS_OF:
-                    PUSH_STR("&");
+                    if (is_foreign_rawptr_param(callee_name, i)) {
+                        PUSH_STR("(void *)&");
+                    }
+                    else {
+                        PUSH_STR("&");
+                    }
                     PUSH_STR(arg->identifier);
                     break;
                 case ASTNodeType::MEMBER_ACCESS:
@@ -841,7 +885,41 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
     PUSH_STR("#include <stdint.h>\n");
     PUSH_STR("#include <stdio.h>\n");
     PUSH_STR("#include <stdlib.h>\n");
-    PUSH_STR("#include <string.h>\n\n");
+    PUSH_STR("#include <string.h>\n");
+    {
+        bool needs_socket_h = false;
+        bool needs_unistd_h = false;
+        for (size_t ni = 0; ni < ast_nodes->length; ni++) {
+            auto const *node = &ast_nodes->data[ni];
+            if (node->type != ASTNodeType::PROC_DEF || !node->proc_def.is_foreign) {
+                continue;
+            }
+            Str name = node->proc_def.name;
+            if (name == "socket" || name == "bind" || name == "listen" ||
+                name == "accept" || name == "recv" || name == "send" ||
+                name == "setsockopt" || name == "recvfrom" || name == "sendto" ||
+                name == "connect" || name == "shutdown" || name == "getsockopt")
+            {
+                needs_socket_h = true;
+            }
+            if (name == "close" || name == "read" || name == "write" ||
+                name == "open" || name == "unlink" || name == "pipe" ||
+                name == "dup" || name == "dup2" || name == "fork" ||
+                name == "getpid" || name == "sleep" || name == "usleep")
+            {
+                needs_unistd_h = true;
+            }
+        }
+        if (needs_socket_h) {
+            PUSH_STR("#include <arpa/inet.h>\n");
+            PUSH_STR("#include <netinet/in.h>\n");
+            PUSH_STR("#include <sys/socket.h>\n");
+        }
+        if (needs_unistd_h) {
+            PUSH_STR("#include <unistd.h>\n");
+        }
+    }
+    PUSH_STR("\n");
     PUSH_STR("typedef struct { char const *data; size_t length; } BloomStr;\n");
     PUSH_STR("typedef struct { uint8_t *data; size_t length; } BloomSliceU8;\n");
     PUSH_STR("typedef struct { char bytes[4]; uint8_t len; } BloomChar;\n");

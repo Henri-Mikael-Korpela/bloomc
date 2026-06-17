@@ -1,4 +1,60 @@
 package henri.http_server
 
-main :: proc() ->
-    print("My HTTP Server\n")
+// Linux socket API — sys/socket.h, netinet/in.h, unistd.h included automatically
+socket     :: proc(domain: Int, type: Int, protocol: Int) Int -> foreign
+setsockopt :: proc(sockfd: Int, level: Int, optname: Int, optval: RawPtr, optlen: Int) Int -> foreign
+bind       :: proc(sockfd: Int, addr: RawPtr, addrlen: Int) Int -> foreign
+listen     :: proc(sockfd: Int, backlog: Int) Int -> foreign
+accept     :: proc(sockfd: Int, addr: RawPtr, addrlen: RawPtr) Int -> foreign
+recv       :: proc(sockfd: Int, buf: RawPtr, len: Int, flags: Int) Int -> foreign
+send       :: proc(sockfd: Int, buf: CStr, len: Int, flags: Int) Int -> foreign
+close      :: proc(fd: Int) -> foreign
+
+main :: proc(args: []Str) ->
+    server_fd := socket(AF_INET, SOCK_STREAM, 0)
+    if server_fd < 0 ->
+        print("Failed to create socket\n")
+        return 1
+
+    // Allow address reuse so the server can restart without waiting for TIME_WAIT
+    optval := 1
+    setsockopt(server_fd, SOL_SOCKET, SO_REUSEADDR, %optval, 4)
+
+    // Build a sockaddr_in (16 bytes) on the stack as a raw byte array:
+    //   [0..1]  sin_family = AF_INET = 2  (host byte order)
+    //   [2..3]  sin_port   = 8889 in network byte order (big-endian): 0x22=34, 0xB9=185
+    //   [4..7]  sin_addr   = INADDR_ANY = 0
+    //   [8..15] sin_zero   = 0 (padding)
+    addr := [16]U8{}
+    addr[0] = 2
+    addr[2] = 34
+    addr[3] = 185
+
+    bind_result := bind(server_fd, addr, 16)
+    if bind_result < 0 ->
+        print("Failed to bind to port 8889\n")
+        return 1
+
+    listen_result := listen(server_fd, 10)
+    if listen_result < 0 ->
+        print("Failed to listen on socket\n")
+        return 1
+
+    print("Listening on http://localhost:8889\n")
+
+    for ->
+        client_addr     := [16]U8{}
+        client_addr_len := 16
+        recv_buf        := [64]U8{}
+
+        client_fd := accept(server_fd, client_addr, %client_addr_len)
+        if client_fd < 0 ->
+            break
+
+        recv(client_fd, recv_buf, 64, 0)
+
+        // HTTP/1.1 response: headers + blank line + body (78 bytes total)
+        response := clone_to_cstr("HTTP/1.1 200 OK\r\nContent-Length: 13\r\nContent-Type: text/plain\r\n\r\nHello, world!", context.temp_allocator)
+        send(client_fd, response, 78, 0)
+
+        close(client_fd)

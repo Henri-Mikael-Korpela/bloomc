@@ -29,7 +29,7 @@ const BUILTIN_TYPES: Record<string, string> = {
     Bool:   'built-in boolean type',
     CStr:   'built-in null-terminated C string type',
     Int:    'built-in signed integer type',
-    RawPtr: 'built-in raw (untyped) pointer type, equivalent to void* in C',
+    CVoid:  'built-in void type; use ^CVoid for a void pointer (void* in C)',
     Str:    'built-in UTF-8 string type',
     U8:     'built-in unsigned 8-bit integer type',
 };

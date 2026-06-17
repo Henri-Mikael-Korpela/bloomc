@@ -1235,19 +1235,30 @@ auto parse_expression(
             }
             else if (proc_return_type_token->type == TokenType::CARET) {
                 auto *type_name_token = iter_next(tokens_iter);
-                if (type_name_token->type != TokenType::IDENTIFIER) {
+                if (type_name_token->type == TokenType::KEYWORD_CVOID) {
+                    return_type_node = iter_append(types_iter, TypeASTNode {
+                        .name = cstr_to_str("CVoid"),
+                        .is_pointer = true,
+                    });
+                }
+                else if (type_name_token->type != TokenType::IDENTIFIER) {
                     return err<ASTNode, ParseError>(PARSE_ERROR_CREATE(UNEXPECTED_TOKEN, type_name_token));
                 }
-                return_type_node = iter_append(types_iter, TypeASTNode {
-                    .name = type_name_token->identifier.content,
-                    .is_pointer = true,
-                });
+                else {
+                    return_type_node = iter_append(types_iter, TypeASTNode {
+                        .name = type_name_token->identifier.content,
+                        .is_pointer = true,
+                    });
+                }
                 if (
                     auto *arrow_tok = iter_next(tokens_iter);
                     arrow_tok->type != TokenType::ARROW
                 ) {
                     return err<ASTNode, ParseError>(PARSE_ERROR_CREATE(UNEXPECTED_TOKEN, arrow_tok));
                 }
+            }
+            else if (proc_return_type_token->type == TokenType::KEYWORD_CVOID) {
+                return err<ASTNode, ParseError>(PARSE_ERROR_CREATE(UNEXPECTED_TOKEN, proc_return_type_token));
             }
             else if (proc_return_type_token->type == TokenType::IDENTIFIER) {
                 if (
@@ -1465,20 +1476,29 @@ auto parse_expression(
                 }
                 auto *maybe_caret = iter_next(tokens_iter);
                 bool field_is_ptr = false;
-                Token *type_token;
+                Str field_type_name = {};
                 if (maybe_caret->type == TokenType::CARET) {
                     field_is_ptr = true;
-                    type_token = iter_next(tokens_iter);
+                    auto *type_token = iter_next(tokens_iter);
+                    if (type_token->type == TokenType::KEYWORD_CVOID) {
+                        field_type_name = cstr_to_str("CVoid");
+                    }
+                    else if (type_token->type != TokenType::IDENTIFIER) {
+                        return err<ASTNode, ParseError>(PARSE_ERROR_CREATE(UNEXPECTED_TOKEN, type_token));
+                    }
+                    else {
+                        field_type_name = type_token->identifier.content;
+                    }
+                }
+                else if (maybe_caret->type != TokenType::IDENTIFIER) {
+                    return err<ASTNode, ParseError>(PARSE_ERROR_CREATE(UNEXPECTED_TOKEN, maybe_caret));
                 }
                 else {
-                    type_token = maybe_caret;
-                }
-                if (type_token->type != TokenType::IDENTIFIER) {
-                    return err<ASTNode, ParseError>(PARSE_ERROR_CREATE(UNEXPECTED_TOKEN, type_token));
+                    field_type_name = maybe_caret->identifier.content;
                 }
                 (void)iter_append(proc_params_iter, ProcParameterASTNode {
                     .name = field_name_token->identifier.content,
-                    .type_name = type_token->identifier.content,
+                    .type_name = field_type_name,
                     .is_pointer = field_is_ptr,
                 });
                 if (tokens_iter->current_index < tokens_iter->elements.length) {
@@ -1550,6 +1570,51 @@ auto parse_expression(
 
             return ok<ASTNode, ParseError>(*enum_node);
         }
+        case TokenType::CARET: {
+            auto *cvoid_tok = iter_next(tokens_iter);
+            if (cvoid_tok->type != TokenType::KEYWORD_CVOID) {
+                return err<ASTNode, ParseError>(PARSE_ERROR_CREATE(UNEXPECTED_TOKEN, cvoid_tok));
+            }
+            if (tokens_iter->current_index >= tokens_iter->elements.length ||
+                iter_peek(tokens_iter)->type != TokenType::PARENTHESIS_OPEN)
+            {
+                return err<ASTNode, ParseError>(PARSE_ERROR_CREATE(UNEXPECTED_TOKEN, cvoid_tok));
+            }
+            // current_index points to '(' — scan for matching ')' without consuming '(' yet
+            int paren_depth = 0;
+            int64_t close_paren_index = iter_get_index_at_if<Token>(
+                tokens_iter, [&paren_depth](auto *t) {
+                    if (t->type == TokenType::PARENTHESIS_OPEN)  { paren_depth++; return false; }
+                    if (t->type == TokenType::PARENTHESIS_CLOSE) {
+                        if (paren_depth == 1) { return true; }
+                        paren_depth--;
+                    }
+                    return false;
+                }
+            );
+            auto arg_tokens_iter = iter_slice_by_offset(
+                tokens_iter,
+                tokens_iter->current_index + 1,  // skip '('
+                close_paren_index
+            );
+            ASTNode temp_node = {
+                .type = ASTNodeType::PROC_CALL,
+                .parent = nullptr,
+                .proc_call = { .caller_identifier = cstr_to_str("^CVoid") },
+            };
+            if (!parse_proc_call_arguments(&arg_tokens_iter, &temp_node, nodes_block_iter, context, operands_iter, errors, next_token->position)) {
+                return err<ASTNode, ParseError>(PARSE_ERROR_CREATE(UNEXPECTED_TOKEN, cvoid_tok));
+            }
+            tokens_iter->current_index = close_paren_index + 1;
+            return ok<ASTNode, ParseError>(ASTNode {
+                .type = ASTNodeType::PROC_CALL,
+                .parent = nullptr,
+                .proc_call = {
+                    .arguments = temp_node.proc_call.arguments,
+                    .caller_identifier = temp_node.proc_call.caller_identifier,
+                },
+            });
+        }
         default:
             return err<ASTNode, ParseError>(PARSE_ERROR_CREATE(UNEXPECTED_TOKEN, next_token));
     }
@@ -1584,7 +1649,7 @@ auto infer_bloom_type_from_tokens(
     Str name = tok->identifier.content;
 
     // If the expression is just a primitive/builtin type name, return it directly.
-    static char const *const BUILTIN_TYPES[] = { "Int", "U8", "Bool", "Str", "CStr", "RawPtr" };
+    static char const *const BUILTIN_TYPES[] = { "Int", "U8", "Bool", "Str", "CStr", "CVoid" };
     for (auto const *bt : BUILTIN_TYPES) {
         if (name == bt &&
             expr_iter->current_index >= expr_iter->elements.length)
@@ -1721,7 +1786,7 @@ auto bloom_type_size_in_bytes(Str type_name) -> int64_t {
     if (type_name == "Bool") { return 1; }
     if (type_name == "Str")  { return 16; } // sizeof(BloomStr): data ptr + length
     if (type_name == "CStr")    { return 8; }  // pointer on 64-bit
-    if (type_name == "RawPtr") { return 8; }  // void pointer on 64-bit
+    if (type_name == "CVoid") { return 8; }  // void pointer on 64-bit
     return -1;
 }
 
@@ -1732,7 +1797,7 @@ auto bloom_type_to_c_type(Str type_name) -> char const * {
     if (type_name == "Bool") { return "bool"; }
     if (type_name == "Str")  { return "BloomStr"; }
     if (type_name == "CStr")    { return "char const *"; }
-    if (type_name == "RawPtr") { return "void *"; }
+    if (type_name == "CVoid") { return "void *"; }
     return nullptr;
 }
 

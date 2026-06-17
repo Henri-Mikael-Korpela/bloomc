@@ -1,12 +1,16 @@
 package henri.http_server
 
+SockAddr :: struct ->
+    sa_family: Int
+    sa_data: ^U8
+
 // Linux socket API — sys/socket.h, netinet/in.h, unistd.h included automatically
 socket     :: proc(domain: Int, type: Int, protocol: Int) Int -> foreign
-setsockopt :: proc(sockfd: Int, level: Int, optname: Int, optval: RawPtr, optlen: Int) Int -> foreign
-bind       :: proc(sockfd: Int, addr: RawPtr, addrlen: Int) Int -> foreign
+setsockopt :: proc(sockfd: Int, level: Int, optname: Int, optval: ^CVoid, optlen: Int) Int -> foreign
+bind       :: proc(sockfd: Int, addr: ^CVoid, addrlen: Int) Int -> foreign
 listen     :: proc(sockfd: Int, backlog: Int) Int -> foreign
-accept     :: proc(sockfd: Int, addr: RawPtr, addrlen: RawPtr) Int -> foreign
-recv       :: proc(sockfd: Int, buf: RawPtr, len: Int, flags: Int) Int -> foreign
+accept     :: proc(sockfd: Int, addr: ^SockAddr, addrlen: ^CVoid) Int -> foreign
+recv       :: proc(sockfd: Int, buf: ^CVoid, len: Int, flags: Int) Int -> foreign
 send       :: proc(sockfd: Int, buf: CStr, len: Int, flags: Int) Int -> foreign
 close      :: proc(fd: Int) -> foreign
 
@@ -43,11 +47,11 @@ main :: proc(args: []Str) ->
     print("Listening on http://localhost:8889\n")
 
     for ->
-        client_addr     := [16]U8{}
+        client_addr     := SockAddr{}
         client_addr_len := 16
         recv_buf        := [64]U8{}
 
-        client_fd := accept(server_fd, client_addr, %client_addr_len)
+        client_fd := accept(server_fd, ^CVoid(%client_addr), %client_addr_len)
         if client_fd < 0 ->
             break
 

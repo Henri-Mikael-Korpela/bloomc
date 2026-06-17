@@ -274,7 +274,8 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
         if (param_index >= proc_node->proc_def.parameters.length) {
             return false;
         }
-        return proc_node->proc_def.parameters.data[param_index].type_name == "RawPtr";
+        auto &param = proc_node->proc_def.parameters.data[param_index];
+        return param.is_pointer && param.type_name == "CVoid";
     };
 
     std::function<void(Array<ASTNode>*, Str)> emit_proc_call_args = [&](Array<ASTNode> *arguments, Str callee_name) {
@@ -375,7 +376,7 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
                         PUSH_STR(arg->proc_call.arguments.data[0].identifier);
                         PUSH_STR(".data");
                     }
-                    else if (arg->proc_call.caller_identifier == "RawPtr" &&
+                    else if (arg->proc_call.caller_identifier == "^CVoid" &&
                         arg->proc_call.arguments.length == 1 &&
                         arg->proc_call.arguments.data[0].type == ASTNodeType::IDENTIFIER &&
                         lookup_var_kind(arg->proc_call.arguments.data[0].identifier) == VarKind::SLICE_U8)
@@ -383,6 +384,13 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
                         PUSH_STR("(void *)");
                         PUSH_STR(arg->proc_call.arguments.data[0].identifier);
                         PUSH_STR(".data");
+                    }
+                    else if (arg->proc_call.caller_identifier == "^CVoid" &&
+                        arg->proc_call.arguments.length == 1)
+                    {
+                        PUSH_STR("(void *)(");
+                        emit_proc_call_args(&arg->proc_call.arguments, arg->proc_call.caller_identifier);
+                        PUSH_STR(")");
                     }
                     else if (arg->proc_call.caller_identifier == "try_parse_int_le") {
                         PUSH_STR("__bloom_try_parse_int_le(");
@@ -485,7 +493,7 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
                     else if (tn == "Bool")   { PUSH_STR("bool"); }
                     else if (tn == "Str")    { PUSH_STR("BloomStr"); }
                     else if (tn == "CStr")   { PUSH_STR("char const *"); }
-                    else if (tn == "RawPtr") { PUSH_STR("void *"); }
+                    else if (tn == "CVoid") { PUSH_STR("void *"); }
                     else                     { PUSH_STR(tn); }
                     PUSH_STR(")");
                     break;
@@ -613,7 +621,7 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
                     PUSH_STR(expr->proc_call.arguments.data[0].identifier);
                     PUSH_STR(".data");
                 }
-                else if (expr->proc_call.caller_identifier == "RawPtr" &&
+                else if (expr->proc_call.caller_identifier == "^CVoid" &&
                     expr->proc_call.arguments.length == 1 &&
                     expr->proc_call.arguments.data[0].type == ASTNodeType::IDENTIFIER &&
                     lookup_var_kind(expr->proc_call.arguments.data[0].identifier) == VarKind::SLICE_U8)
@@ -621,6 +629,13 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
                     PUSH_STR("(void *)");
                     PUSH_STR(expr->proc_call.arguments.data[0].identifier);
                     PUSH_STR(".data");
+                }
+                else if (expr->proc_call.caller_identifier == "^CVoid" &&
+                    expr->proc_call.arguments.length == 1)
+                {
+                    PUSH_STR("(void *)(");
+                    emit_proc_call_args(&expr->proc_call.arguments, expr->proc_call.caller_identifier);
+                    PUSH_STR(")");
                 }
                 else if (expr->proc_call.caller_identifier == "try_parse_int_le") {
                     assert(expr->proc_call.arguments.length == 1 && "try_parse_int_le() requires exactly one argument");
@@ -763,7 +778,7 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
                 else if (tn == "Bool")   { PUSH_STR("bool"); }
                 else if (tn == "Str")    { PUSH_STR("BloomStr"); }
                 else if (tn == "CStr")   { PUSH_STR("char const *"); }
-                else if (tn == "RawPtr") { PUSH_STR("void *"); }
+                else if (tn == "CVoid") { PUSH_STR("void *"); }
                 else                     { PUSH_STR(tn); } // custom struct — same name in C
                 PUSH_STR(")");
                 break;
@@ -1231,7 +1246,7 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
                         else if (param->type_name == "CStr") {
                             PUSH_STR("char *");
                         }
-                        else if (param->type_name == "RawPtr") {
+                        else if (param->is_pointer && param->type_name == "CVoid") {
                             PUSH_STR("void *");
                         }
                         else {
@@ -1911,7 +1926,7 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
                                 else if (tn == "Bool")   { PUSH_STR("bool"); }
                                 else if (tn == "Str")    { PUSH_STR("BloomStr"); }
                                 else if (tn == "CStr")   { PUSH_STR("char const *"); }
-                                else if (tn == "RawPtr") { PUSH_STR("void *"); }
+                                else if (tn == "CVoid") { PUSH_STR("void *"); }
                                 else                   { PUSH_STR(tn); }
                                 PUSH_STR(")};\n");
                                 break;
@@ -2062,7 +2077,7 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
                                 break;
                             }
                             if (expr->type == ASTNodeType::PROC_CALL &&
-                                expr->proc_call.caller_identifier == "RawPtr" &&
+                                expr->proc_call.caller_identifier == "^CVoid" &&
                                 expr->proc_call.arguments.length == 1 &&
                                 expr->proc_call.arguments.data[0].type == ASTNodeType::IDENTIFIER)
                             {

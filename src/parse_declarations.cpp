@@ -907,6 +907,53 @@ auto parse_proc_call_arguments(
                 arg_count++;
                 break;
             }
+            case TokenType::CARET: {
+                auto *cvoid_tok = iter_next(tokens_iter);
+                if (cvoid_tok->type != TokenType::KEYWORD_CVOID) {
+                    append(errors, ParseError {
+                        .code = ParseErrorCode::UNEXPECTED_TOKEN,
+                        .position = cvoid_tok->position,
+                        .src_code_line = __LINE__,
+                        .token_type = cvoid_tok->type,
+                    });
+                    return false;
+                }
+                auto *open_paren = iter_next(tokens_iter);
+                if (open_paren->type != TokenType::PARENTHESIS_OPEN) {
+                    append(errors, ParseError {
+                        .code = ParseErrorCode::UNEXPECTED_TOKEN,
+                        .position = open_paren->position,
+                        .src_code_line = __LINE__,
+                        .token_type = open_paren->type,
+                    });
+                    return false;
+                }
+                int depth = 1;
+                size_t inner_start = tokens_iter->current_index;
+                size_t inner_end = inner_start;
+                while (inner_end < tokens_iter->elements.length) {
+                    TokenType const tt = tokens_iter->elements.data[inner_end].type;
+                    if (tt == TokenType::PARENTHESIS_OPEN)  { depth++; }
+                    if (tt == TokenType::PARENTHESIS_CLOSE) { depth--; if (depth == 0) { break; } }
+                    inner_end++;
+                }
+                auto *proc_call_arg_node = iter_append(nodes_block_iter, ASTNode {
+                    .type = ASTNodeType::PROC_CALL,
+                    .parent = proc_call_node,
+                    .proc_call = { .caller_identifier = cstr_to_str("^CVoid") },
+                });
+                if (pending_nested_call_count < MAX_PENDING_NESTED_CALLS) {
+                    pending_nested_calls[pending_nested_call_count++] = {
+                        .node = proc_call_arg_node,
+                        .token_begin = inner_start,
+                        .token_end = inner_end,
+                        .identifier_pos = next_token->position,
+                    };
+                }
+                tokens_iter->current_index = inner_end + 1;
+                arg_count++;
+                break;
+            }
             default:
                 append(errors, ParseError {
                     .code = ParseErrorCode::UNEXPECTED_TOKEN,
@@ -1079,7 +1126,21 @@ auto parse_proc_params(
                 if (maybe_caret->type == TokenType::CARET) {
                     param_node->is_pointer = true;
                     auto *type_tok = iter_next(tokens_iter);
-                    param_node->type_name = type_tok->identifier.content;
+                    if (type_tok->type == TokenType::KEYWORD_CVOID) {
+                        param_node->type_name = cstr_to_str("CVoid");
+                    }
+                    else {
+                        param_node->type_name = type_tok->identifier.content;
+                    }
+                }
+                else if (maybe_caret->type == TokenType::KEYWORD_CVOID) {
+                    append(errors, ParseError {
+                        .code = ParseErrorCode::UNEXPECTED_TOKEN,
+                        .position = maybe_caret->position,
+                        .src_code_line = __LINE__,
+                        .token_type = maybe_caret->type,
+                    });
+                    return false;
                 }
                 else if (maybe_caret->type == TokenType::BRACKET_OPEN) {
                     auto *inner_tok = iter_next(tokens_iter);

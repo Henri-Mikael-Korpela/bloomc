@@ -424,10 +424,13 @@ auto parse_statement(
                     }
                 }
 
-                if (iter_peek(tokens_iter)->type == TokenType::STRING_LITERAL) {
+                if (iter_peek(tokens_iter)->type == TokenType::STRING_LITERAL ||
+                    iter_peek(tokens_iter)->type == TokenType::INTERP_STRING_LITERAL)
+                {
                     auto *str_token = iter_next(tokens_iter);
+                    bool const is_interp = str_token->type == TokenType::INTERP_STRING_LITERAL;
                     auto *str_node = iter_append(nodes_block_iter, ASTNode {
-                        .type = ASTNodeType::STRING_LITERAL,
+                        .type = is_interp ? ASTNodeType::INTERPOLATED_STRING_LITERAL : ASTNodeType::STRING_LITERAL,
                         .parent = nullptr,
                         .string_literal = { .value = str_token->string_literal.content },
                     });

@@ -824,8 +824,11 @@ auto parse_proc_call_arguments(
                 break;
             }
             case TokenType::STRING_LITERAL:
+            case TokenType::INTERP_STRING_LITERAL:
                 (void)iter_append(nodes_block_iter, ASTNode {
-                    .type = ASTNodeType::STRING_LITERAL,
+                    .type = next_token->type == TokenType::INTERP_STRING_LITERAL
+                            ? ASTNodeType::INTERPOLATED_STRING_LITERAL
+                            : ASTNodeType::STRING_LITERAL,
                     .parent = proc_call_node,
                     .string_literal = {
                         .value = next_token->string_literal.content,

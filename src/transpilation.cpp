@@ -111,9 +111,10 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
         }
     };
 
-    struct EnumDefEntry { Str name; Str member_names[32]; size_t member_count; };
+    struct EnumDefEntry { Str name; Str member_names[32]; size_t member_count; bool is_str_typed; };
     EnumDefEntry enum_defs[16] = {};
     size_t enum_def_count = 0;
+    size_t interp_string_counter = 0;
 
     auto is_enum_type = [&](Str name) -> bool {
         for (size_t i = 0; i < enum_def_count; i++) {
@@ -278,6 +279,129 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
         return param.is_pointer && param.type_name == "CVoid";
     };
 
+    auto emit_interp_string = [&](Str content) {
+        size_t const N = interp_string_counter++;
+        PUSH_STR("({\n");
+        size_t part_count = 0;
+        size_t pos = 0;
+        while (pos <= content.length) {
+            size_t interp_start = content.length;
+            for (size_t k = pos; k + 1 < content.length; k++) {
+                if (content.data[k] == '$' && content.data[k + 1] == '{') {
+                    interp_start = k;
+                    break;
+                }
+            }
+            size_t const lit_len = interp_start - pos;
+            if (lit_len > 0) {
+                Str lit = { content.data + pos, lit_len };
+                PUSH_STR("BloomStr __p_");
+                PUSH_INT(static_cast<intmax_t>(N));
+                PUSH_STR("_");
+                PUSH_INT(static_cast<intmax_t>(part_count));
+                PUSH_STR(" = (BloomStr){.data = \"");
+                PUSH_STR(lit);
+                PUSH_STR("\", .length = ");
+                PUSH_INT(static_cast<intmax_t>(str_literal_runtime_length(lit)));
+                PUSH_STR("};\n");
+                part_count++;
+            }
+            if (interp_start >= content.length) {
+                break;
+            }
+            size_t const expr_start = interp_start + 2;
+            size_t expr_end = expr_start;
+            while (expr_end < content.length && content.data[expr_end] != '}') {
+                expr_end++;
+            }
+            Str expr_str = { content.data + expr_start, expr_end - expr_start };
+            PUSH_STR("BloomStr __p_");
+            PUSH_INT(static_cast<intmax_t>(N));
+            PUSH_STR("_");
+            PUSH_INT(static_cast<intmax_t>(part_count));
+            PUSH_STR(" = ");
+            size_t dot_pos = expr_str.length;
+            for (size_t k = 0; k < expr_str.length; k++) {
+                if (expr_str.data[k] == '.') { dot_pos = k; break; }
+            }
+            if (dot_pos < expr_str.length) {
+                Str obj   = { expr_str.data, dot_pos };
+                Str field = { expr_str.data + dot_pos + 1, expr_str.length - dot_pos - 1 };
+                if (is_enum_type(obj)) {
+                    PUSH_STR("__bloom_");
+                    PUSH_STR(obj);
+                    PUSH_STR("_");
+                    PUSH_STR(field);
+                }
+                else {
+                    PUSH_STR(obj);
+                    PUSH_STR(".");
+                    PUSH_STR(field);
+                }
+            }
+            else {
+                PUSH_STR(expr_str);
+            }
+            PUSH_STR(";\n");
+            part_count++;
+            pos = expr_end + 1;
+        }
+        PUSH_STR("size_t __tlen_");
+        PUSH_INT(static_cast<intmax_t>(N));
+        PUSH_STR(" = ");
+        if (part_count == 0) {
+            PUSH_STR("0");
+        }
+        else {
+            for (size_t k = 0; k < part_count; k++) {
+                if (k != 0) { PUSH_STR(" + "); }
+                PUSH_STR("__p_");
+                PUSH_INT(static_cast<intmax_t>(N));
+                PUSH_STR("_");
+                PUSH_INT(static_cast<intmax_t>(k));
+                PUSH_STR(".length");
+            }
+        }
+        PUSH_STR(";\n");
+        PUSH_STR("char *__tbuf_");
+        PUSH_INT(static_cast<intmax_t>(N));
+        PUSH_STR(" = __bloom_context.temp_allocator.buf + __bloom_context.temp_allocator.offset;\n");
+        PUSH_STR("__bloom_context.temp_allocator.offset += __tlen_");
+        PUSH_INT(static_cast<intmax_t>(N));
+        PUSH_STR(";\n");
+        PUSH_STR("size_t __toff_");
+        PUSH_INT(static_cast<intmax_t>(N));
+        PUSH_STR(" = 0;\n");
+        for (size_t k = 0; k < part_count; k++) {
+            PUSH_STR("memcpy(__tbuf_");
+            PUSH_INT(static_cast<intmax_t>(N));
+            PUSH_STR(" + __toff_");
+            PUSH_INT(static_cast<intmax_t>(N));
+            PUSH_STR(", __p_");
+            PUSH_INT(static_cast<intmax_t>(N));
+            PUSH_STR("_");
+            PUSH_INT(static_cast<intmax_t>(k));
+            PUSH_STR(".data, __p_");
+            PUSH_INT(static_cast<intmax_t>(N));
+            PUSH_STR("_");
+            PUSH_INT(static_cast<intmax_t>(k));
+            PUSH_STR(".length);\n");
+            PUSH_STR("__toff_");
+            PUSH_INT(static_cast<intmax_t>(N));
+            PUSH_STR(" += __p_");
+            PUSH_INT(static_cast<intmax_t>(N));
+            PUSH_STR("_");
+            PUSH_INT(static_cast<intmax_t>(k));
+            PUSH_STR(".length;\n");
+        }
+        PUSH_STR("(BloomStr){.data = __tbuf_");
+        PUSH_INT(static_cast<intmax_t>(N));
+        PUSH_STR(", .length = __tlen_");
+        PUSH_INT(static_cast<intmax_t>(N));
+        PUSH_STR("};\n");
+        PUSH_STR("})");
+    };
+
     std::function<void(Array<ASTNode>*, Str)> emit_proc_call_args = [&](Array<ASTNode> *arguments, Str callee_name) {
         bool const wrap_strings = is_user_proc(callee_name) || callee_name == "clone_to_cstr";
         for (size_t i = 0; i < arguments->length; i++) {
@@ -349,6 +473,9 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
                         PUSH_STR(arg->string_literal.value);
                         PUSH_STR('"');
                     }
+                    break;
+                case ASTNodeType::INTERPOLATED_STRING_LITERAL:
+                    emit_interp_string(arg->string_literal.value);
                     break;
                 case ASTNodeType::BUILTIN_LENGTH:
                     if (lookup_var_kind(arg->identifier) == VarKind::SLICE_U8) {
@@ -740,6 +867,10 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
                 PUSH_STR("}");
                 break;
             }
+            case ASTNodeType::INTERPOLATED_STRING_LITERAL: {
+                emit_interp_string(expr->string_literal.value);
+                break;
+            }
             case ASTNodeType::MEMBER_ACCESS:
                 if (is_enum_type(expr->member_access.object_name)) {
                     PUSH_STR("__bloom_");
@@ -1057,39 +1188,58 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
                     auto *def = &enum_defs[enum_def_count++];
                     def->name = node->enum_def.name;
                     def->member_count = 0;
+                    def->is_str_typed = node->enum_def.is_str_typed;
                     for (size_t i = 0; i < node->enum_def.members.length && i < 32; i++) {
                         def->member_names[def->member_count++] = node->enum_def.members.data[i].name;
                     }
                 }
-                // Emit typedef
-                PUSH_STR("typedef int ");
-                PUSH_STR(node->enum_def.name);
-                PUSH_STR(";\n");
-                // Emit member constants
-                for (size_t i = 0; i < node->enum_def.members.length; i++) {
-                    PUSH_STR("static int const __bloom_");
+                if (node->enum_def.is_str_typed) {
+                    PUSH_STR("typedef BloomStr ");
                     PUSH_STR(node->enum_def.name);
-                    PUSH_STR("_");
-                    PUSH_STR(node->enum_def.members.data[i].name);
-                    PUSH_STR(" = ");
-                    PUSH_INT(static_cast<intmax_t>(i));
                     PUSH_STR(";\n");
+                    for (size_t i = 0; i < node->enum_def.members.length; i++) {
+                        auto *member = &node->enum_def.members.data[i];
+                        Str val = member->type_name;
+                        PUSH_STR("static BloomStr const __bloom_");
+                        PUSH_STR(node->enum_def.name);
+                        PUSH_STR("_");
+                        PUSH_STR(member->name);
+                        PUSH_STR(" = (BloomStr){.data = \"");
+                        PUSH_STR(val);
+                        PUSH_STR("\", .length = ");
+                        PUSH_INT(static_cast<intmax_t>(str_literal_runtime_length(val)));
+                        PUSH_STR("};\n");
+                    }
+                    PUSH_STR("\n");
                 }
-                // Emit members array for type_info_of reflection
-                PUSH_STR("static BloomEnumMember const __bloom_");
-                PUSH_STR(node->enum_def.name);
-                PUSH_STR("_members[] = {\n");
-                for (size_t i = 0; i < node->enum_def.members.length; i++) {
-                    Str mname = node->enum_def.members.data[i].name;
-                    PUSH_STR("\t{.name = {.data = \"");
-                    PUSH_STR(mname);
-                    PUSH_STR("\", .length = ");
-                    PUSH_INT(static_cast<intmax_t>(mname.length));
-                    PUSH_STR("}, .value = ");
-                    PUSH_INT(static_cast<intmax_t>(i));
-                    PUSH_STR("},\n");
+                else {
+                    PUSH_STR("typedef int ");
+                    PUSH_STR(node->enum_def.name);
+                    PUSH_STR(";\n");
+                    for (size_t i = 0; i < node->enum_def.members.length; i++) {
+                        PUSH_STR("static int const __bloom_");
+                        PUSH_STR(node->enum_def.name);
+                        PUSH_STR("_");
+                        PUSH_STR(node->enum_def.members.data[i].name);
+                        PUSH_STR(" = ");
+                        PUSH_INT(static_cast<intmax_t>(i));
+                        PUSH_STR(";\n");
+                    }
+                    PUSH_STR("static BloomEnumMember const __bloom_");
+                    PUSH_STR(node->enum_def.name);
+                    PUSH_STR("_members[] = {\n");
+                    for (size_t i = 0; i < node->enum_def.members.length; i++) {
+                        Str mname = node->enum_def.members.data[i].name;
+                        PUSH_STR("\t{.name = {.data = \"");
+                        PUSH_STR(mname);
+                        PUSH_STR("\", .length = ");
+                        PUSH_INT(static_cast<intmax_t>(mname.length));
+                        PUSH_STR("}, .value = ");
+                        PUSH_INT(static_cast<intmax_t>(i));
+                        PUSH_STR("},\n");
+                    }
+                    PUSH_STR("};\n\n");
                 }
-                PUSH_STR("};\n\n");
                 break;
             }
             case ASTNodeType::PROC_DEF: {
@@ -1521,6 +1671,22 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
                                 assert(stmt->proc_call.arguments.length >= 1 &&
                                     "print() requires at least a format string argument");
                                 auto *fmt_arg = &stmt->proc_call.arguments.data[0];
+                                if (fmt_arg->type == ASTNodeType::INTERPOLATED_STRING_LITERAL) {
+                                    size_t const psn = interp_string_counter;
+                                    push_tabs();
+                                    PUSH_STR("{ BloomStr __pstr_");
+                                    PUSH_INT(static_cast<intmax_t>(psn));
+                                    PUSH_STR(" = ");
+                                    emit_interp_string(fmt_arg->string_literal.value);
+                                    PUSH_STR(";\n");
+                                    push_tabs();
+                                    PUSH_STR("fwrite(__pstr_");
+                                    PUSH_INT(static_cast<intmax_t>(psn));
+                                    PUSH_STR(".data, 1, __pstr_");
+                                    PUSH_INT(static_cast<intmax_t>(psn));
+                                    PUSH_STR(".length, stdout); }\n");
+                                    break;
+                                }
                                 assert(fmt_arg->type == ASTNodeType::STRING_LITERAL &&
                                     "First argument to print() must be a string literal");
                                 Str const *fmt = &fmt_arg->string_literal.value;
@@ -2311,7 +2477,9 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
                                 c_type = "bool";
                                 var_kind = VarKind::BOOL;
                             }
-                            else if (expr->type == ASTNodeType::STRING_LITERAL) {
+                            else if (expr->type == ASTNodeType::STRING_LITERAL ||
+                                     expr->type == ASTNodeType::INTERPOLATED_STRING_LITERAL)
+                            {
                                 c_type = "BloomStr";
                                 var_kind = VarKind::BLOOM_STR;
                             }

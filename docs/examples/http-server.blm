@@ -14,6 +14,10 @@ recv       :: proc(sockfd: Int, buf: ^CVoid, len: Int, flags: Int) Int -> foreig
 send       :: proc(sockfd: Int, buf: CStr, len: Int, flags: Int) Int -> foreign
 close      :: proc(fd: Int) -> foreign
 
+HTTPHeaderName :: enum Str ->
+    CONTENT_LENGTH = "Content-Length"
+    CONTENT_TYPE   = "Content-Type"
+
 main :: proc(args: []Str) ->
     server_fd := socket(AF_INET, SOCK_STREAM, 0)
     if server_fd < 0 ->
@@ -62,8 +66,8 @@ main :: proc(args: []Str) ->
         RESPONSE_CONTENT :: \
             """
             HTTP/1.1 200 OK\r\n
-            Content-Length: 13\r\n
-            Content-Type: text/plain\r\n
+            ${HTTPHeaderName.CONTENT_LENGTH}: 13\r\n
+            ${HTTPHeaderName.CONTENT_TYPE}: text/plain\r\n
             \r\n
             Hello, world!
             """

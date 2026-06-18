@@ -5,6 +5,7 @@
   "fileTypes": ["blm"],
   "patterns": [
     { "include": "#comment" },
+    { "include": "#multiline-string" },
     { "include": "#string" },
     { "include": "#package-declaration" },
     { "include": "#proc-definition" },
@@ -31,11 +32,50 @@
       "name": "comment.line.double-slash.bloom",
       "match": "//.*$"
     },
+    "multiline-string": {
+      "name": "string.quoted.triple.bloom",
+      "begin": "\"\"\"",
+      "end": "\"\"\"",
+      "patterns": [
+        {
+          "name": "meta.template.expression.bloom",
+          "begin": "\\$\\{",
+          "end": "\\}",
+          "beginCaptures": {
+            "0": { "name": "punctuation.definition.template-expression.begin.bloom" }
+          },
+          "endCaptures": {
+            "0": { "name": "punctuation.definition.template-expression.end.bloom" }
+          },
+          "patterns": [
+            { "include": "$self" }
+          ]
+        },
+        {
+          "name": "constant.character.escape.bloom",
+          "match": "\\\\[nrt\"\\\\r]"
+        }
+      ]
+    },
     "string": {
       "name": "string.quoted.double.bloom",
       "begin": "\"",
       "end": "\"",
       "patterns": [
+        {
+          "name": "meta.template.expression.bloom",
+          "begin": "\\$\\{",
+          "end": "\\}",
+          "beginCaptures": {
+            "0": { "name": "punctuation.definition.template-expression.begin.bloom" }
+          },
+          "endCaptures": {
+            "0": { "name": "punctuation.definition.template-expression.end.bloom" }
+          },
+          "patterns": [
+            { "include": "$self" }
+          ]
+        },
         {
           "name": "constant.character.escape.bloom",
           "match": "\\\\[nrt\"\\\\]"

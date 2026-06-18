@@ -158,6 +158,7 @@ static auto check_returns_on_all_paths(
         case ASTNodeType::INTEGER_LITERAL:
         case ASTNodeType::BOOLEAN_LITERAL:
         case ASTNodeType::STRING_LITERAL:
+        case ASTNodeType::INTERPOLATED_STRING_LITERAL:
         case ASTNodeType::MEMBER_ACCESS:
         case ASTNodeType::ARRAY_ACCESS:
         case ASTNodeType::ARRAY_SLICE:
@@ -571,6 +572,15 @@ auto parse_expression(
         case TokenType::STRING_LITERAL: {
             return ok<ASTNode, ParseError>(ASTNode {
                 .type = ASTNodeType::STRING_LITERAL,
+                .parent = nullptr,
+                .string_literal = {
+                    .value = next_token->string_literal.content,
+                },
+            });
+        }
+        case TokenType::INTERP_STRING_LITERAL: {
+            return ok<ASTNode, ParseError>(ASTNode {
+                .type = ASTNodeType::INTERPOLATED_STRING_LITERAL,
                 .parent = nullptr,
                 .string_literal = {
                     .value = next_token->string_literal.content,
@@ -1524,6 +1534,15 @@ auto parse_expression(
             return ok<ASTNode, ParseError>(*struct_node);
         }
         case TokenType::KEYWORD_ENUM: {
+            bool is_str_typed = false;
+            if (tokens_iter->current_index < tokens_iter->elements.length &&
+                iter_peek(tokens_iter)->type == TokenType::IDENTIFIER &&
+                iter_peek(tokens_iter)->identifier.content == "Str")
+            {
+                is_str_typed = true;
+                (void)iter_next(tokens_iter); // consume "Str"
+            }
+
             auto *arrow = iter_next(tokens_iter);
             if (arrow->type != TokenType::ARROW) {
                 return err<ASTNode, ParseError>(PARSE_ERROR_CREATE(UNEXPECTED_TOKEN, arrow));
@@ -1543,9 +1562,21 @@ auto parse_expression(
                 if (member_name_token->type != TokenType::IDENTIFIER) {
                     return err<ASTNode, ParseError>(PARSE_ERROR_CREATE(UNEXPECTED_TOKEN, member_name_token));
                 }
+                Str member_str_value = {};
+                if (is_str_typed) {
+                    auto *eq = iter_next(tokens_iter);
+                    if (eq->type != TokenType::EQUALS) {
+                        return err<ASTNode, ParseError>(PARSE_ERROR_CREATE(UNEXPECTED_TOKEN, eq));
+                    }
+                    auto *str_tok = iter_next(tokens_iter);
+                    if (str_tok->type != TokenType::STRING_LITERAL) {
+                        return err<ASTNode, ParseError>(PARSE_ERROR_CREATE(UNEXPECTED_TOKEN, str_tok));
+                    }
+                    member_str_value = str_tok->string_literal.content;
+                }
                 (void)iter_append(proc_params_iter, ProcParameterASTNode {
                     .name = member_name_token->identifier.content,
-                    .type_name = {},
+                    .type_name = member_str_value,
                     .is_pointer = false,
                 });
                 if (tokens_iter->current_index < tokens_iter->elements.length) {
@@ -1565,6 +1596,7 @@ auto parse_expression(
                         proc_params_block->data + members_start,
                         proc_params_iter->current_index - members_start
                     ),
+                    .is_str_typed = is_str_typed,
                 },
             });
 

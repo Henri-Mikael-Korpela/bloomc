@@ -47,6 +47,7 @@ enum class ASTNodeType : uint8_t {
     PROC_DEF,
     RETURN,
     STRING_LITERAL,
+    INTERPOLATED_STRING_LITERAL,
     SLICE_CAST,
     STRUCT_DEF,
     STRUCT_INIT,
@@ -311,6 +312,7 @@ struct ASTNode {
         struct {
             Str name;
             Array<ProcParameterASTNode> members;
+            bool is_str_typed;
         } enum_def;
         struct {
             Str enum_type_name;
@@ -380,7 +382,8 @@ constexpr auto to_string(ASTNodeType type) -> Str {
         case ASTNodeType::PROC_CALL:           return STR("procedure call");
         case ASTNodeType::PROC_DEF:            return STR("procedure definition");
         case ASTNodeType::RETURN:              return STR("return");
-        case ASTNodeType::STRING_LITERAL:      return STR("string_literal");
+        case ASTNodeType::STRING_LITERAL:               return STR("string_literal");
+        case ASTNodeType::INTERPOLATED_STRING_LITERAL:  return STR("interpolated_string_literal");
         case ASTNodeType::SLICE_CAST:          return STR("slice_cast");
         case ASTNodeType::STRUCT_DEF:          return STR("struct_def");
         case ASTNodeType::STRUCT_INIT:         return STR("struct_init");

@@ -363,8 +363,15 @@ auto tokenize(Str *input, ArenaAllocator *allocator) -> Array<Token> {
 
                 string_content_offset += content_len;
 
+                bool has_interp = false;
+                for (size_t k = 0; k + 1 < content_len; k++) {
+                    if (content_start[k] == '$' && content_start[k + 1] == '{') {
+                        has_interp = true;
+                        break;
+                    }
+                }
                 append_token({
-                    .type = TokenType::STRING_LITERAL,
+                    .type = has_interp ? TokenType::INTERP_STRING_LITERAL : TokenType::STRING_LITERAL,
                     .string_literal = {
                         .content = str_from_data_and_length(content_start, content_len)
                     }
@@ -385,8 +392,15 @@ auto tokenize(Str *input, ArenaAllocator *allocator) -> Array<Token> {
                     }
                 }
                 auto string_len = i - begin;
+                bool has_interp = false;
+                for (size_t k = begin; k + 1 < begin + string_len; k++) {
+                    if (str_char_at(input, k) == '$' && str_char_at(input, k + 1) == '{') {
+                        has_interp = true;
+                        break;
+                    }
+                }
                 append_token({
-                    .type = TokenType::STRING_LITERAL,
+                    .type = has_interp ? TokenType::INTERP_STRING_LITERAL : TokenType::STRING_LITERAL,
                     .string_literal = {
                         .content = str_slice(input, begin, string_len)
                     },

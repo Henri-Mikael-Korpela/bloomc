@@ -58,6 +58,7 @@ enum class TokenType : uint8_t {
     KEYWORD_TRUE,
     LESS_THAN,
     STRING_LITERAL,
+    INTERP_STRING_LITERAL,
     TYPE_SEPARATOR,
     VAR_DEF,
 };
@@ -157,7 +158,8 @@ constexpr auto to_string(TokenType type) -> Str {
         case TokenType::RANGE_COUNTED:     return STR("..+");
         case TokenType::RANGE_EXCLUSIVE:   return STR("..<");
         case TokenType::RANGE_INCLUSIVE:   return STR("..=");
-        case TokenType::STRING_LITERAL:    return STR("string_literal");
+        case TokenType::STRING_LITERAL:         return STR("string_literal");
+        case TokenType::INTERP_STRING_LITERAL:  return STR("interp_string_literal");
         case TokenType::TYPE_SEPARATOR:    return STR(":");
         case TokenType::VAR_DEF:           return STR("var_def");
         default:                           return STR("undefined");

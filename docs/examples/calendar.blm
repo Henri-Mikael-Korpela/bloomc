@@ -26,8 +26,7 @@ file_open_for_write :: proc(path: Str) File ->
 file_read_bytes_into_buffer :: proc(file: ^File, target_buffer: []U8) ->
     BUFFER_ELEMENT_TYPE_SIZE :: type_info_of(target_buffer[0]).size_in_bytes
 
-    buffer_raw := ^CVoid(target_buffer)
-    fread(buffer_raw, BUFFER_ELEMENT_TYPE_SIZE, length(target_buffer), file._ptr)
+    fread(^CVoid(target_buffer), BUFFER_ELEMENT_TYPE_SIZE, length(target_buffer), file._ptr)
 
 file_write :: proc(file: ^File, content: []U8) ->
     fwrite(CStr(content), 1, length(content), file._ptr)

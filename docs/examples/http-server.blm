@@ -102,8 +102,9 @@ main :: proc(args: []Str) ->
             """
 
         response_buf := str_builder_create()
+        defer str_builder_destroy(%response_buf)
+
         str_builder_write_str(%response_buf, RESPONSE_CONTENT)
         str_builder_write_str(%response_buf, "Hello, world!")
-        defer str_builder_destroy(%response_buf)
 
         send(client_fd, response_buf.data, response_buf.len, 0)

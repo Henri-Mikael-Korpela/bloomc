@@ -32,15 +32,17 @@ str_builder_destroy :: proc(sb: ^StrBuilder) ->
         free(^CVoid(sb.data))
 
 str_builder_write_str :: proc(sb: ^StrBuilder, value: Str) ->
-    new_len := sb.len + value.length
+    new_len := sb.len + length_in_bytes(value)
     cap := sb.cap
     if cap < new_len ->
         new_cap := new_len * 2
+        // No need to use malloc since realloc can do
+        // malloc also with certain arguments
         new_data := realloc(sb.data, new_cap)
         if new_data not= nil ->
             sb.data = new_data
             sb.cap = new_cap
-    memcpy(sb.data + sb.len, value.data, value.length)
+    memcpy(sb.data + sb.len, value.data, length_in_bytes(value))
     sb.len = new_len
 
 HTTPHeaderName :: enum Str ->

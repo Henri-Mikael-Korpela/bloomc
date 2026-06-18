@@ -424,7 +424,28 @@ auto parse_statement(
                     }
                 }
 
-                if (iter_peek(tokens_iter)->type == TokenType::INTEGER_LITERAL) {
+                if (iter_peek(tokens_iter)->type == TokenType::STRING_LITERAL) {
+                    auto *str_token = iter_next(tokens_iter);
+                    auto *str_node = iter_append(nodes_block_iter, ASTNode {
+                        .type = ASTNodeType::STRING_LITERAL,
+                        .parent = nullptr,
+                        .string_literal = { .value = str_token->string_literal.content },
+                    });
+                    (void)iter_append(nodes_block_iter, ASTNode {
+                        .type = ASTNodeType::VARIABLE_DEFINITION,
+                        .parent = parent_node,
+                        .variable_definition = {
+                            .name = next_token->identifier.content,
+                            .expr = str_node,
+                        },
+                    });
+                    assert(
+                        iter_current(tokens_iter)->type == TokenType::NEWLINE ||
+                        iter_current(tokens_iter)->type == TokenType::END &&
+                        "Expected newline or end token after string constant definition");
+                    (void)iter_next(tokens_iter);
+                }
+                else if (iter_peek(tokens_iter)->type == TokenType::INTEGER_LITERAL) {
                     auto *value_token = iter_next(tokens_iter);
                     if (context->constant_count < 64) {
                         context->constants[context->constant_count++] = {

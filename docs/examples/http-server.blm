@@ -1,6 +1,6 @@
 package henri.http_server
 
-SockAddr :: struct ->
+SocketAddr :: struct ->
     sa_family: Int
     sa_data: ^U8
 
@@ -9,7 +9,7 @@ socket     :: proc(domain: Int, type: Int, protocol: Int) Int -> foreign
 setsockopt :: proc(sockfd: Int, level: Int, optname: Int, optval: ^CVoid, optlen: Int) Int -> foreign
 bind       :: proc(sockfd: Int, addr: ^CVoid, addrlen: Int) Int -> foreign
 listen     :: proc(sockfd: Int, backlog: Int) Int -> foreign
-accept     :: proc(sockfd: Int, addr: ^SockAddr, addrlen: ^CVoid) Int -> foreign
+accept     :: proc(sockfd: Int, addr: ^SocketAddr, addrlen: ^CVoid) Int -> foreign
 recv       :: proc(sockfd: Int, buf: ^CVoid, len: Int, flags: Int) Int -> foreign
 send       :: proc(sockfd: Int, buf: CStr, len: Int, flags: Int) Int -> foreign
 close      :: proc(fd: Int) -> foreign
@@ -46,7 +46,7 @@ main :: proc(args: []Str) ->
 
     print("Listening on http://localhost:8889\n")
 
-    client_addr     := SockAddr{}
+    client_addr     := SocketAddr{}
     client_addr_len := type_info_of(client_addr).size_in_bytes
     recv_buf        := [64]U8{}
 
@@ -59,6 +59,14 @@ main :: proc(args: []Str) ->
         recv(client_fd, recv_buf, 64, 0)
 
         // HTTP/1.1 response: headers + blank line + body (78 bytes total)
-        response := clone_to_cstr("HTTP/1.1 200 OK\r\nContent-Length: 13\r\nContent-Type: text/plain\r\n\r\nHello, world!", context.temp_allocator)
+        RESPONSE_CONTENT :: \
+            """
+            HTTP/1.1 200 OK\r\n
+            Content-Length: 13\r\n
+            Content-Type: text/plain\r\n
+            \r\n
+            Hello, world!
+            """
+        response := clone_to_cstr(RESPONSE_CONTENT, context.temp_allocator)
         send(client_fd, response, 78, 0)
 

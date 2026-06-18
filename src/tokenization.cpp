@@ -23,6 +23,15 @@ static inline auto to_array(AllocatedArrayBlock<Token> *tokens_block) -> Array<T
  * The tokens are stored in an ArenaAllocator for efficient memory management.
  */
 auto tokenize(Str *input, ArenaAllocator *allocator) -> Array<Token> {
+    // Pre-allocate a string content buffer for multiline strings.
+    // Must be allocated BEFORE the tokens array so that shrink_last_allocation
+    // on tokens does not reclaim this memory.
+    char *string_content_buf = reinterpret_cast<char*>(allocator->data + allocator->offset);
+    // Round up to 8-byte alignment so the following Token array is properly aligned.
+    size_t const str_buf_size = (input->length + 7) & ~(size_t)7;
+    allocator->offset += str_buf_size;
+    size_t string_content_offset = 0;
+
     // Allocate initially based on the input string length and
     // shrink the allocation later once the final token count is known
     auto tokens_block = allocate_array<Token>(allocator, input->length);
@@ -278,23 +287,112 @@ auto tokenize(Str *input, ArenaAllocator *allocator) -> Array<Token> {
                     break;
             }
         }
-        else if(c == '"') {
-            // Expect a string literal
-            auto begin = i + 1;
-            while (i + 1 < input->length) {
-                i++;
-                if (str_char_at(input, i) == '"') {
-                    break;
-                }
+        else if (c == '\\') {
+            // Line continuation: \ immediately followed by a newline
+            if (i + 1 < input->length && str_char_at(input, i + 1) == '\n') {
+                i++; // skip '\n'; for loop's i++ will advance past it
+                current_position.line++;
+                current_position.col = COL_BEGIN;
+                // The next line's leading spaces are not at line start
+                // (no NEWLINE token was emitted), so they won't generate
+                // an INDENT token — they just advance col.
             }
-            auto string_len = i - begin;
-            append_token({
-                .type = TokenType::STRING_LITERAL,
-                .string_literal = {
-                    .content = str_slice(input, begin, string_len)
-                },
-            });
-            current_position.col += (string_len + 2); // +2 for the quotes
+        }
+        else if(c == '"') {
+            // Check for triple-quoted multiline string """
+            if (i + 2 < input->length &&
+                str_char_at(input, i + 1) == '"' &&
+                str_char_at(input, i + 2) == '"')
+            {
+                // Base indentation: number of spaces before the opening """
+                size_t const base_indent = current_position.col - 1;
+                size_t j = i + 3; // first char after opening """
+
+                if (j >= input->length || str_char_at(input, j) != '\n') {
+                    eprint("Multiline string opening \"\"\" must be immediately followed by a newline\n");
+                    exit(1);
+                }
+                j++; // skip the newline after """
+                current_position.line++;
+                current_position.col = COL_BEGIN;
+
+                char *content_start = string_content_buf + string_content_offset;
+                size_t content_len = 0;
+                bool found_closing = false;
+
+                while (j < input->length) {
+                    // Strip exactly base_indent leading spaces from this content line
+                    for (size_t si = 0; si < base_indent && j < input->length && str_char_at(input, j) == ' '; si++) {
+                        j++;
+                    }
+
+                    // Check for closing """
+                    if (j + 2 < input->length &&
+                        str_char_at(input, j) == '"' &&
+                        str_char_at(input, j + 1) == '"' &&
+                        str_char_at(input, j + 2) == '"')
+                    {
+                        j += 3; // consume closing """
+                        // Advance j to the newline ending the closing """ line
+                        while (j < input->length && str_char_at(input, j) != '\n') {
+                            j++;
+                        }
+                        // j now points to '\n' (or end of input)
+                        found_closing = true;
+                        break;
+                    }
+
+                    // Copy content of this line (up to the trailing newline)
+                    while (j < input->length && str_char_at(input, j) != '\n') {
+                        string_content_buf[string_content_offset + content_len] = str_char_at(input, j);
+                        content_len++;
+                        j++;
+                    }
+                    // Skip the newline (not part of string content)
+                    if (j < input->length && str_char_at(input, j) == '\n') {
+                        j++;
+                        current_position.line++;
+                        current_position.col = COL_BEGIN;
+                    }
+                }
+
+                if (!found_closing) {
+                    eprint("Multiline string not closed with \"\"\"\n");
+                    exit(1);
+                }
+
+                string_content_offset += content_len;
+
+                append_token({
+                    .type = TokenType::STRING_LITERAL,
+                    .string_literal = {
+                        .content = str_from_data_and_length(content_start, content_len)
+                    }
+                });
+
+                // Leave i so that after the for loop's i++, it points to the '\n'
+                // that follows the closing """ (or stays at end of input).
+                // The '\n' will be processed as a NEWLINE token on the next iteration.
+                i = (j > 0) ? j - 1 : 0;
+            }
+            else {
+                // Regular single-quoted string literal
+                auto begin = i + 1;
+                while (i + 1 < input->length) {
+                    i++;
+                    if (str_char_at(input, i) == '"') {
+                        break;
+                    }
+                }
+                auto string_len = i - begin;
+                append_token({
+                    .type = TokenType::STRING_LITERAL,
+                    .string_literal = {
+                        .content = str_slice(input, begin, string_len)
+                    },
+                });
+                current_position.col += (string_len + 2); // +2 for the quotes
+            }
         }
         else if (c == '<') {
             append_token_of_type(TokenType::LESS_THAN);

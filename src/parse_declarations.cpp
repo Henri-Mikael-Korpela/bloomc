@@ -497,6 +497,9 @@ auto parse_proc_call_arguments(
             .type = ASTNodeType::UNKNOWN,
             .parent = proc_call_node,
         });
+        // Record where intermediate nodes (e.g. from binary expressions) will start,
+        // so we can reclaim them after copying the result into the arg_slot.
+        size_t const pos_after_slot = nodes_block_iter->current_index;
 
         auto left_result = parse_additive(tok);
         if (!is_ok(&left_result)) { append(errors, left_result.err); return false; }
@@ -521,12 +524,16 @@ auto parse_proc_call_arguments(
                     operands_iter->elements.data + ops_begin, 2
                 ),
             };
+            // Reclaim any intermediate nodes appended by parse_additive calls.
+            nodes_block_iter->current_index = pos_after_slot;
             return true;
         }
 
         if (left.type == BinaryOperandType::EXPR_NODE) {
             *arg_slot = *left.expr_node;
             arg_slot->parent = proc_call_node;
+            // Reclaim any intermediate nodes appended by parse_additive.
+            nodes_block_iter->current_index = pos_after_slot;
         }
         else {
             switch (left.type) {

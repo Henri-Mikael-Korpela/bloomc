@@ -125,7 +125,7 @@
       "patterns": [
         {
           "name": "keyword.control.bloom",
-          "match": "\\b(and|break|else|for|if|in|pass|return)\\b"
+          "match": "\\b(and|break|else|for|if|in|not|pass|return)\\b"
         },
         {
           "name": "keyword.other.bloom",
@@ -134,6 +134,10 @@
         {
           "name": "constant.language.boolean.bloom",
           "match": "\\b(true|false)\\b"
+        },
+        {
+          "name": "constant.language.null.bloom",
+          "match": "\\bnil\\b"
         }
       ]
     },

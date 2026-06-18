@@ -45,7 +45,7 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
     Str emitted_slice_return_types[16];
     size_t emitted_slice_return_type_count = 0;
 
-    enum class VarKind : uint8_t { INT, BOOL, BLOOM_STR, BLOOM_CHAR, SIZE_T, STRUCT, PTR, PTR_STRUCT, SLICE_U8 };
+    enum class VarKind : uint8_t { INT, BOOL, BLOOM_STR, BLOOM_CHAR, SIZE_T, STRUCT, PTR, PTR_STRUCT, SLICE_U8, DYN_ARRAY };
     struct VarEntry {
         Str name;
         VarKind kind;
@@ -402,6 +402,9 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
         PUSH_STR("})");
     };
 
+    // Forward-declare so emit_proc_call_args can call emit_expression for binary-op args.
+    std::function<void(ASTNode *)> emit_expression;
+
     std::function<void(Array<ASTNode>*, Str)> emit_proc_call_args = [&](Array<ASTNode> *arguments, Str callee_name) {
         bool const wrap_strings = is_user_proc(callee_name) || callee_name == "clone_to_cstr";
         for (size_t i = 0; i < arguments->length; i++) {
@@ -634,6 +637,12 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
                     PUSH_STR("}");
                     break;
                 }
+                case ASTNodeType::BINARY_ADD:
+                case ASTNodeType::BINARY_SUB:
+                case ASTNodeType::BINARY_MUL:
+                case ASTNodeType::BINARY_DIV:
+                    emit_expression(arg);
+                    break;
                 default:
                     assert(false && "Unsupported argument type in emit_proc_call_args");
             }
@@ -644,7 +653,7 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
     // can call each other (EXPR_NODE operands recursively call emit_expression).
     std::function<void(BinaryOperand const *)> emit_binary_operand;
 
-    auto emit_expression = [&](ASTNode *expr) {
+    emit_expression = [&](ASTNode *expr) {
         switch (expr->type) {
             case ASTNodeType::INTEGER_LITERAL:
                 PUSH_INT(expr->integer_literal.value.value);
@@ -2017,6 +2026,72 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
                                     push_tabs();
                                     PUSH_STR("}\n");
                                 }
+                                else if (stmt->proc_call.caller_identifier == "append" &&
+                                         stmt->proc_call.arguments.length == 2 &&
+                                         stmt->proc_call.arguments.data[0].type == ASTNodeType::IDENTIFIER &&
+                                         lookup_var_kind(stmt->proc_call.arguments.data[0].identifier) == VarKind::DYN_ARRAY)
+                                {
+                                    Str const arrname = stmt->proc_call.arguments.data[0].identifier;
+                                    // Find element type from slice_vars
+                                    Str elem_type = {};
+                                    for (size_t si = 0; si < slice_var_count; si++) {
+                                        if (slice_vars[si].name.length == arrname.length &&
+                                            strncmp(slice_vars[si].name.data, arrname.data, arrname.length) == 0)
+                                        {
+                                            elem_type = slice_vars[si].element_type;
+                                            break;
+                                        }
+                                    }
+                                    bool const is_u8 = elem_type == "U8";
+                                    char const *c_elem = "int";
+                                    if (is_u8) { c_elem = "uint8_t"; }
+                                    push_tabs();
+                                    PUSH_STR("if (__bloom_");
+                                    PUSH_STR(arrname);
+                                    PUSH_STR("_len >= __bloom_");
+                                    PUSH_STR(arrname);
+                                    PUSH_STR("_cap) {\n");
+                                    push_tabs();
+                                    PUSH_STR("\tif (__bloom_");
+                                    PUSH_STR(arrname);
+                                    PUSH_STR("_cap == 0) { __bloom_");
+                                    PUSH_STR(arrname);
+                                    PUSH_STR("_cap = 8; }\n");
+                                    push_tabs();
+                                    PUSH_STR("\telse { __bloom_");
+                                    PUSH_STR(arrname);
+                                    PUSH_STR("_cap = __bloom_");
+                                    PUSH_STR(arrname);
+                                    PUSH_STR("_cap * 2; }\n");
+                                    push_tabs();
+                                    PUSH_STR("\t__bloom_");
+                                    PUSH_STR(arrname);
+                                    PUSH_STR("_data = (");
+                                    PUSH_STR(c_elem);
+                                    PUSH_STR(" *)realloc(__bloom_");
+                                    PUSH_STR(arrname);
+                                    PUSH_STR("_data, __bloom_");
+                                    PUSH_STR(arrname);
+                                    PUSH_STR("_cap * sizeof(");
+                                    PUSH_STR(c_elem);
+                                    PUSH_STR("));\n");
+                                    push_tabs();
+                                    PUSH_STR("}\n");
+                                    push_tabs();
+                                    PUSH_STR("__bloom_");
+                                    PUSH_STR(arrname);
+                                    PUSH_STR("_data[__bloom_");
+                                    PUSH_STR(arrname);
+                                    PUSH_STR("_len++] = ");
+                                    auto *val_arg = &stmt->proc_call.arguments.data[1];
+                                    if (val_arg->type == ASTNodeType::INTEGER_LITERAL) {
+                                        PUSH_INT(val_arg->integer_literal.value.value);
+                                    }
+                                    else if (val_arg->type == ASTNodeType::IDENTIFIER) {
+                                        PUSH_STR(val_arg->identifier);
+                                    }
+                                    PUSH_STR(";\n");
+                                }
                                 else if (stmt->proc_call.caller_identifier == "free" &&
                                          stmt->proc_call.arguments.length == 1 &&
                                          stmt->proc_call.arguments.data[0].type == ASTNodeType::IDENTIFIER &&
@@ -2352,7 +2427,12 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
                                 }
                                 if (ret_type != nullptr && ret_type->is_pointer) {
                                     register_var(stmt->variable_definition.name, VarKind::PTR);
-                                    PUSH_STR(ret_type->name);
+                                    if (ret_type->name == "U8") {
+                                        PUSH_STR("uint8_t");
+                                    }
+                                    else {
+                                        PUSH_STR(ret_type->name);
+                                    }
                                     PUSH_STR(" *");
                                     PUSH_STR(stmt->variable_definition.name);
                                     PUSH_STR(" = ");
@@ -2459,6 +2539,30 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
                                 PUSH_STR("_len = ");
                                 PUSH_STR(varname);
                                 PUSH_STR(".length;\n");
+                                break;
+                            }
+                            if (expr->type == ASTNodeType::MAKE_DYNAMIC_ARRAY) {
+                                Str const varname = stmt->variable_definition.name;
+                                Str elem_type = expr->make_dynamic_array.element_type;
+                                bool const is_u8 = elem_type == "U8";
+                                char const *c_elem = "int";
+                                if (is_u8) { c_elem = "uint8_t"; }
+                                if (slice_var_count < 32) {
+                                    slice_vars[slice_var_count++] = { .name = varname, .element_type = elem_type };
+                                }
+                                register_var(varname, VarKind::DYN_ARRAY);
+                                PUSH_STR(c_elem);
+                                PUSH_STR(" *__bloom_");
+                                PUSH_STR(varname);
+                                PUSH_STR("_data = NULL;\n");
+                                push_tabs();
+                                PUSH_STR("size_t __bloom_");
+                                PUSH_STR(varname);
+                                PUSH_STR("_len = 0;\n");
+                                push_tabs();
+                                PUSH_STR("size_t __bloom_");
+                                PUSH_STR(varname);
+                                PUSH_STR("_cap = 0;\n");
                                 break;
                             }
                             if (expr->type == ASTNodeType::PROC_CALL &&
@@ -3061,6 +3165,10 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
                                 return {};
                             };
                             auto emit_cond_op = [&](ConditionOperand const *operand) {
+                                if (operand->is_nil) {
+                                    PUSH_STR("NULL");
+                                    return;
+                                }
                                 if (operand->is_enum_shorthand) {
                                     PUSH_STR("__bloom_");
                                     PUSH_STR(operand->enum_shorthand.enum_type_name);
@@ -3113,6 +3221,16 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
                                         PUSH_INT(operand->array_access.index);
                                         PUSH_STR("]");
                                     }
+                                }
+                                else if (operand->is_member_access) {
+                                    PUSH_STR(operand->member_access.object_name);
+                                    if (is_pointer_var(operand->member_access.object_name)) {
+                                        PUSH_STR("->");
+                                    }
+                                    else {
+                                        PUSH_STR(".");
+                                    }
+                                    PUSH_STR(operand->member_access.field_name);
                                 }
                                 else if (operand->is_string_literal) {
                                     PUSH_STR('"');

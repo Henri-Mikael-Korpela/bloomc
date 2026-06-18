@@ -35,6 +35,7 @@ enum class ASTNodeType : uint8_t {
     FOR_RANGE_LOOP,
     IF_ELSE,
     MAKE_SLICE,
+    MAKE_DYNAMIC_ARRAY,
     SCOPE,
     IDENTIFIER,
     INTEGER_LITERAL,
@@ -79,6 +80,8 @@ struct ConditionOperand {
     bool is_proc_call;
     bool is_array_access;
     bool is_string_literal;
+    bool is_nil;
+    bool is_member_access;
     union {
         Str identifier;
         IntegerLiteralASTNode integer_literal;
@@ -95,6 +98,10 @@ struct ConditionOperand {
             int64_t index;
         } array_access;
         Str string_literal;
+        struct {
+            Str object_name;
+            Str field_name;
+        } member_access;
     };
 };
 
@@ -334,6 +341,9 @@ struct ASTNode {
             bool has_explicit_allocator;
             Str allocator_identifier;
         } make_slice;
+        struct {
+            Str element_type;
+        } make_dynamic_array;
     };
 };
 
@@ -371,6 +381,7 @@ constexpr auto to_string(ASTNodeType type) -> Str {
         case ASTNodeType::FOR_LOOP:            return STR("for_loop");
         case ASTNodeType::FOR_RANGE_LOOP:      return STR("for_range_loop");
         case ASTNodeType::MAKE_SLICE:          return STR("make_slice");
+        case ASTNodeType::MAKE_DYNAMIC_ARRAY:  return STR("make_dynamic_array");
         case ASTNodeType::SCOPE:               return STR("scope");
         case ASTNodeType::IF_ELSE:             return STR("if_else");
         case ASTNodeType::IDENTIFIER:          return STR("identifier");

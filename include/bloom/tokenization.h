@@ -28,6 +28,9 @@ enum class TokenType : uint8_t {
     ARROW,
     CONST_DEF,
     KEYWORD_DEFER,
+    KEYWORD_DYNAMIC,
+    KEYWORD_NIL,
+    NOT_EQUAL,
     RANGE,
     RANGE_COUNTED,
     RANGE_EXCLUSIVE,
@@ -67,6 +70,9 @@ constexpr auto TOKEN_KEYWORD_AND     = "and";
 constexpr auto TOKEN_KEYWORD_CVOID   = "CVoid";
 constexpr auto TOKEN_KEYWORD_BREAK   = "break";
 constexpr auto TOKEN_KEYWORD_DEFER   = "defer";
+constexpr auto TOKEN_KEYWORD_DYNAMIC = "dynamic";
+constexpr auto TOKEN_KEYWORD_NIL     = "nil";
+constexpr auto TOKEN_KEYWORD_NOT     = "not";
 constexpr auto TOKEN_KEYWORD_CONST   = "const";
 constexpr auto TOKEN_KEYWORD_ELSE    = "else";
 constexpr auto TOKEN_KEYWORD_ENUM    = "enum";
@@ -126,6 +132,9 @@ constexpr auto to_string(TokenType type) -> Str {
         case TokenType::COMMA:             return STR(",");
         case TokenType::CONST_DEF:         return STR("const_def");
         case TokenType::KEYWORD_DEFER:     return STR(TOKEN_KEYWORD_DEFER);
+        case TokenType::KEYWORD_DYNAMIC:   return STR(TOKEN_KEYWORD_DYNAMIC);
+        case TokenType::KEYWORD_NIL:       return STR(TOKEN_KEYWORD_NIL);
+        case TokenType::NOT_EQUAL:         return STR("not=");
         case TokenType::DOT:               return STR(".");
         case TokenType::END:               return STR("end");
         case TokenType::EQUAL_EQUAL:       return STR("==");

@@ -178,7 +178,7 @@ auto parse_statement(
             case TokenType::VAR_DEF: {
                 (void)iter_next(tokens_iter); // Consume VAR_DEF token
 
-                // Special handling for make([]U8, size) or make([]U8, size, allocator)
+                // Special handling for make([]U8, size), make([]U8, size, allocator), or make([dynamic]Int, 0)
                 if (tokens_iter->current_index < tokens_iter->elements.length &&
                     iter_peek(tokens_iter)->type == TokenType::IDENTIFIER &&
                     iter_peek(tokens_iter)->identifier.content == "make" &&
@@ -187,10 +187,14 @@ auto parse_statement(
                 {
                     (void)iter_next(tokens_iter); // consume 'make'
                     (void)iter_next(tokens_iter); // consume '('
-                    // Consume the type: []U8
                     auto *bopen = iter_next(tokens_iter);
                     if (bopen->type != TokenType::BRACKET_OPEN) {
                         append(errors, PARSE_ERROR_CREATE(UNEXPECTED_TOKEN, bopen)); return false;
+                    }
+                    // Check for [dynamic] vs []
+                    bool is_dynamic = iter_peek(tokens_iter)->type == TokenType::KEYWORD_DYNAMIC;
+                    if (is_dynamic) {
+                        (void)iter_next(tokens_iter); // consume 'dynamic'
                     }
                     auto *bclose = iter_next(tokens_iter);
                     if (bclose->type != TokenType::BRACKET_CLOSE) {
@@ -203,35 +207,50 @@ auto parse_statement(
                     if (expect_token_or_append_error(tokens_iter, TokenType::COMMA, errors) == nullptr) {
                         return false;
                     }
-                    // Parse size argument
                     ASTNode make_node = {};
-                    make_node.type = ASTNodeType::MAKE_SLICE;
                     make_node.parent = nullptr;
-                    auto *size_tok = iter_next(tokens_iter);
-                    if (size_tok->type == TokenType::INTEGER_LITERAL) {
-                        make_node.make_slice.size_is_literal = true;
-                        make_node.make_slice.size_literal = size_tok->integer_literal.value;
-                    }
-                    else if (size_tok->type == TokenType::IDENTIFIER) {
-                        make_node.make_slice.size_is_literal = false;
-                        make_node.make_slice.size_identifier = size_tok->identifier.content;
+                    if (is_dynamic) {
+                        make_node.type = ASTNodeType::MAKE_DYNAMIC_ARRAY;
+                        make_node.make_dynamic_array.element_type = elem_type->identifier.content;
+                        // Consume and discard initial capacity argument
+                        auto *init_tok = iter_next(tokens_iter);
+                        if (init_tok->type != TokenType::INTEGER_LITERAL && init_tok->type != TokenType::IDENTIFIER) {
+                            append(errors, PARSE_ERROR_CREATE(UNEXPECTED_TOKEN, init_tok)); return false;
+                        }
+                        auto *pclose = iter_next(tokens_iter);
+                        if (pclose->type != TokenType::PARENTHESIS_CLOSE) {
+                            append(errors, PARSE_ERROR_CREATE(UNEXPECTED_TOKEN, pclose)); return false;
+                        }
                     }
                     else {
-                        append(errors, PARSE_ERROR_CREATE(UNEXPECTED_TOKEN, size_tok)); return false;
-                    }
-                    // Optional allocator argument
-                    auto *next_sep = iter_next(tokens_iter);
-                    if (next_sep->type == TokenType::COMMA) {
-                        auto *alloc_tok = iter_next(tokens_iter);
-                        if (alloc_tok->type != TokenType::IDENTIFIER) {
-                            append(errors, PARSE_ERROR_CREATE(UNEXPECTED_TOKEN, alloc_tok)); return false;
+                        make_node.type = ASTNodeType::MAKE_SLICE;
+                        // Parse size argument
+                        auto *size_tok = iter_next(tokens_iter);
+                        if (size_tok->type == TokenType::INTEGER_LITERAL) {
+                            make_node.make_slice.size_is_literal = true;
+                            make_node.make_slice.size_literal = size_tok->integer_literal.value;
                         }
-                        make_node.make_slice.has_explicit_allocator = true;
-                        make_node.make_slice.allocator_identifier = alloc_tok->identifier.content;
-                        next_sep = iter_next(tokens_iter); // should be ')'
-                    }
-                    if (next_sep->type != TokenType::PARENTHESIS_CLOSE) {
-                        append(errors, PARSE_ERROR_CREATE(UNEXPECTED_TOKEN, next_sep)); return false;
+                        else if (size_tok->type == TokenType::IDENTIFIER) {
+                            make_node.make_slice.size_is_literal = false;
+                            make_node.make_slice.size_identifier = size_tok->identifier.content;
+                        }
+                        else {
+                            append(errors, PARSE_ERROR_CREATE(UNEXPECTED_TOKEN, size_tok)); return false;
+                        }
+                        // Optional allocator argument
+                        auto *next_sep = iter_next(tokens_iter);
+                        if (next_sep->type == TokenType::COMMA) {
+                            auto *alloc_tok = iter_next(tokens_iter);
+                            if (alloc_tok->type != TokenType::IDENTIFIER) {
+                                append(errors, PARSE_ERROR_CREATE(UNEXPECTED_TOKEN, alloc_tok)); return false;
+                            }
+                            make_node.make_slice.has_explicit_allocator = true;
+                            make_node.make_slice.allocator_identifier = alloc_tok->identifier.content;
+                            next_sep = iter_next(tokens_iter); // should be ')'
+                        }
+                        if (next_sep->type != TokenType::PARENTHESIS_CLOSE) {
+                            append(errors, PARSE_ERROR_CREATE(UNEXPECTED_TOKEN, next_sep)); return false;
+                        }
                     }
                     auto *nl = iter_next(tokens_iter);
                     if (nl->type != TokenType::NEWLINE && nl->type != TokenType::END) {
@@ -1247,6 +1266,19 @@ auto parse_statement(
                         }
                     }
                     else if (tokens_iter->current_index < tokens_iter->elements.length &&
+                             iter_peek(tokens_iter)->type == TokenType::DOT)
+                    {
+                        (void)iter_next(tokens_iter); // consume .
+                        auto *field_tok = iter_next(tokens_iter);
+                        if (field_tok->type != TokenType::IDENTIFIER) {
+                            append(errors, PARSE_ERROR_CREATE(UNEXPECTED_TOKEN, field_tok));
+                            return false;
+                        }
+                        out->is_member_access = true;
+                        out->member_access.object_name = token->identifier.content;
+                        out->member_access.field_name = field_tok->identifier.content;
+                    }
+                    else if (tokens_iter->current_index < tokens_iter->elements.length &&
                              iter_peek(tokens_iter)->type == TokenType::BRACKET_OPEN)
                     {
                         (void)iter_next(tokens_iter); // consume [
@@ -1277,6 +1309,9 @@ auto parse_statement(
                     out->is_string_literal = true;
                     out->string_literal = token->string_literal.content;
                     return true;
+                case TokenType::KEYWORD_NIL:
+                    out->is_nil = true;
+                    return true;
                 default:
                     append(errors, PARSE_ERROR_CREATE(UNEXPECTED_TOKEN, token));
                     return false;
@@ -1294,6 +1329,9 @@ auto parse_statement(
         }
         else if (cond_op_tok->type == TokenType::LESS_THAN) {
             comparison_op = cstr_to_str("<");
+        }
+        else if (cond_op_tok->type == TokenType::NOT_EQUAL) {
+            comparison_op = cstr_to_str("!=");
         }
         else {
             append(errors, PARSE_ERROR_CREATE(UNEXPECTED_TOKEN, cond_op_tok));
@@ -1387,6 +1425,9 @@ auto parse_statement(
             }
             else if (and_op_tok->type == TokenType::LESS_THAN) {
                 and_op = cstr_to_str("<");
+            }
+            else if (and_op_tok->type == TokenType::NOT_EQUAL) {
+                and_op = cstr_to_str("!=");
             }
             else {
                 append(errors, PARSE_ERROR_CREATE(UNEXPECTED_TOKEN, and_op_tok));

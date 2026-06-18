@@ -97,6 +97,25 @@ auto tokenize(Str *input, ArenaAllocator *allocator) -> Array<Token> {
                 append_token_of_type(TokenType::KEYWORD_DEFER);
                 continue;
             }
+            if (word == TOKEN_KEYWORD_DYNAMIC) {
+                append_token_of_type(TokenType::KEYWORD_DYNAMIC);
+                continue;
+            }
+            if (word == TOKEN_KEYWORD_NIL) {
+                append_token_of_type(TokenType::KEYWORD_NIL);
+                continue;
+            }
+            if (word == TOKEN_KEYWORD_NOT) {
+                if (i + 1 < input->length && str_char_at(input, i + 1) == '=') {
+                    i++;
+                    current_position.col += 1;
+                    append_token_of_type(TokenType::NOT_EQUAL);
+                }
+                else {
+                    append_token_of_type(TokenType::UNKNOWN);
+                }
+                continue;
+            }
             if (word == TOKEN_KEYWORD_CONST) {
                 append_token_of_type(TokenType::KEYWORD_CONST);
                 continue;

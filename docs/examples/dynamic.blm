@@ -1,0 +1,8 @@
+main :: proc() ->
+    a := make([dynamic]Int, 0)
+    append(a, 2)
+    append(a, 5)
+    append(a, 7)
+
+    for x, i in a ->
+        print("A index {}: {}\n", i, x)

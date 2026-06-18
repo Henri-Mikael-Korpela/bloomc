@@ -4,15 +4,44 @@ SocketAddr :: struct ->
     sa_family: Int
     sa_data: ^U8
 
+// C Standard procedures
+free       :: proc(ptr: ^CVoid) -> foreign
+memcpy     :: proc(dst: ^U8, src: ^CVoid, n: Int) -> foreign
+realloc    :: proc(ptr: ^U8, size: Int) ^U8 -> foreign
+
 // Linux socket API — sys/socket.h, netinet/in.h, unistd.h included automatically
-socket     :: proc(domain: Int, type: Int, protocol: Int) Int -> foreign
-setsockopt :: proc(sockfd: Int, level: Int, optname: Int, optval: ^CVoid, optlen: Int) Int -> foreign
-bind       :: proc(sockfd: Int, addr: ^CVoid, addrlen: Int) Int -> foreign
-listen     :: proc(sockfd: Int, backlog: Int) Int -> foreign
 accept     :: proc(sockfd: Int, addr: ^SocketAddr, addrlen: ^CVoid) Int -> foreign
-recv       :: proc(sockfd: Int, buf: ^CVoid, len: Int, flags: Int) Int -> foreign
-send       :: proc(sockfd: Int, buf: CStr, len: Int, flags: Int) Int -> foreign
+bind       :: proc(sockfd: Int, addr: ^CVoid, addrlen: Int) Int -> foreign
 close      :: proc(fd: Int) -> foreign
+listen     :: proc(sockfd: Int, backlog: Int) Int -> foreign
+recv       :: proc(sockfd: Int, buf: ^CVoid, len: Int, flags: Int) Int -> foreign
+socket     :: proc(domain: Int, type: Int, protocol: Int) Int -> foreign
+send       :: proc(sockfd: Int, buf: ^U8, len: Int, flags: Int) Int -> foreign
+setsockopt :: proc(sockfd: Int, level: Int, optname: Int, optval: ^CVoid, optlen: Int) Int -> foreign
+
+StrBuilder :: struct ->
+    data: ^U8
+    len: Int
+    cap: Int
+
+str_builder_create :: proc() StrBuilder ->
+    return StrBuilder{}
+
+str_builder_destroy :: proc(sb: ^StrBuilder) ->
+    if sb.data not= nil ->
+        free(^CVoid(sb.data))
+
+str_builder_write_str :: proc(sb: ^StrBuilder, value: Str) ->
+    new_len := sb.len + value.length
+    cap := sb.cap
+    if cap < new_len ->
+        new_cap := new_len * 2
+        new_data := realloc(sb.data, new_cap)
+        if new_data not= nil ->
+            sb.data = new_data
+            sb.cap = new_cap
+    memcpy(sb.data + sb.len, value.data, value.length)
+    sb.len = new_len
 
 HTTPHeaderName :: enum Str ->
     CONTENT_LENGTH = "Content-Length"
@@ -62,15 +91,17 @@ main :: proc(args: []Str) ->
 
         recv(client_fd, recv_buf, 64, 0)
 
-        // HTTP/1.1 response: headers + blank line + body (78 bytes total)
         RESPONSE_CONTENT :: \
             """
             HTTP/1.1 200 OK\r\n
             ${HTTPHeaderName.CONTENT_LENGTH}: 13\r\n
             ${HTTPHeaderName.CONTENT_TYPE}: text/plain\r\n
             \r\n
-            Hello, world!
             """
-        response := clone_to_cstr(RESPONSE_CONTENT, context.temp_allocator)
-        send(client_fd, response, 78, 0)
 
+        response_buf := str_builder_create()
+        str_builder_write_str(%response_buf, RESPONSE_CONTENT)
+        str_builder_write_str(%response_buf, "Hello, world!")
+        defer str_builder_destroy(%response_buf)
+
+        send(client_fd, response_buf.data, response_buf.len, 0)

@@ -452,6 +452,61 @@ main :: proc(args: []Str) ->
 
 All strings allocated inside `get_event` live in the arena. They remain valid until `arena_allocator_destroy` runs, which happens before `free` releases the backing buffer.
 
+## Dynamic arrays
+
+A dynamic array is a resizable sequence of elements. Unlike fixed-size arrays, its length grows as elements are appended.
+
+### Creation
+
+`make` with the `[dynamic]Type` syntax allocates a dynamic array starting with zero elements:
+
+```
+a := make([dynamic]Int, 0)
+```
+
+The second argument is the initial length and must be `0`.
+
+### Appending elements
+
+`append` adds a single element to the end of the dynamic array:
+
+```
+append(a, 2)
+append(a, 5)
+append(a, 7)
+```
+
+### Iteration
+
+Dynamic arrays can be iterated with a `for … in` loop. The loop binds the element and its index:
+
+```
+for x, i in a ->
+    print("A index {}: {}\n", i, x)
+```
+
+### Transpilation
+
+A dynamic array variable `a` of element type `Int` is transpiled to three C variables:
+
+```
+int *__bloom_a_data = NULL;   // pointer to heap-allocated element storage
+size_t __bloom_a_len = 0;     // number of elements currently stored
+size_t __bloom_a_cap = 0;     // number of elements the allocation can hold
+```
+
+Each `append` call grows the allocation when needed (doubling capacity) and writes the new element:
+
+```
+append(a, 2)   →   if (__bloom_a_len >= __bloom_a_cap) {
+                       __bloom_a_cap = __bloom_a_cap == 0 ? 8 : __bloom_a_cap * 2;
+                       __bloom_a_data = realloc(__bloom_a_data, __bloom_a_cap * sizeof(int));
+                   }
+                   __bloom_a_data[__bloom_a_len++] = 2;
+```
+
+A `for … in` loop over a dynamic array iterates using the same `__bloom_a_data` / `__bloom_a_len` pair as slice iteration.
+
 ## Enumerations
 
 An enumeration (enum) defines a named integer type whose values are restricted to a fixed set of named members. Members are ordered starting from 0.

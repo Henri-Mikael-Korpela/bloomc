@@ -1,7 +1,7 @@
 // Simple calendar keeping app
 fclose :: proc(stream: ^FILE) -> foreign
 fopen  :: proc(path: CStr, mode: CStr) ^FILE -> foreign
-fread  :: proc(buffer: RawPtr, size: Int, count: Int, stream: ^FILE) Int -> foreign
+fread  :: proc(buffer: ^CVoid, size: Int, count: Int, stream: ^FILE) Int -> foreign
 fwrite :: proc(content: CStr, size: Int, count: Int, stream: ^FILE) Int -> foreign
 
 File :: struct ->
@@ -26,7 +26,7 @@ file_open_for_write :: proc(path: Str) File ->
 file_read_bytes_into_buffer :: proc(file: ^File, target_buffer: []U8) ->
     BUFFER_ELEMENT_TYPE_SIZE :: type_info_of(target_buffer[0]).size_in_bytes
 
-    buffer_raw := RawPtr(target_buffer)
+    buffer_raw := ^CVoid(target_buffer)
     fread(buffer_raw, BUFFER_ELEMENT_TYPE_SIZE, length(target_buffer), file._ptr)
 
 file_write :: proc(file: ^File, content: []U8) ->

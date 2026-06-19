@@ -830,12 +830,24 @@ auto parse_statement(
             }
 
             if (op_token->type == TokenType::KEYWORD_IN) {
-                if (iter_peek(tokens_iter)->type == TokenType::INTEGER_LITERAL) {
+                TokenType const start_tok_type = iter_peek(tokens_iter)->type;
+                if (start_tok_type == TokenType::INTEGER_LITERAL ||
+                    start_tok_type == TokenType::IDENTIFIER)
+                {
                     auto *start_token = iter_next(tokens_iter);
-                    int64_t range_start = start_token->integer_literal.value;
+                    int64_t range_start = 0;
+                    Str range_start_identifier = {};
+                    if (start_token->type == TokenType::INTEGER_LITERAL) {
+                        range_start = start_token->integer_literal.value;
+                    }
+                    else {
+                        range_start_identifier = start_token->identifier.content;
+                    }
 
                     auto *range_op_token = iter_next(tokens_iter);
-                    int64_t range_end;
+                    int64_t range_end = 0;
+                    Str range_end_identifier = {};
+                    bool range_end_inclusive = false;
                     Str range_count_identifier = {};
                     if (range_op_token->type == TokenType::RANGE_COUNTED) {
                         auto *count_token = iter_next(tokens_iter);
@@ -844,7 +856,6 @@ auto parse_statement(
                         }
                         else if (count_token->type == TokenType::IDENTIFIER) {
                             range_count_identifier = count_token->identifier.content;
-                            range_end = 0;
                         }
                         else {
                             append(errors, ParseError {
@@ -857,14 +868,41 @@ auto parse_statement(
                         }
                     }
                     else if (range_op_token->type == TokenType::RANGE_EXCLUSIVE) {
-                        auto *end_token = expect_token_or_append_error(tokens_iter, TokenType::INTEGER_LITERAL, errors);
-                        if (end_token == nullptr) { return false; }
-                        range_end = end_token->integer_literal.value;
+                        auto *end_token = iter_next(tokens_iter);
+                        if (end_token->type == TokenType::INTEGER_LITERAL) {
+                            range_end = end_token->integer_literal.value;
+                        }
+                        else if (end_token->type == TokenType::IDENTIFIER) {
+                            range_end_identifier = end_token->identifier.content;
+                        }
+                        else {
+                            append(errors, ParseError {
+                                .code = ParseErrorCode::UNEXPECTED_TOKEN,
+                                .position = end_token->position,
+                                .src_code_line = __LINE__,
+                                .token_type = end_token->type,
+                            });
+                            return false;
+                        }
                     }
                     else if (range_op_token->type == TokenType::RANGE_INCLUSIVE) {
-                        auto *end_token = expect_token_or_append_error(tokens_iter, TokenType::INTEGER_LITERAL, errors);
-                        if (end_token == nullptr) { return false; }
-                        range_end = end_token->integer_literal.value + 1;
+                        auto *end_token = iter_next(tokens_iter);
+                        if (end_token->type == TokenType::INTEGER_LITERAL) {
+                            range_end = end_token->integer_literal.value + 1;
+                        }
+                        else if (end_token->type == TokenType::IDENTIFIER) {
+                            range_end_identifier = end_token->identifier.content;
+                            range_end_inclusive = true;
+                        }
+                        else {
+                            append(errors, ParseError {
+                                .code = ParseErrorCode::UNEXPECTED_TOKEN,
+                                .position = end_token->position,
+                                .src_code_line = __LINE__,
+                                .token_type = end_token->type,
+                            });
+                            return false;
+                        }
                     }
                     else {
                         append(errors, ParseError {
@@ -885,6 +923,9 @@ auto parse_statement(
                             .element_name = elem_token->identifier.content,
                             .range_start = range_start,
                             .range_end = range_end,
+                            .range_start_identifier = range_start_identifier,
+                            .range_end_identifier = range_end_identifier,
+                            .range_end_inclusive = range_end_inclusive,
                             .range_count_identifier = range_count_identifier,
                             .body = Array<ASTNode>(
                                 nodes_block_iter->elements.data + nodes_block_iter->current_index + 1,

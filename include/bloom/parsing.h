@@ -131,10 +131,12 @@ struct BinaryOperand {
         struct {
             Str variable_name;
             int64_t index;
+            Str index_identifier;
         } array_access;
         struct {
             Str object_name;
             Str field_name;
+            Str field2_name;
         } member_access;
         struct {
             Str variable_name;
@@ -153,6 +155,7 @@ struct ProcParameterASTNode {
     bool is_pointer;
     bool is_slice;
     bool is_array;
+    bool is_dynamic_array;
     bool has_default_context_allocator;  // param := context.allocator
     int64_t array_length;
 };
@@ -172,6 +175,7 @@ struct ASTNode {
         struct {
             Str variable_name;
             int64_t index;
+            Str index_identifier;
         } array_access;
         struct {
             Str element_type;
@@ -249,6 +253,9 @@ struct ASTNode {
             Str element_name;
             int64_t range_start;
             int64_t range_end;
+            Str range_start_identifier;
+            Str range_end_identifier;
+            bool range_end_inclusive;
             Str range_count_identifier;
             Array<ASTNode> body;
         } for_range_loop;
@@ -266,6 +273,7 @@ struct ASTNode {
         struct {
             Str object_name;
             Str field_name;
+            Str field2_name;
         } member_access;
         struct {
             Str object_name;

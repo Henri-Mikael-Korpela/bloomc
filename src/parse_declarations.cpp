@@ -50,11 +50,28 @@ auto parse_proc_call_arguments(
                         .token_type = field_tok->type,
                     });
                 }
+                Str field2_name = {};
+                if (tokens_iter->current_index < tokens_iter->elements.length &&
+                    iter_peek(tokens_iter)->type == TokenType::DOT)
+                {
+                    (void)iter_next(tokens_iter); // consume second .
+                    auto *field2_tok = iter_next(tokens_iter);
+                    if (field2_tok->type != TokenType::IDENTIFIER) {
+                        return err<BinaryOperand, ParseError>(ParseError {
+                            .code = ParseErrorCode::UNEXPECTED_TOKEN,
+                            .position = field2_tok->position,
+                            .src_code_line = __LINE__,
+                            .token_type = field2_tok->type,
+                        });
+                    }
+                    field2_name = field2_tok->identifier.content;
+                }
                 return ok<BinaryOperand, ParseError>(BinaryOperand {
                     .type = BinaryOperandType::MEMBER_ACCESS,
                     .member_access = {
                         .object_name = token->identifier.content,
                         .field_name = field_tok->identifier.content,
+                        .field2_name = field2_name,
                     },
                 });
             }
@@ -379,6 +396,24 @@ auto parse_proc_call_arguments(
                         },
                     });
                 }
+                if (idx_tok->type == TokenType::IDENTIFIER) {
+                    auto *cl_tok = iter_next(tokens_iter);
+                    if (cl_tok->type != TokenType::BRACKET_CLOSE) {
+                        return err<BinaryOperand, ParseError>(ParseError {
+                            .code = ParseErrorCode::UNEXPECTED_TOKEN,
+                            .position = cl_tok->position,
+                            .src_code_line = __LINE__,
+                            .token_type = cl_tok->type,
+                        });
+                    }
+                    return ok<BinaryOperand, ParseError>(BinaryOperand {
+                        .type = BinaryOperandType::ARRAY_ACCESS,
+                        .array_access = {
+                            .variable_name = token->identifier.content,
+                            .index_identifier = idx_tok->identifier.content,
+                        },
+                    });
+                }
                 return err<BinaryOperand, ParseError>(ParseError {
                     .code = ParseErrorCode::UNEXPECTED_TOKEN,
                     .position = idx_tok->position,
@@ -545,11 +580,13 @@ auto parse_proc_call_arguments(
                     arg_slot->type = ASTNodeType::MEMBER_ACCESS;
                     arg_slot->member_access.object_name = left.member_access.object_name;
                     arg_slot->member_access.field_name = left.member_access.field_name;
+                    arg_slot->member_access.field2_name = left.member_access.field2_name;
                     break;
                 case BinaryOperandType::ARRAY_ACCESS:
                     arg_slot->type = ASTNodeType::ARRAY_ACCESS;
                     arg_slot->array_access.variable_name = left.array_access.variable_name;
                     arg_slot->array_access.index = left.array_access.index;
+                    arg_slot->array_access.index_identifier = left.array_access.index_identifier;
                     break;
                 case BinaryOperandType::DEREF:
                     arg_slot->type = ASTNodeType::DEREF;

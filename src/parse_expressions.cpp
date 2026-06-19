@@ -1486,6 +1486,7 @@ auto parse_expression(
                 }
                 auto *maybe_caret = iter_next(tokens_iter);
                 bool field_is_ptr = false;
+                bool field_is_dynamic_array = false;
                 Str field_type_name = {};
                 if (maybe_caret->type == TokenType::CARET) {
                     field_is_ptr = true;
@@ -1500,6 +1501,22 @@ auto parse_expression(
                         field_type_name = type_token->identifier.content;
                     }
                 }
+                else if (maybe_caret->type == TokenType::BRACKET_OPEN) {
+                    auto *dynamic_kw = iter_next(tokens_iter);
+                    if (dynamic_kw->type != TokenType::KEYWORD_DYNAMIC) {
+                        return err<ASTNode, ParseError>(PARSE_ERROR_CREATE(UNEXPECTED_TOKEN, dynamic_kw));
+                    }
+                    auto *bracket_close = iter_next(tokens_iter);
+                    if (bracket_close->type != TokenType::BRACKET_CLOSE) {
+                        return err<ASTNode, ParseError>(PARSE_ERROR_CREATE(UNEXPECTED_TOKEN, bracket_close));
+                    }
+                    auto *type_token = iter_next(tokens_iter);
+                    if (type_token->type != TokenType::IDENTIFIER) {
+                        return err<ASTNode, ParseError>(PARSE_ERROR_CREATE(UNEXPECTED_TOKEN, type_token));
+                    }
+                    field_is_dynamic_array = true;
+                    field_type_name = type_token->identifier.content;
+                }
                 else if (maybe_caret->type != TokenType::IDENTIFIER) {
                     return err<ASTNode, ParseError>(PARSE_ERROR_CREATE(UNEXPECTED_TOKEN, maybe_caret));
                 }
@@ -1510,6 +1527,7 @@ auto parse_expression(
                     .name = field_name_token->identifier.content,
                     .type_name = field_type_name,
                     .is_pointer = field_is_ptr,
+                    .is_dynamic_array = field_is_dynamic_array,
                 });
                 if (tokens_iter->current_index < tokens_iter->elements.length) {
                     auto *nl = iter_peek(tokens_iter);

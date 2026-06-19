@@ -5,9 +5,7 @@ SocketAddr :: struct ->
     sa_data: ^U8
 
 // C Standard procedures
-free       :: proc(ptr: ^CVoid) -> foreign
-memcpy     :: proc(dst: ^U8, src: ^CVoid, n: Int) -> foreign
-realloc    :: proc(ptr: ^U8, size: Int) ^U8 -> foreign
+free :: proc(ptr: ^CVoid) -> foreign
 
 // Linux socket API — sys/socket.h, netinet/in.h, unistd.h included automatically
 accept     :: proc(sockfd: Int, addr: ^SocketAddr, addrlen: ^CVoid) Int -> foreign
@@ -20,30 +18,18 @@ send       :: proc(sockfd: Int, buf: ^U8, len: Int, flags: Int) Int -> foreign
 setsockopt :: proc(sockfd: Int, level: Int, optname: Int, optval: ^CVoid, optlen: Int) Int -> foreign
 
 StrBuilder :: struct ->
-    data: ^U8
-    len: Int
-    cap: Int
+    buf: [dynamic]U8
 
 str_builder_create :: proc() StrBuilder ->
     return StrBuilder{}
 
 str_builder_destroy :: proc(sb: ^StrBuilder) ->
-    if sb.data not= nil ->
-        free(^CVoid(sb.data))
+    free(^CVoid(sb.buf.data))
 
 str_builder_write_str :: proc(sb: ^StrBuilder, value: Str) ->
-    new_len := sb.len + length_in_bytes(value)
-    cap := sb.cap
-    if cap < new_len ->
-        new_cap := new_len * 2
-        // No need to use malloc since realloc can do
-        // malloc also with certain arguments
-        new_data := realloc(sb.data, new_cap)
-        if new_data not= nil ->
-            sb.data = new_data
-            sb.cap = new_cap
-    memcpy(sb.data + sb.len, value.data, length_in_bytes(value))
-    sb.len = new_len
+    n := length_in_bytes(value)
+    for i in 0..<n ->
+        append(sb.buf, value[i])
 
 HTTPHeaderName :: enum Str ->
     CONTENT_LENGTH = "Content-Length"
@@ -107,4 +93,4 @@ main :: proc(args: []Str) ->
         str_builder_write_str(%response_buf, RESPONSE_CONTENT)
         str_builder_write_str(%response_buf, "Hello, world!")
 
-        send(client_fd, response_buf.data, response_buf.len, 0)
+        send(client_fd, response_buf.buf.data, response_buf.buf.len, 0)

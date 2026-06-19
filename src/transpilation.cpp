@@ -91,7 +91,7 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
         return false;
     };
 
-    struct StructFieldDef { Str name; VarKind kind; };
+    struct StructFieldDef { Str name; VarKind kind; bool is_dynamic_array; };
     struct StructDefEntry { Str name; StructFieldDef fields[16]; size_t field_count; };
     StructDefEntry struct_defs[16] = {};
     size_t struct_def_count = 0;
@@ -103,6 +103,10 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
         def->field_count = 0;
         for (size_t i = 0; i < node->struct_def.fields.length && i < 16; i++) {
             auto *field = &node->struct_def.fields.data[i];
+            if (field->is_dynamic_array) {
+                def->fields[def->field_count++] = { .name = field->name, .kind = VarKind::DYN_ARRAY, .is_dynamic_array = true };
+                continue;
+            }
             VarKind kind = VarKind::INT;
             if (field->type_name == "Bool") { kind = VarKind::BOOL; }
             else if (field->type_name == "Str") { kind = VarKind::BLOOM_STR; }
@@ -444,7 +448,13 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
                         }
                         return false;
                     }();
-                    if (is_sv) {
+                    if (arg->array_access.index_identifier.data != nullptr) {
+                        PUSH_STR(arg->array_access.variable_name);
+                        PUSH_STR('[');
+                        PUSH_STR(arg->array_access.index_identifier);
+                        PUSH_STR(']');
+                    }
+                    else if (is_sv) {
                         PUSH_STR("__bloom_");
                         PUSH_STR(arg->array_access.variable_name);
                         PUSH_STR("_data[");
@@ -567,6 +577,13 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
                         PUSH_STR(arg->member_access.object_name);
                         PUSH_STR("_");
                         PUSH_STR(arg->member_access.field_name);
+                    }
+                    else if (arg->member_access.field2_name.data != nullptr) {
+                        PUSH_STR(arg->member_access.object_name);
+                        PUSH_STR(is_pointer_var(arg->member_access.object_name) ? "->" : ".");
+                        PUSH_STR(arg->member_access.field_name);
+                        PUSH_STR(".");
+                        PUSH_STR(arg->member_access.field2_name);
                     }
                     else {
                         PUSH_STR(arg->member_access.object_name);
@@ -887,6 +904,13 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
                     PUSH_STR("_");
                     PUSH_STR(expr->member_access.field_name);
                 }
+                else if (expr->member_access.field2_name.data != nullptr) {
+                    PUSH_STR(expr->member_access.object_name);
+                    PUSH_STR(is_pointer_var(expr->member_access.object_name) ? "->" : ".");
+                    PUSH_STR(expr->member_access.field_name);
+                    PUSH_STR(".");
+                    PUSH_STR(expr->member_access.field2_name);
+                }
                 else {
                     PUSH_STR(expr->member_access.object_name);
                     PUSH_STR(is_pointer_var(expr->member_access.object_name) ? "->" : ".");
@@ -952,7 +976,13 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
                         break;
                     }
                 }
-                if (is_slice_access) {
+                if (op->array_access.index_identifier.data != nullptr) {
+                    PUSH_STR(op->array_access.variable_name);
+                    PUSH_STR('[');
+                    PUSH_STR(op->array_access.index_identifier);
+                    PUSH_STR(']');
+                }
+                else if (is_slice_access) {
                     PUSH_STR("__bloom_");
                     PUSH_STR(op->array_access.variable_name);
                     PUSH_STR("_data[");
@@ -1015,6 +1045,10 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
                 PUSH_STR(op->member_access.object_name);
                 PUSH_STR(is_pointer_var(op->member_access.object_name) ? "->" : ".");
                 PUSH_STR(op->member_access.field_name);
+                if (op->member_access.field2_name.data != nullptr) {
+                    PUSH_STR(".");
+                    PUSH_STR(op->member_access.field2_name);
+                }
                 break;
             case BinaryOperandType::STRING_LITERAL: {
                 size_t const runtime_len = str_literal_runtime_length(op->string_literal);
@@ -1076,6 +1110,7 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
     }
     PUSH_STR("\n");
     PUSH_STR("typedef struct { char const *data; size_t length; } BloomStr;\n");
+    PUSH_STR("typedef struct { uint8_t *data; size_t len; size_t cap; } BloomDynU8;\n");
     PUSH_STR("typedef struct { uint8_t *data; size_t length; } BloomSliceU8;\n");
     PUSH_STR("typedef struct { char bytes[4]; uint8_t len; } BloomChar;\n");
     PUSH_STR("typedef struct { char buf[4096]; size_t offset; } BloomTempAllocator;\n");
@@ -1162,6 +1197,12 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
                 for (size_t i = 0; i < node->struct_def.fields.length; i++) {
                     auto *field = &node->struct_def.fields.data[i];
                     PUSH_STR("\t");
+                    if (field->is_dynamic_array) {
+                        PUSH_STR("BloomDynU8 ");
+                        PUSH_STR(field->name);
+                        PUSH_STR(";\n");
+                        continue;
+                    }
                     if (field->type_name == "Int") {
                         PUSH_STR("int");
                     }
@@ -2089,6 +2130,69 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
                                     }
                                     else if (val_arg->type == ASTNodeType::IDENTIFIER) {
                                         PUSH_STR(val_arg->identifier);
+                                    }
+                                    else if (val_arg->type == ASTNodeType::ARRAY_ACCESS &&
+                                             val_arg->array_access.index_identifier.data != nullptr) {
+                                        bool const val_is_str = lookup_var_kind(val_arg->array_access.variable_name) == VarKind::BLOOM_STR;
+                                        PUSH_STR(val_arg->array_access.variable_name);
+                                        if (val_is_str) { PUSH_STR(".data"); }
+                                        PUSH_STR('[');
+                                        PUSH_STR(val_arg->array_access.index_identifier);
+                                        PUSH_STR(']');
+                                    }
+                                    PUSH_STR(";\n");
+                                }
+                                else if (stmt->proc_call.caller_identifier == "append" &&
+                                         stmt->proc_call.arguments.length == 2 &&
+                                         stmt->proc_call.arguments.data[0].type == ASTNodeType::MEMBER_ACCESS &&
+                                         lookup_member_kind(
+                                             stmt->proc_call.arguments.data[0].member_access.object_name,
+                                             stmt->proc_call.arguments.data[0].member_access.field_name
+                                         ) == VarKind::DYN_ARRAY)
+                                {
+                                    auto *arr_arg = &stmt->proc_call.arguments.data[0];
+                                    Str const &obj  = arr_arg->member_access.object_name;
+                                    Str const &fld  = arr_arg->member_access.field_name;
+                                    char const *acc = is_pointer_var(obj) ? "->" : ".";
+                                    push_tabs();
+                                    PUSH_STR("if (");
+                                    PUSH_STR(obj); PUSH_STR(acc); PUSH_STR(fld); PUSH_STR(".len >= ");
+                                    PUSH_STR(obj); PUSH_STR(acc); PUSH_STR(fld); PUSH_STR(".cap) {\n");
+                                    push_tabs();
+                                    PUSH_STR("\tif (");
+                                    PUSH_STR(obj); PUSH_STR(acc); PUSH_STR(fld); PUSH_STR(".cap == 0) { ");
+                                    PUSH_STR(obj); PUSH_STR(acc); PUSH_STR(fld); PUSH_STR(".cap = 8; }\n");
+                                    push_tabs();
+                                    PUSH_STR("\telse { ");
+                                    PUSH_STR(obj); PUSH_STR(acc); PUSH_STR(fld); PUSH_STR(".cap = ");
+                                    PUSH_STR(obj); PUSH_STR(acc); PUSH_STR(fld); PUSH_STR(".cap * 2; }\n");
+                                    push_tabs();
+                                    PUSH_STR("\t");
+                                    PUSH_STR(obj); PUSH_STR(acc); PUSH_STR(fld);
+                                    PUSH_STR(".data = (uint8_t *)realloc(");
+                                    PUSH_STR(obj); PUSH_STR(acc); PUSH_STR(fld); PUSH_STR(".data, ");
+                                    PUSH_STR(obj); PUSH_STR(acc); PUSH_STR(fld); PUSH_STR(".cap * sizeof(uint8_t));\n");
+                                    push_tabs();
+                                    PUSH_STR("}\n");
+                                    push_tabs();
+                                    PUSH_STR(obj); PUSH_STR(acc); PUSH_STR(fld);
+                                    PUSH_STR(".data[");
+                                    PUSH_STR(obj); PUSH_STR(acc); PUSH_STR(fld); PUSH_STR(".len++] = ");
+                                    auto *val_arg = &stmt->proc_call.arguments.data[1];
+                                    if (val_arg->type == ASTNodeType::INTEGER_LITERAL) {
+                                        PUSH_INT(val_arg->integer_literal.value.value);
+                                    }
+                                    else if (val_arg->type == ASTNodeType::IDENTIFIER) {
+                                        PUSH_STR(val_arg->identifier);
+                                    }
+                                    else if (val_arg->type == ASTNodeType::ARRAY_ACCESS &&
+                                             val_arg->array_access.index_identifier.data != nullptr) {
+                                        bool const val_is_str = lookup_var_kind(val_arg->array_access.variable_name) == VarKind::BLOOM_STR;
+                                        PUSH_STR(val_arg->array_access.variable_name);
+                                        if (val_is_str) { PUSH_STR(".data"); }
+                                        PUSH_STR('[');
+                                        PUSH_STR(val_arg->array_access.index_identifier);
+                                        PUSH_STR(']');
                                     }
                                     PUSH_STR(";\n");
                                 }
@@ -3132,15 +3236,33 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
                             PUSH_STR("for (int ");
                             PUSH_STR(*elem);
                             PUSH_STR(" = ");
-                            PUSH_INT(stmt->for_range_loop.range_start);
+                            if (stmt->for_range_loop.range_start_identifier.data != nullptr) {
+                                PUSH_STR(stmt->for_range_loop.range_start_identifier);
+                            }
+                            else {
+                                PUSH_INT(stmt->for_range_loop.range_start);
+                            }
                             PUSH_STR("; ");
                             PUSH_STR(*elem);
-                            PUSH_STR(" < ");
+                            if (stmt->for_range_loop.range_end_inclusive) {
+                                PUSH_STR(" <= ");
+                            }
+                            else {
+                                PUSH_STR(" < ");
+                            }
                             if (stmt->for_range_loop.range_count_identifier.length > 0) {
-                                PUSH_INT(stmt->for_range_loop.range_start);
+                                if (stmt->for_range_loop.range_start_identifier.data != nullptr) {
+                                    PUSH_STR(stmt->for_range_loop.range_start_identifier);
+                                }
+                                else {
+                                    PUSH_INT(stmt->for_range_loop.range_start);
+                                }
                                 PUSH_STR(" + ");
                                 PUSH_STR(stmt->for_range_loop.range_count_identifier);
                                 PUSH_STR(" + 1");
+                            }
+                            else if (stmt->for_range_loop.range_end_identifier.data != nullptr) {
+                                PUSH_STR(stmt->for_range_loop.range_end_identifier);
                             }
                             else {
                                 PUSH_INT(stmt->for_range_loop.range_end);

@@ -36,6 +36,7 @@ break
 context
 const
 defer
+dynamic
 else
 enum
 for

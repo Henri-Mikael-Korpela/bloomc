@@ -129,7 +129,7 @@
         },
         {
           "name": "keyword.other.bloom",
-          "match": "\\b(const|defer|enum|foreign|package|proc|struct|type_info_of)\\b"
+          "match": "\\b(const|defer|dynamic|enum|foreign|package|proc|struct|type_info_of)\\b"
         },
         {
           "name": "constant.language.boolean.bloom",

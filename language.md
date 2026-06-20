@@ -1,8 +1,23 @@
 # Bloom Programming Language Reference
 
+# Introduction
+
+This is the reference manual for the Bloom programming language.
+
+Bloom is a general-purpose language, which aims to provide explicit control familiar to system languages but also making it practical to implement higher level application logic seen in areas like web development. Bloom is strongly typed and has manual memory management. Bloom is not about language revolution but about polish and refinment over existing concepts with simplicity and practicality in mind.
+
 ## Source code representation
 
 Bloom source code is stored in UTF-8 encoded text files.
+
+## Comments
+
+Comments document programs. There is one form, a single line comments, which starts with the character sequence `//` and stops at the end of a line. Example:
+
+```
+// This is a single line comment
+x := 5 // Works after a statement as well
+```
 
 ## Packages
 

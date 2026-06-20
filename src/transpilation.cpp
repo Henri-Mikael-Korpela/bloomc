@@ -566,7 +566,12 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
                 case ASTNodeType::MEMBER_ACCESS:
                     if (arg->member_access.object_name == "context" &&
                         arg->member_access.field_name == "temp_allocator") {
-                        PUSH_STR("&__bloom_context.temp_allocator");
+                        if (callee_name == "clone_to_cstr") {
+                            PUSH_STR("&__bloom_context.temp_allocator");
+                        }
+                        else {
+                            PUSH_STR("(BloomAllocator){.alloc = __bloom_temp_alloc, .dealloc = __bloom_temp_dealloc, .ctx = &__bloom_context.temp_allocator}");
+                        }
                     }
                     else if (arg->member_access.object_name == "context" &&
                              arg->member_access.field_name == "allocator") {
@@ -954,6 +959,24 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
                 PUSH_STR(expr->type_info_enum_member_key.index_var);
                 PUSH_STR("].name");
                 break;
+            case ASTNodeType::MAKE_DYNAMIC_ARRAY:
+                if (expr->make_dynamic_array.has_explicit_allocator) {
+                    if (expr->make_dynamic_array.allocator_is_context_temp) {
+                        PUSH_STR("(BloomDynU8){.alloc = (BloomAllocator){.alloc = __bloom_temp_alloc, .dealloc = __bloom_temp_dealloc, .ctx = &__bloom_context.temp_allocator}}");
+                    }
+                    else if (expr->make_dynamic_array.allocator_is_context) {
+                        PUSH_STR("(BloomDynU8){.alloc = __bloom_context.allocator}");
+                    }
+                    else {
+                        PUSH_STR("(BloomDynU8){.alloc = ");
+                        PUSH_STR(expr->make_dynamic_array.allocator_identifier);
+                        PUSH_STR("}");
+                    }
+                }
+                else {
+                    PUSH_STR("(BloomDynU8){.alloc = __bloom_general_purpose_allocator}");
+                }
+                break;
             default:
                 assert(false && "Unsupported expression type in emit_expression");
         }
@@ -1110,11 +1133,11 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
     }
     PUSH_STR("\n");
     PUSH_STR("typedef struct { char const *data; size_t length; } BloomStr;\n");
-    PUSH_STR("typedef struct { uint8_t *data; size_t len; size_t cap; } BloomDynU8;\n");
     PUSH_STR("typedef struct { uint8_t *data; size_t length; } BloomSliceU8;\n");
     PUSH_STR("typedef struct { char bytes[4]; uint8_t len; } BloomChar;\n");
     PUSH_STR("typedef struct { char buf[4096]; size_t offset; } BloomTempAllocator;\n");
     PUSH_STR("typedef struct { void *(*alloc)(size_t, void*); void (*dealloc)(void*, void*); void *ctx; } BloomAllocator;\n");
+    PUSH_STR("typedef struct { uint8_t *data; size_t len; size_t cap; BloomAllocator alloc; } BloomDynU8;\n");
     PUSH_STR("typedef struct { uint8_t *buf; size_t cap; size_t offset; } BloomArena;\n");
     PUSH_STR("typedef struct { BloomTempAllocator temp_allocator; BloomAllocator allocator; } BloomContext;\n");
     PUSH_STR("typedef struct { BloomStr name; int size_in_bytes; } BloomTypeInfo;\n");
@@ -1168,6 +1191,14 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
     PUSH_STR("static void *__bloom_gpa_alloc(size_t n, void *ctx) { (void)ctx; return malloc(n); }\n");
     PUSH_STR("static void __bloom_gpa_dealloc(void *ptr, void *ctx) { (void)ctx; free(ptr); }\n");
     PUSH_STR("static BloomAllocator const __bloom_general_purpose_allocator = {.alloc = __bloom_gpa_alloc, .dealloc = __bloom_gpa_dealloc, .ctx = NULL};\n");
+    PUSH_STR("static void *__bloom_temp_alloc(size_t n, void *ctx) {\n");
+    PUSH_STR("\tBloomTempAllocator *ta = (BloomTempAllocator *)ctx;\n");
+    PUSH_STR("\tif (ta->offset + n > sizeof(ta->buf)) { return NULL; }\n");
+    PUSH_STR("\tvoid *ptr = ta->buf + ta->offset;\n");
+    PUSH_STR("\tta->offset += n;\n");
+    PUSH_STR("\treturn ptr;\n");
+    PUSH_STR("}\n");
+    PUSH_STR("static void __bloom_temp_dealloc(void *ptr, void *ctx) { (void)ptr; (void)ctx; }\n");
     PUSH_STR("static BloomSliceU8 __bloom_make_u8_slice(size_t n, BloomAllocator alloc) {\n");
     PUSH_STR("\tuint8_t *ptr = (uint8_t*)alloc.alloc(n, alloc.ctx);\n");
     PUSH_STR("\treturn (BloomSliceU8){.data = ptr, .length = n};\n");
@@ -2159,19 +2190,33 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
                                     PUSH_STR(obj); PUSH_STR(acc); PUSH_STR(fld); PUSH_STR(".len >= ");
                                     PUSH_STR(obj); PUSH_STR(acc); PUSH_STR(fld); PUSH_STR(".cap) {\n");
                                     push_tabs();
-                                    PUSH_STR("\tif (");
-                                    PUSH_STR(obj); PUSH_STR(acc); PUSH_STR(fld); PUSH_STR(".cap == 0) { ");
-                                    PUSH_STR(obj); PUSH_STR(acc); PUSH_STR(fld); PUSH_STR(".cap = 8; }\n");
+                                    PUSH_STR("\tsize_t __bloom_new_cap = (");
+                                    PUSH_STR(obj); PUSH_STR(acc); PUSH_STR(fld); PUSH_STR(".cap == 0) ? 8 : ");
+                                    PUSH_STR(obj); PUSH_STR(acc); PUSH_STR(fld); PUSH_STR(".cap * 2;\n");
                                     push_tabs();
-                                    PUSH_STR("\telse { ");
-                                    PUSH_STR(obj); PUSH_STR(acc); PUSH_STR(fld); PUSH_STR(".cap = ");
-                                    PUSH_STR(obj); PUSH_STR(acc); PUSH_STR(fld); PUSH_STR(".cap * 2; }\n");
+                                    PUSH_STR("\tuint8_t *__bloom_new_data = (uint8_t *)");
+                                    PUSH_STR(obj); PUSH_STR(acc); PUSH_STR(fld); PUSH_STR(".alloc.alloc(__bloom_new_cap * sizeof(uint8_t), ");
+                                    PUSH_STR(obj); PUSH_STR(acc); PUSH_STR(fld); PUSH_STR(".alloc.ctx);\n");
+                                    push_tabs();
+                                    PUSH_STR("\tif (");
+                                    PUSH_STR(obj); PUSH_STR(acc); PUSH_STR(fld); PUSH_STR(".data) {\n");
+                                    push_tabs();
+                                    PUSH_STR("\t\tmemcpy(__bloom_new_data, ");
+                                    PUSH_STR(obj); PUSH_STR(acc); PUSH_STR(fld); PUSH_STR(".data, ");
+                                    PUSH_STR(obj); PUSH_STR(acc); PUSH_STR(fld); PUSH_STR(".len * sizeof(uint8_t));\n");
+                                    push_tabs();
+                                    PUSH_STR("\t\t");
+                                    PUSH_STR(obj); PUSH_STR(acc); PUSH_STR(fld); PUSH_STR(".alloc.dealloc(");
+                                    PUSH_STR(obj); PUSH_STR(acc); PUSH_STR(fld); PUSH_STR(".data, ");
+                                    PUSH_STR(obj); PUSH_STR(acc); PUSH_STR(fld); PUSH_STR(".alloc.ctx);\n");
+                                    push_tabs();
+                                    PUSH_STR("\t}\n");
                                     push_tabs();
                                     PUSH_STR("\t");
-                                    PUSH_STR(obj); PUSH_STR(acc); PUSH_STR(fld);
-                                    PUSH_STR(".data = (uint8_t *)realloc(");
-                                    PUSH_STR(obj); PUSH_STR(acc); PUSH_STR(fld); PUSH_STR(".data, ");
-                                    PUSH_STR(obj); PUSH_STR(acc); PUSH_STR(fld); PUSH_STR(".cap * sizeof(uint8_t));\n");
+                                    PUSH_STR(obj); PUSH_STR(acc); PUSH_STR(fld); PUSH_STR(".data = __bloom_new_data;\n");
+                                    push_tabs();
+                                    PUSH_STR("\t");
+                                    PUSH_STR(obj); PUSH_STR(acc); PUSH_STR(fld); PUSH_STR(".cap = __bloom_new_cap;\n");
                                     push_tabs();
                                     PUSH_STR("}\n");
                                     push_tabs();

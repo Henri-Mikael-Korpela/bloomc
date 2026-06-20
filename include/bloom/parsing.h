@@ -351,6 +351,10 @@ struct ASTNode {
         } make_slice;
         struct {
             Str element_type;
+            bool has_explicit_allocator;
+            Str allocator_identifier;
+            bool allocator_is_context_temp;
+            bool allocator_is_context;
         } make_dynamic_array;
     };
 };

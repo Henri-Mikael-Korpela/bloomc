@@ -20,11 +20,8 @@ setsockopt :: proc(sockfd: Int, level: Int, optname: Int, optval: ^CVoid, optlen
 StrBuilder :: struct ->
     buf: [dynamic]U8
 
-str_builder_create :: proc() StrBuilder ->
-    return StrBuilder{}
-
-str_builder_destroy :: proc(sb: ^StrBuilder) ->
-    free(^CVoid(sb.buf.data))
+str_builder_create :: proc(allocator := context.allocator) StrBuilder ->
+    return StrBuilder{ buf = make([dynamic]U8, 0, allocator) }
 
 str_builder_write_str :: proc(sb: ^StrBuilder, value: Str) ->
     n := length_in_bytes(value)
@@ -87,8 +84,7 @@ main :: proc(args: []Str) ->
             \r\n
             """
 
-        response_buf := str_builder_create()
-        defer str_builder_destroy(%response_buf)
+        response_buf := str_builder_create(context.temp_allocator)
 
         str_builder_write_str(%response_buf, RESPONSE_CONTENT)
         str_builder_write_str(%response_buf, "Hello, world!")

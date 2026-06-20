@@ -728,16 +728,95 @@ auto parse_expression(
                                 .string_literal = value_tok->string_literal.content,
                             });
                             break;
-                        case TokenType::IDENTIFIER:
-                            (void)iter_append(proc_params_iter, ProcParameterASTNode {
-                                .name = field_name,
-                                .type_name = {},
-                            });
-                            (void)iter_append(operands_iter, BinaryOperand {
-                                .type = BinaryOperandType::IDENTIFIER,
-                                .identifier = value_tok->identifier.content,
-                            });
+                        case TokenType::IDENTIFIER: {
+                            if (value_tok->identifier.content == "make" &&
+                                tokens_iter->current_index < tokens_iter->elements.length &&
+                                iter_peek(tokens_iter)->type == TokenType::PARENTHESIS_OPEN)
+                            {
+                                (void)iter_next(tokens_iter); // consume (
+                                auto *bopen = iter_next(tokens_iter);
+                                if (bopen->type != TokenType::BRACKET_OPEN) {
+                                    return err<ASTNode, ParseError>(PARSE_ERROR_CREATE(UNEXPECTED_TOKEN, bopen));
+                                }
+                                auto *dyn_kw = iter_next(tokens_iter);
+                                if (dyn_kw->type != TokenType::KEYWORD_DYNAMIC) {
+                                    return err<ASTNode, ParseError>(PARSE_ERROR_CREATE(UNEXPECTED_TOKEN, dyn_kw));
+                                }
+                                auto *bclose = iter_next(tokens_iter);
+                                if (bclose->type != TokenType::BRACKET_CLOSE) {
+                                    return err<ASTNode, ParseError>(PARSE_ERROR_CREATE(UNEXPECTED_TOKEN, bclose));
+                                }
+                                auto *type_tok = iter_next(tokens_iter);
+                                if (type_tok->type != TokenType::IDENTIFIER) {
+                                    return err<ASTNode, ParseError>(PARSE_ERROR_CREATE(UNEXPECTED_TOKEN, type_tok));
+                                }
+                                auto *comma = iter_next(tokens_iter);
+                                if (comma->type != TokenType::COMMA) {
+                                    return err<ASTNode, ParseError>(PARSE_ERROR_CREATE(UNEXPECTED_TOKEN, comma));
+                                }
+                                auto *size_tok = iter_next(tokens_iter);
+                                if (size_tok->type != TokenType::INTEGER_LITERAL) {
+                                    return err<ASTNode, ParseError>(PARSE_ERROR_CREATE(UNEXPECTED_TOKEN, size_tok));
+                                }
+                                auto *pclose_or_comma = iter_next(tokens_iter);
+                                bool has_alloc = false;
+                                Str alloc_ident = {};
+                                bool alloc_is_context_temp = false;
+                                bool alloc_is_context = false;
+                                if (pclose_or_comma->type == TokenType::COMMA) {
+                                    has_alloc = true;
+                                    auto *alloc_tok = iter_next(tokens_iter);
+                                    if (alloc_tok->type == TokenType::IDENTIFIER &&
+                                        alloc_tok->identifier.content == "context")
+                                    {
+                                        (void)iter_next(tokens_iter); // consume '.'
+                                        auto *field_tok = iter_next(tokens_iter);
+                                        alloc_is_context_temp = field_tok->identifier.content == "temp_allocator";
+                                        alloc_is_context = !alloc_is_context_temp;
+                                    }
+                                    else if (alloc_tok->type == TokenType::IDENTIFIER) {
+                                        alloc_ident = alloc_tok->identifier.content;
+                                    }
+                                    else {
+                                        return err<ASTNode, ParseError>(PARSE_ERROR_CREATE(UNEXPECTED_TOKEN, alloc_tok));
+                                    }
+                                    auto *pclose2 = iter_next(tokens_iter);
+                                    if (pclose2->type != TokenType::PARENTHESIS_CLOSE) {
+                                        return err<ASTNode, ParseError>(PARSE_ERROR_CREATE(UNEXPECTED_TOKEN, pclose2));
+                                    }
+                                }
+                                else if (pclose_or_comma->type != TokenType::PARENTHESIS_CLOSE) {
+                                    return err<ASTNode, ParseError>(PARSE_ERROR_CREATE(UNEXPECTED_TOKEN, pclose_or_comma));
+                                }
+                                auto *dyn_node = iter_append(nodes_block_iter, ASTNode {
+                                    .type = ASTNodeType::MAKE_DYNAMIC_ARRAY,
+                                    .parent = nullptr,
+                                    .make_dynamic_array = {
+                                        .element_type = type_tok->identifier.content,
+                                        .has_explicit_allocator = has_alloc,
+                                        .allocator_identifier = alloc_ident,
+                                        .allocator_is_context_temp = alloc_is_context_temp,
+                                        .allocator_is_context = alloc_is_context,
+                                    },
+                                });
+                                (void)iter_append(proc_params_iter, ProcParameterASTNode { .name = field_name, .type_name = {} });
+                                (void)iter_append(operands_iter, BinaryOperand {
+                                    .type = BinaryOperandType::EXPR_NODE,
+                                    .expr_node = dyn_node,
+                                });
+                            }
+                            else {
+                                (void)iter_append(proc_params_iter, ProcParameterASTNode {
+                                    .name = field_name,
+                                    .type_name = {},
+                                });
+                                (void)iter_append(operands_iter, BinaryOperand {
+                                    .type = BinaryOperandType::IDENTIFIER,
+                                    .identifier = value_tok->identifier.content,
+                                });
+                            }
                             break;
+                        }
                         default:
                             return err<ASTNode, ParseError>(PARSE_ERROR_CREATE(UNEXPECTED_TOKEN, value_tok));
                     }
@@ -757,10 +836,11 @@ auto parse_expression(
                         }
                     }
                     if (struct_def_node != nullptr) {
-                        // Pointer-typed fields default to NULL and are not required
+                        // Pointer-typed and dynamic array fields default to NULL/{0} and are not required
                         size_t required_count = 0;
                         for (size_t di = 0; di < struct_def_node->struct_def.fields.length; di++) {
-                            if (!struct_def_node->struct_def.fields.data[di].is_pointer) {
+                            auto const *f = &struct_def_node->struct_def.fields.data[di];
+                            if (!f->is_pointer && !f->is_dynamic_array) {
                                 required_count++;
                             }
                         }
@@ -791,7 +871,7 @@ auto parse_expression(
                                         break;
                                     }
                                 }
-                                missing_err.struct_field_is_missing[di] = !found && !def_field->is_pointer;
+                                missing_err.struct_field_is_missing[di] = !found && !def_field->is_pointer && !def_field->is_dynamic_array;
                             }
                             return err<ASTNode, ParseError>(missing_err);
                         }

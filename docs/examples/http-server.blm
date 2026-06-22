@@ -4,9 +4,6 @@ SocketAddr :: struct ->
     sa_family: Int
     sa_data: ^U8
 
-// C Standard procedures
-free :: proc(ptr: ^CVoid) -> foreign
-
 // Linux socket API — sys/socket.h, netinet/in.h, unistd.h included automatically
 accept     :: proc(sockfd: Int, addr: ^SocketAddr, addrlen: ^CVoid) Int -> foreign
 bind       :: proc(sockfd: Int, addr: ^CVoid, addrlen: Int) Int -> foreign

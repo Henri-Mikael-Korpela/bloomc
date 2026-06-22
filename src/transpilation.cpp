@@ -3306,8 +3306,37 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
                                 PUSH_STR(stmt->for_range_loop.range_count_identifier);
                                 PUSH_STR(" + 1");
                             }
+                            else if (stmt->for_range_loop.range_end_proc_call_name.data != nullptr) {
+                                Str const &pcn = stmt->for_range_loop.range_end_proc_call_name;
+                                Str const &pca = stmt->for_range_loop.range_end_proc_call_arg;
+                                bool const pcn_is_length = pcn.length == 6 &&
+                                    strncmp(pcn.data, "length", 6) == 0;
+                                if (pcn_is_length) {
+                                    if (lookup_var_kind(pca) == VarKind::SLICE_U8) {
+                                        PUSH_STR(pca);
+                                        PUSH_STR(".length");
+                                    }
+                                    else {
+                                        PUSH_INT(static_cast<intmax_t>(find_array_size(pca)));
+                                    }
+                                }
+                                else {
+                                    PUSH_STR(pcn);
+                                    PUSH_STR('(');
+                                    PUSH_STR(pca);
+                                    PUSH_STR(')');
+                                }
+                                if (stmt->for_range_loop.range_end_offset != 0) {
+                                    PUSH_STR(" + ");
+                                    PUSH_INT(stmt->for_range_loop.range_end_offset);
+                                }
+                            }
                             else if (stmt->for_range_loop.range_end_identifier.data != nullptr) {
                                 PUSH_STR(stmt->for_range_loop.range_end_identifier);
+                                if (stmt->for_range_loop.range_end_offset != 0) {
+                                    PUSH_STR(" + ");
+                                    PUSH_INT(stmt->for_range_loop.range_end_offset);
+                                }
                             }
                             else {
                                 PUSH_INT(stmt->for_range_loop.range_end);

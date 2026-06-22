@@ -257,6 +257,9 @@ struct ASTNode {
             Str range_end_identifier;
             bool range_end_inclusive;
             Str range_count_identifier;
+            Str range_end_proc_call_name;
+            Str range_end_proc_call_arg;
+            int64_t range_end_offset;
             Array<ASTNode> body;
         } for_range_loop;
         struct {

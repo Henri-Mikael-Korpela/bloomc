@@ -831,8 +831,14 @@ auto parse_statement(
 
             if (op_token->type == TokenType::KEYWORD_IN) {
                 TokenType const start_tok_type = iter_peek(tokens_iter)->type;
+                // An IDENTIFIER is a range start only when immediately followed by a range operator.
+                // Otherwise it's a collection name for a for-in loop.
+                bool const next_is_range_op = tokens_iter->current_index + 1 < tokens_iter->elements.length &&
+                    (tokens_iter->elements.data[tokens_iter->current_index + 1].type == TokenType::RANGE_EXCLUSIVE ||
+                     tokens_iter->elements.data[tokens_iter->current_index + 1].type == TokenType::RANGE_INCLUSIVE ||
+                     tokens_iter->elements.data[tokens_iter->current_index + 1].type == TokenType::RANGE_COUNTED);
                 if (start_tok_type == TokenType::INTEGER_LITERAL ||
-                    start_tok_type == TokenType::IDENTIFIER)
+                    (start_tok_type == TokenType::IDENTIFIER && next_is_range_op))
                 {
                     auto *start_token = iter_next(tokens_iter);
                     int64_t range_start = 0;
@@ -849,6 +855,9 @@ auto parse_statement(
                     Str range_end_identifier = {};
                     bool range_end_inclusive = false;
                     Str range_count_identifier = {};
+                    Str range_end_proc_call_name = {};
+                    Str range_end_proc_call_arg = {};
+                    int64_t range_end_offset = 0;
                     if (range_op_token->type == TokenType::RANGE_COUNTED) {
                         auto *count_token = iter_next(tokens_iter);
                         if (count_token->type == TokenType::INTEGER_LITERAL) {
@@ -867,32 +876,81 @@ auto parse_statement(
                             return false;
                         }
                     }
-                    else if (range_op_token->type == TokenType::RANGE_EXCLUSIVE) {
+                    else if (range_op_token->type == TokenType::RANGE_EXCLUSIVE ||
+                             range_op_token->type == TokenType::RANGE_INCLUSIVE) {
+                        bool const is_inclusive = range_op_token->type == TokenType::RANGE_INCLUSIVE;
                         auto *end_token = iter_next(tokens_iter);
                         if (end_token->type == TokenType::INTEGER_LITERAL) {
                             range_end = end_token->integer_literal.value;
+                            // Check for arithmetic: 3 + 7
+                            if (tokens_iter->current_index < tokens_iter->elements.length &&
+                                iter_peek(tokens_iter)->type == TokenType::ADD)
+                            {
+                                (void)iter_next(tokens_iter); // consume '+'
+                                auto *rhs = iter_next(tokens_iter);
+                                if (rhs->type != TokenType::INTEGER_LITERAL) {
+                                    append(errors, ParseError {
+                                        .code = ParseErrorCode::UNEXPECTED_TOKEN,
+                                        .position = rhs->position,
+                                        .src_code_line = __LINE__,
+                                        .token_type = rhs->type,
+                                    });
+                                    return false;
+                                }
+                                range_end += rhs->integer_literal.value;
+                            }
+                            if (is_inclusive) { range_end += 1; }
                         }
                         else if (end_token->type == TokenType::IDENTIFIER) {
-                            range_end_identifier = end_token->identifier.content;
-                        }
-                        else {
-                            append(errors, ParseError {
-                                .code = ParseErrorCode::UNEXPECTED_TOKEN,
-                                .position = end_token->position,
-                                .src_code_line = __LINE__,
-                                .token_type = end_token->type,
-                            });
-                            return false;
-                        }
-                    }
-                    else if (range_op_token->type == TokenType::RANGE_INCLUSIVE) {
-                        auto *end_token = iter_next(tokens_iter);
-                        if (end_token->type == TokenType::INTEGER_LITERAL) {
-                            range_end = end_token->integer_literal.value + 1;
-                        }
-                        else if (end_token->type == TokenType::IDENTIFIER) {
-                            range_end_identifier = end_token->identifier.content;
-                            range_end_inclusive = true;
+                            // Check if it's a proc call: name(arg)
+                            if (tokens_iter->current_index < tokens_iter->elements.length &&
+                                iter_peek(tokens_iter)->type == TokenType::PARENTHESIS_OPEN)
+                            {
+                                (void)iter_next(tokens_iter); // consume '('
+                                auto *arg_tok = iter_next(tokens_iter);
+                                if (arg_tok->type != TokenType::IDENTIFIER) {
+                                    append(errors, ParseError {
+                                        .code = ParseErrorCode::UNEXPECTED_TOKEN,
+                                        .position = arg_tok->position,
+                                        .src_code_line = __LINE__,
+                                        .token_type = arg_tok->type,
+                                    });
+                                    return false;
+                                }
+                                range_end_proc_call_name = end_token->identifier.content;
+                                range_end_proc_call_arg  = arg_tok->identifier.content;
+                                auto *pclose = iter_next(tokens_iter);
+                                if (pclose->type != TokenType::PARENTHESIS_CLOSE) {
+                                    append(errors, ParseError {
+                                        .code = ParseErrorCode::UNEXPECTED_TOKEN,
+                                        .position = pclose->position,
+                                        .src_code_line = __LINE__,
+                                        .token_type = pclose->type,
+                                    });
+                                    return false;
+                                }
+                            }
+                            else {
+                                range_end_identifier = end_token->identifier.content;
+                                if (is_inclusive) { range_end_inclusive = true; }
+                            }
+                            // Check for arithmetic offset: expr + N
+                            if (tokens_iter->current_index < tokens_iter->elements.length &&
+                                iter_peek(tokens_iter)->type == TokenType::ADD)
+                            {
+                                (void)iter_next(tokens_iter); // consume '+'
+                                auto *rhs = iter_next(tokens_iter);
+                                if (rhs->type != TokenType::INTEGER_LITERAL) {
+                                    append(errors, ParseError {
+                                        .code = ParseErrorCode::UNEXPECTED_TOKEN,
+                                        .position = rhs->position,
+                                        .src_code_line = __LINE__,
+                                        .token_type = rhs->type,
+                                    });
+                                    return false;
+                                }
+                                range_end_offset = rhs->integer_literal.value;
+                            }
                         }
                         else {
                             append(errors, ParseError {
@@ -927,6 +985,9 @@ auto parse_statement(
                             .range_end_identifier = range_end_identifier,
                             .range_end_inclusive = range_end_inclusive,
                             .range_count_identifier = range_count_identifier,
+                            .range_end_proc_call_name = range_end_proc_call_name,
+                            .range_end_proc_call_arg  = range_end_proc_call_arg,
+                            .range_end_offset = range_end_offset,
                             .body = Array<ASTNode>(
                                 nodes_block_iter->elements.data + nodes_block_iter->current_index + 1,
                                 0

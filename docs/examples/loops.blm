@@ -11,6 +11,19 @@ main :: proc() ->
     for i in 0..<10 ->
         print("Exclusive range, index: {}\n", i)
 
+    for i in 0..<3 + 7 ->
+        print("Exclusive range (with arithemetic expression), index: {}\n", i)
+
+    ->
+        a := [const]Int { 3, 6, 9 }
+        for i in 0..<length(a) ->
+            print("Exclusive range (with length proc call), index: {}\n", i)
+
+    ->
+        a := [const]Int { 3, 6, 9 }
+        for i in 0..<length(a) + 2 ->
+            print("Exclusive range (with length proc call and arithemetic expression), index: {}\n", i)
+
     // For loop with inclusive range
     for i in 0..=10 ->
         print("Inclusive range, index: {}\n", i)

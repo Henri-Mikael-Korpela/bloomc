@@ -21,8 +21,7 @@ str_builder_create :: proc(allocator := context.allocator) StrBuilder ->
     return StrBuilder{ buf = make([dynamic]U8, 0, allocator) }
 
 str_builder_write_str :: proc(sb: ^StrBuilder, value: Str) ->
-    n := length_in_bytes(value)
-    for i in 0..<n ->
+    for i in 0..<length_in_bytes(value) ->
         append(sb.buf, value[i])
 
 HTTPHeaderName :: enum Str ->

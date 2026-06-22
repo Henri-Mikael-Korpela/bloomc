@@ -11,3 +11,12 @@ main :: proc() ->
 
     if x == 5 and z == 3 ->
         print("x is 5 and z is 3\n")
+
+    if x == 0 or y == 10 ->
+        print("x is 0 or y is 10\n")
+
+    if x < 0 or z < 5 ->
+        print("x is negative or z is less than 5\n")
+
+    if x == 0 or y == 0 or z == 3 ->
+        print("at least one of x, y, or z has the expected value\n")

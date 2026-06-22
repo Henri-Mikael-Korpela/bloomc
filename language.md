@@ -58,6 +58,7 @@ for
 foreign
 if
 in
+or
 package
 proc
 return
@@ -92,16 +93,17 @@ Bloom has the following operators:
 |`..=`   |Inclusive range |
 |`..+`   |Counted range   |
 |`and`   |Logical and     |
+|`or`    |Logical or      |
 
 And here are the operators by precendence (from highest to lowest):
 
-|Level|Operators           |Notes                          |
-|-----|--------------------|-------------------------------|
-|1    |`/`, `*`            |                               |
-|2    |`+`, `-`            |                               |
-|3    |`..<`, `..=`, `..+` |                               |
-|4    |`==`, `<`           |Comparison, all non-associative|
-|5    |`and`               |                               |
+|Level|Operators          |Notes     |
+|-----|-------------------|----------|
+|1    |`/`, `*`           |          |
+|2    |`+`, `-`           |          |
+|3    |`..<`, `..=`, `..+`|          |
+|4    |`==`, `<`          |Comparison|
+|5    |`and`, `or`        |          |
 
 ## Loops
 

@@ -3495,6 +3495,13 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
                                         cond->and_comparison_ops[ai],
                                         &cond->and_condition_rights[ai]);
                                 }
+                                for (size_t oi = 0; oi < cond->or_count; oi++) {
+                                    PUSH_STR(" || ");
+                                    emit_comparison(
+                                        &cond->or_condition_lefts[oi],
+                                        cond->or_comparison_ops[oi],
+                                        &cond->or_condition_rights[oi]);
+                                }
                                 PUSH_STR(") {\n");
                             };
 

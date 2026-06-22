@@ -85,6 +85,10 @@ auto tokenize(Str *input, ArenaAllocator *allocator) -> Array<Token> {
                 append_token_of_type(TokenType::KEYWORD_AND);
                 continue;
             }
+            if (word == TOKEN_KEYWORD_OR) {
+                append_token_of_type(TokenType::KEYWORD_OR);
+                continue;
+            }
             if (word == TOKEN_KEYWORD_CVOID) {
                 append_token_of_type(TokenType::KEYWORD_CVOID);
                 continue;

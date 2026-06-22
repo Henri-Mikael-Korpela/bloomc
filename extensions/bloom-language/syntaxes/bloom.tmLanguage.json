@@ -125,7 +125,7 @@
       "patterns": [
         {
           "name": "keyword.control.bloom",
-          "match": "\\b(and|break|else|for|if|in|not|pass|return)\\b"
+          "match": "\\b(and|break|else|for|if|in|not|or|pass|return)\\b"
         },
         {
           "name": "keyword.other.bloom",

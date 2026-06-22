@@ -203,6 +203,10 @@ struct ASTNode {
             ConditionOperand and_condition_rights[4];
             Str and_comparison_ops[4];
             size_t and_count;
+            ConditionOperand or_condition_lefts[4];
+            ConditionOperand or_condition_rights[4];
+            Str or_comparison_ops[4];
+            size_t or_count;
             Array<ASTNode> then_body;
             Array<ASTNode> else_body;
             Token::Position if_pos;

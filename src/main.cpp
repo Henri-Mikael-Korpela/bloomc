@@ -461,6 +461,8 @@ auto transpile(char const *input_file_path_cstr, char const *output_file_path_cs
 auto build(int argc, char* argv[]) -> int {
     char const *input_file = nullptr;
     char const *output_file = nullptr;
+    char const *target_arch = nullptr;
+    char const *target_os = nullptr;
 
     for (int i = 2; i < argc; i++) {
         if (strncmp(argv[i], "--input-file", 12) == 0 && i + 1 < argc) {
@@ -468,6 +470,12 @@ auto build(int argc, char* argv[]) -> int {
         }
         else if (strncmp(argv[i], "--output-file", 13) == 0 && i + 1 < argc) {
             output_file = argv[++i];
+        }
+        else if (strncmp(argv[i], "--target-arch", 13) == 0 && i + 1 < argc) {
+            target_arch = argv[++i];
+        }
+        else if (strncmp(argv[i], "--target-os", 11) == 0 && i + 1 < argc) {
+            target_os = argv[++i];
         }
     }
 
@@ -477,6 +485,22 @@ auto build(int argc, char* argv[]) -> int {
     }
     if (output_file == nullptr) {
         eprint("Error: --output-file is required\n");
+        return 1;
+    }
+    if (target_arch == nullptr) {
+        eprint("Error: --target-arch is required\n");
+        return 1;
+    }
+    if (strcmp(target_arch, "x86_64") != 0) {
+        eprint("Error: --target-arch must be \"x86_64\"\n");
+        return 1;
+    }
+    if (target_os == nullptr) {
+        eprint("Error: --target-os is required\n");
+        return 1;
+    }
+    if (strcmp(target_os, "linux") != 0 && strcmp(target_os, "windows") != 0) {
+        eprint("Error: --target-os must be \"linux\" or \"windows\"\n");
         return 1;
     }
 
@@ -658,7 +682,14 @@ auto build(int argc, char* argv[]) -> int {
     write(temp_fd, c_code.data, c_code.length);
     close(temp_fd);
 
-    std::string gcc_cmd = std::string("gcc -o ") + output_file + " " + temp_c_file;
+    char const *compiler;
+    if (strcmp(target_os, "windows") == 0) {
+        compiler = MINGW_COMPILER_PATH;
+    }
+    else {
+        compiler = "gcc";
+    }
+    std::string gcc_cmd = std::string(compiler) + " -o " + output_file + " " + temp_c_file;
     int gcc_result = system(gcc_cmd.c_str());
 
     std::filesystem::remove(temp_c_file);

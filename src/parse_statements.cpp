@@ -1299,6 +1299,33 @@ auto parse_statement(
         }
         else if (value_tok->type == TokenType::IDENTIFIER &&
                  tokens_iter->current_index < tokens_iter->elements.length &&
+                 iter_peek(tokens_iter)->type == TokenType::PARENTHESIS_OPEN)
+        {
+            tokens_iter->current_index -= 1; // back up to re-read the identifier
+            Iterator<Token> expr_tokens_iter;
+            if (!slice_expression_tokens(tokens_iter, errors, &expr_tokens_iter)) {
+                return false;
+            }
+            auto expr_result = parse_expression(
+                &expr_tokens_iter, context, nodes_block_iter,
+                proc_params_block, proc_params_iter, types_iter,
+                operands_iter, array_elements_iter, errors
+            );
+            if (!is_ok(&expr_result)) {
+                append(errors, expr_result.err);
+                return false;
+            }
+            value_ptr = iter_append(nodes_block_iter, std::move(expr_result.ok));
+            value_ptr->parent = nullptr;
+            tokens_iter->current_index += expr_tokens_iter.current_index;
+            auto *nl = iter_next(tokens_iter);
+            if (nl->type != TokenType::NEWLINE && nl->type != TokenType::END) {
+                append(errors, PARSE_ERROR_CREATE(UNEXPECTED_TOKEN, nl));
+                return false;
+            }
+        }
+        else if (value_tok->type == TokenType::IDENTIFIER &&
+                 tokens_iter->current_index < tokens_iter->elements.length &&
                  iter_peek(tokens_iter)->type == TokenType::BRACE_OPEN)
         {
             tokens_iter->current_index -= 1; // back up to re-read the identifier

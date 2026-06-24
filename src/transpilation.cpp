@@ -19,6 +19,17 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
     #define PUSH_INT(value)  allocator->offset += str_push_int(&str_buffer, value)
     #define PUSH_BOOL(value) allocator->offset += str_push_bool(&str_buffer, value)
 
+    auto push_escaped_str_literal = [&](Str value) {
+        for (size_t k = 0; k < value.length; k++) {
+            char const c = value.data[k];
+            if (c == '"' && (k == 0 || value.data[k - 1] != '\\')) {
+                allocator->offset += str_push(&str_buffer, '\\');
+            }
+            allocator->offset += str_push(&str_buffer, c);
+        }
+    };
+    #define PUSH_ESCAPED_STR_LITERAL(value) push_escaped_str_literal(value)
+
     struct ArrayVarEntry {
         Str name;
         size_t count;
@@ -304,7 +315,7 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
                 PUSH_STR("_");
                 PUSH_INT(static_cast<intmax_t>(part_count));
                 PUSH_STR(" = (BloomStr){.data = \"");
-                PUSH_STR(lit);
+                PUSH_ESCAPED_STR_LITERAL(lit);
                 PUSH_STR("\", .length = ");
                 PUSH_INT(static_cast<intmax_t>(str_literal_runtime_length(lit)));
                 PUSH_STR("};\n");
@@ -476,14 +487,14 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
                     if (wrap_strings) {
                         size_t const runtime_len = str_literal_runtime_length(arg->string_literal.value);
                         PUSH_STR("(BloomStr){.data = \"");
-                        PUSH_STR(arg->string_literal.value);
+                        PUSH_ESCAPED_STR_LITERAL(arg->string_literal.value);
                         PUSH_STR("\", .length = ");
                         PUSH_INT(static_cast<intmax_t>(runtime_len));
                         PUSH_STR("}");
                     }
                     else {
                         PUSH_STR('"');
-                        PUSH_STR(arg->string_literal.value);
+                        PUSH_ESCAPED_STR_LITERAL(arg->string_literal.value);
                         PUSH_STR('"');
                     }
                     break;
@@ -546,6 +557,15 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
                         PUSH_STR("__bloom_utf8_decode_to_str(");
                         emit_proc_call_args(&arg->proc_call.arguments, arg->proc_call.caller_identifier);
                         PUSH_STR(")");
+                    }
+                    else if (arg->proc_call.caller_identifier == "[]U8" &&
+                             arg->proc_call.arguments.length == 1) {
+                        // Cast dynamic array to BloomSliceU8
+                        PUSH_STR("(BloomSliceU8){.data = ");
+                        emit_expression(&arg->proc_call.arguments.data[0]);
+                        PUSH_STR(".data, .length = ");
+                        emit_expression(&arg->proc_call.arguments.data[0]);
+                        PUSH_STR(".len}");
                     }
                     else {
                         PUSH_STR(arg->proc_call.caller_identifier);
@@ -892,7 +912,7 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
                 Str const *content = &expr->string_literal.value;
                 size_t const runtime_len = str_literal_runtime_length(*content);
                 PUSH_STR("(BloomStr){.data = \"");
-                PUSH_STR(*content);
+                PUSH_ESCAPED_STR_LITERAL(*content);
                 PUSH_STR("\", .length = ");
                 PUSH_INT(static_cast<intmax_t>(runtime_len));
                 PUSH_STR("}");
@@ -1076,7 +1096,7 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
             case BinaryOperandType::STRING_LITERAL: {
                 size_t const runtime_len = str_literal_runtime_length(op->string_literal);
                 PUSH_STR("(BloomStr){.data = \"");
-                PUSH_STR(op->string_literal);
+                PUSH_ESCAPED_STR_LITERAL(op->string_literal);
                 PUSH_STR("\", .length = ");
                 PUSH_INT(static_cast<intmax_t>(runtime_len));
                 PUSH_STR("}");
@@ -1987,7 +2007,7 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
                                             else if (arg->type == ASTNodeType::STRING_LITERAL) {
                                                 size_t const runtime_len = str_literal_runtime_length(arg->string_literal.value);
                                                 PUSH_STR("fwrite(\"");
-                                                PUSH_STR(arg->string_literal.value);
+                                                PUSH_ESCAPED_STR_LITERAL(arg->string_literal.value);
                                                 PUSH_STR("\", 1, ");
                                                 PUSH_INT(static_cast<intmax_t>(runtime_len));
                                                 PUSH_STR(", stdout);\n");
@@ -2935,6 +2955,10 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
                                     }
                                     PUSH_STR("}");
                                 }
+                                else {
+                                    PUSH_STR(' ');
+                                    emit_expression(stmt->return_value);
+                                }
                             }
                             PUSH_STR(";\n");
                             break;
@@ -3318,6 +3342,8 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
                                 Str const &pca = stmt->for_range_loop.range_end_proc_call_arg;
                                 bool const pcn_is_length = pcn.length == 6 &&
                                     strncmp(pcn.data, "length", 6) == 0;
+                                bool const pcn_is_length_in_bytes = pcn.length == 15 &&
+                                    strncmp(pcn.data, "length_in_bytes", 15) == 0;
                                 if (pcn_is_length) {
                                     if (lookup_var_kind(pca) == VarKind::SLICE_U8) {
                                         PUSH_STR(pca);
@@ -3326,6 +3352,10 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
                                     else {
                                         PUSH_INT(static_cast<intmax_t>(find_array_size(pca)));
                                     }
+                                }
+                                else if (pcn_is_length_in_bytes) {
+                                    PUSH_STR(pca);
+                                    PUSH_STR(".length");
                                 }
                                 else {
                                     PUSH_STR(pcn);
@@ -3437,7 +3467,7 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
                                 }
                                 else if (operand->is_string_literal) {
                                     PUSH_STR('"');
-                                    PUSH_STR(operand->string_literal);
+                                    PUSH_ESCAPED_STR_LITERAL(operand->string_literal);
                                     PUSH_STR('"');
                                 }
                                 else if (operand->is_identifier) {
@@ -3473,7 +3503,7 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
                                         PUSH_STR("_data[");
                                         PUSH_INT(idx);
                                         PUSH_STR("].data, \"");
-                                        PUSH_STR(lit);
+                                        PUSH_ESCAPED_STR_LITERAL(lit);
                                         PUSH_STR("\", ");
                                         PUSH_INT(static_cast<int64_t>(rlen));
                                         PUSH_STR(") == 0");

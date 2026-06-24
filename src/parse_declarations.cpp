@@ -1042,6 +1042,81 @@ auto parse_proc_call_arguments(
                 arg_count++;
                 break;
             }
+            case TokenType::BRACKET_OPEN: {
+                // Handle []TYPE(expr) slice cast, e.g. []U8(sb.buf)
+                auto *close_bracket = iter_next(tokens_iter);
+                if (close_bracket->type != TokenType::BRACKET_CLOSE) {
+                    append(errors, ParseError {
+                        .code = ParseErrorCode::UNEXPECTED_TOKEN,
+                        .position = close_bracket->position,
+                        .src_code_line = __LINE__,
+                        .token_type = close_bracket->type,
+                    });
+                    return false;
+                }
+                auto *type_tok = iter_next(tokens_iter);
+                if (type_tok->type != TokenType::IDENTIFIER) {
+                    append(errors, ParseError {
+                        .code = ParseErrorCode::UNEXPECTED_TOKEN,
+                        .position = type_tok->position,
+                        .src_code_line = __LINE__,
+                        .token_type = type_tok->type,
+                    });
+                    return false;
+                }
+                auto *open_paren = iter_next(tokens_iter);
+                if (open_paren->type != TokenType::PARENTHESIS_OPEN) {
+                    append(errors, ParseError {
+                        .code = ParseErrorCode::UNEXPECTED_TOKEN,
+                        .position = open_paren->position,
+                        .src_code_line = __LINE__,
+                        .token_type = open_paren->type,
+                    });
+                    return false;
+                }
+                // Determine caller name: only []U8 supported for now
+                Str caller_id;
+                if (type_tok->identifier.content == "U8") {
+                    caller_id = cstr_to_str("[]U8");
+                }
+                else {
+                    append(errors, ParseError {
+                        .code = ParseErrorCode::UNEXPECTED_TOKEN,
+                        .position = type_tok->position,
+                        .src_code_line = __LINE__,
+                        .token_type = type_tok->type,
+                    });
+                    return false;
+                }
+                int depth = 1;
+                size_t inner_start = tokens_iter->current_index;
+                size_t inner_end = inner_start;
+                while (inner_end < tokens_iter->elements.length) {
+                    TokenType const tt = tokens_iter->elements.data[inner_end].type;
+                    if (tt == TokenType::PARENTHESIS_OPEN)  { depth++; }
+                    if (tt == TokenType::PARENTHESIS_CLOSE) { depth--; if (depth == 0) { break; } }
+                    inner_end++;
+                }
+                auto *slice_cast_node = iter_append(nodes_block_iter, ASTNode {
+                    .type = ASTNodeType::PROC_CALL,
+                    .parent = proc_call_node,
+                    .proc_call = { .caller_identifier = caller_id },
+                });
+                if (pending_nested_call_count < MAX_PENDING_NESTED_CALLS) {
+                    pending_nested_calls[pending_nested_call_count++] = {
+                        .node = slice_cast_node,
+                        .token_begin = inner_start,
+                        .token_end = inner_end,
+                        .identifier_pos = next_token->position,
+                    };
+                }
+                tokens_iter->current_index = inner_end + 1;
+                arg_count++;
+                break;
+            }
+            case TokenType::NEWLINE:
+            case TokenType::INDENT:
+                continue;
             default:
                 append(errors, ParseError {
                     .code = ParseErrorCode::UNEXPECTED_TOKEN,

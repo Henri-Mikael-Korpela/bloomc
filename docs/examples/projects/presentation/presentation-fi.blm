@@ -1,6 +1,7 @@
 package henri.presentation.presentation_fi
 
 import "./file"
+import "./str-builder"
 
 Template :: struct ->
     name: Str
@@ -18,15 +19,39 @@ main :: proc() ->
     slides := [const]Slide{
         .{
             title = "Bloom-ohjelmointikieli",
-            content = "<html><body><h1>Bloom-ohjelmointikieli</h1></body></html>",
+            content = "<h1>Bloom-ohjelmointikieli</h1>",
             template = %title_template,
-        }
+        },
+        .{
+            title = "Proseduurit",
+            content = "<h1>Proseduurit</h1>",
+            template = %title_template,
+        },
     }
 
     for slide, i in slides ->
         print("Slide #{}: {}", i + 1, slide.title)
 
+    output := henri.presentation.str_builder_create(context.temp_allocator)
+
+    henri.presentation.str_builder_write_str(%output,
+        """
+        <!DOCTYPE html>
+        <html>
+        
+        <head>
+            <meta charset="utf-8">
+        </head>
+
+        <body>
+        """
+    )
+    for slide in slides ->
+        henri.presentation.str_builder_write_str(%output, slide.content)
+    henri.presentation.str_builder_write_str(%output, "</body></html>")
+
     f := henri.presentation.file_open_for_write("presentation.html")
-    for slide, i in slides ->
-        henri.presentation.file_write_str(%f, slide.content)
-    henri.presentation.file_close(%f)
+    defer henri.presentation.file_close(%f)
+
+    output_str := henri.presentation.str_builder_to_str(%output)
+    henri.presentation.file_write_str(%f, output_str)

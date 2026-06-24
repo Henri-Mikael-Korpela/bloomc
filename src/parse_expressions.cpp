@@ -404,7 +404,15 @@ auto parse_expression(
                             if (eq->type != TokenType::EQUALS) {
                                 return err<ASTNode, ParseError>(PARSE_ERROR_CREATE(UNEXPECTED_TOKEN, eq));
                             }
-                            auto *val_tok = iter_next(tokens_iter);
+                            // Allow value on the next line (e.g. for multiline strings)
+                            Token *val_tok;
+                            do { val_tok = iter_next(tokens_iter); }
+                            while (val_tok != nullptr &&
+                                   (val_tok->type == TokenType::NEWLINE ||
+                                    val_tok->type == TokenType::INDENT));
+                            if (val_tok == nullptr) {
+                                return err<ASTNode, ParseError>(PARSE_ERROR_CREATE(UNEXPECTED_TOKEN, eq));
+                            }
                             switch (val_tok->type) {
                                 case TokenType::INTEGER_LITERAL:
                                     (void)iter_append(proc_params_iter, ProcParameterASTNode { .name = field_name, .type_name = {} });
@@ -718,7 +726,15 @@ auto parse_expression(
                     if (equals->type != TokenType::EQUALS) {
                         return err<ASTNode, ParseError>(PARSE_ERROR_CREATE(UNEXPECTED_TOKEN, equals));
                     }
-                    auto *value_tok = iter_next(tokens_iter);
+                    // Allow value on the next line (e.g. for multiline strings)
+                    Token *value_tok;
+                    do { value_tok = iter_next(tokens_iter); }
+                    while (value_tok != nullptr &&
+                           (value_tok->type == TokenType::NEWLINE ||
+                            value_tok->type == TokenType::INDENT));
+                    if (value_tok == nullptr) {
+                        return err<ASTNode, ParseError>(PARSE_ERROR_CREATE(UNEXPECTED_TOKEN, equals));
+                    }
                     switch (value_tok->type) {
                         case TokenType::INTEGER_LITERAL:
                             (void)iter_append(proc_params_iter, ProcParameterASTNode {

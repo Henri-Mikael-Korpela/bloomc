@@ -1,0 +1,14 @@
+package henri.presentation
+
+StrBuilder :: struct ->
+    buf: [dynamic]U8
+
+str_builder_create :: proc(allocator := context.allocator) StrBuilder ->
+    return StrBuilder{ buf = make([dynamic]U8, 0, allocator) }
+
+str_builder_to_str :: proc(sb: ^StrBuilder) Str ->
+    return utf8_decode_to_str([]U8(sb.buf))
+
+str_builder_write_str :: proc(sb: ^StrBuilder, value: Str) ->
+    for i in 0..<length_in_bytes(value) ->
+        append(sb.buf, value[i])

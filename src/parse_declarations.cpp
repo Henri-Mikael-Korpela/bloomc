@@ -900,20 +900,51 @@ auto parse_proc_call_arguments(
                 arg_count++;
                 break;
             case TokenType::ADDRESS_OF: {
-                auto *ident_tok = iter_next(tokens_iter);
-                if (ident_tok->type != TokenType::IDENTIFIER) {
+                auto *primary_tok = iter_next(tokens_iter);
+                if (primary_tok->type != TokenType::IDENTIFIER) {
                     append(errors, ParseError {
                         .code = ParseErrorCode::UNEXPECTED_TOKEN,
-                        .position = ident_tok->position,
+                        .position = primary_tok->position,
                         .src_code_line = __LINE__,
-                        .token_type = ident_tok->type,
+                        .token_type = primary_tok->type,
                     });
                     return false;
+                }
+                ASTNode *operand_node;
+                if (tokens_iter->current_index < tokens_iter->elements.length &&
+                    iter_peek(tokens_iter)->type == TokenType::DOT)
+                {
+                    (void)iter_next(tokens_iter); // consume .
+                    auto *field_tok = iter_next(tokens_iter);
+                    if (field_tok->type != TokenType::IDENTIFIER) {
+                        append(errors, ParseError {
+                            .code = ParseErrorCode::UNEXPECTED_TOKEN,
+                            .position = field_tok->position,
+                            .src_code_line = __LINE__,
+                            .token_type = field_tok->type,
+                        });
+                        return false;
+                    }
+                    operand_node = iter_append(nodes_block_iter, ASTNode {
+                        .type = ASTNodeType::MEMBER_ACCESS,
+                        .parent = proc_call_node,
+                        .member_access = {
+                            .object_name = primary_tok->identifier.content,
+                            .field_name = field_tok->identifier.content,
+                        },
+                    });
+                }
+                else {
+                    operand_node = iter_append(nodes_block_iter, ASTNode {
+                        .type = ASTNodeType::IDENTIFIER,
+                        .parent = proc_call_node,
+                        .identifier = primary_tok->identifier.content,
+                    });
                 }
                 (void)iter_append(nodes_block_iter, ASTNode {
                     .type = ASTNodeType::ADDRESS_OF,
                     .parent = proc_call_node,
-                    .identifier = ident_tok->identifier.content,
+                    .unary_operand = operand_node,
                 });
                 if (!check_arg_type(next_token)) { return false; }
                 arg_count++;

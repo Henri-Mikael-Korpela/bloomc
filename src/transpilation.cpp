@@ -561,7 +561,7 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
                     else {
                         PUSH_STR("&");
                     }
-                    PUSH_STR(arg->identifier);
+                    emit_expression(arg->unary_operand);
                     break;
                 case ASTNodeType::MEMBER_ACCESS:
                     if (arg->member_access.object_name == "context" &&
@@ -924,7 +924,7 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
                 break;
             case ASTNodeType::ADDRESS_OF:
                 PUSH_STR("&");
-                PUSH_STR(expr->identifier);
+                emit_expression(expr->unary_operand);
                 break;
             case ASTNodeType::DEREF:
                 PUSH_STR("*");
@@ -1084,6 +1084,10 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
             }
             case BinaryOperandType::DEREF:
                 PUSH_STR("*");
+                PUSH_STR(op->identifier);
+                break;
+            case BinaryOperandType::ADDRESS_OF:
+                PUSH_STR("&");
                 PUSH_STR(op->identifier);
                 break;
             case BinaryOperandType::EXPR_NODE:
@@ -2323,10 +2327,13 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
                             }
                             if (expr->type == ASTNodeType::ADDRESS_OF) {
                                 Str struct_type_name = {};
-                                if (lookup_var_kind(expr->identifier) == VarKind::STRUCT) {
+                                if (expr->unary_operand->type == ASTNodeType::IDENTIFIER &&
+                                    lookup_var_kind(expr->unary_operand->identifier) == VarKind::STRUCT)
+                                {
+                                    Str const *ident = &expr->unary_operand->identifier;
                                     for (size_t vi = 0; vi < var_type_count; vi++) {
-                                        if (var_types[vi].name.length == expr->identifier.length &&
-                                            strncmp(var_types[vi].name.data, expr->identifier.data, expr->identifier.length) == 0)
+                                        if (var_types[vi].name.length == ident->length &&
+                                            strncmp(var_types[vi].name.data, ident->data, ident->length) == 0)
                                         {
                                             struct_type_name = var_types[vi].struct_type_name;
                                             break;
@@ -2343,7 +2350,7 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
                                 }
                                 PUSH_STR(stmt->variable_definition.name);
                                 PUSH_STR(" = &");
-                                PUSH_STR(expr->identifier);
+                                emit_expression(expr->unary_operand);
                                 PUSH_STR(";\n");
                                 break;
                             }

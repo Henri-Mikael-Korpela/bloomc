@@ -1,0 +1,23 @@
+package henri.presentation_fi
+
+Template :: struct ->
+    content: Str
+
+Slide :: struct ->
+    title: Str
+    template: ^Template
+
+main :: proc() ->
+    single_title_template := Template{
+        content = "<h1>Bloom-ohjelmointikieli</h1>"
+    }
+
+    slides := [const]Slide{
+        .{
+            title = "Bloom-ohjelmointikieli",
+            template = %single_title_template,
+        }
+    }
+
+    for slide, i in slides ->
+        print("Slide #{}: {}", i + 1, slide.title)

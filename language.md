@@ -94,16 +94,17 @@ Bloom has the following operators:
 |`..+`   |Counted range   |
 |`and`   |Logical and     |
 |`or`    |Logical or      |
+|`%`     |Address of      |
 
 And here are the operators by precendence (from highest to lowest):
 
-|Level|Operators          |Notes     |
-|-----|-------------------|----------|
-|1    |`/`, `*`           |          |
-|2    |`+`, `-`           |          |
-|3    |`..<`, `..=`, `..+`|          |
-|4    |`==`, `<`          |Comparison|
-|5    |`and`, `or`        |          |
+|Level|Operators            |Notes     |
+|-----|---------------------|----------|
+|1    |`/`, `*`, `%` (unary)|          |
+|2    |`+`, `-`             |          |
+|3    |`..<`, `..=`, `..+`  |          |
+|4    |`==`, `<`            |Comparison|
+|5    |`and`, `or`          |          |
 
 ## Loops
 

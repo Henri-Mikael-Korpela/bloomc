@@ -117,6 +117,7 @@ enum class BinaryOperandType : uint8_t {
     STRING_LITERAL,
     DEREF,
     EXPR_NODE,
+    ADDRESS_OF,
 };
 
 struct BinaryOperand {
@@ -224,6 +225,7 @@ struct ASTNode {
             bool is_foreign;
         } proc_def;
         ASTNode *return_value;
+        ASTNode *unary_operand;
         struct {
             Str value;
         } string_literal;

@@ -427,6 +427,18 @@ auto parse_expression(
                                         .identifier = val_tok->identifier.content,
                                     });
                                     break;
+                                case TokenType::ADDRESS_OF: {
+                                    auto *primary_tok = iter_next(tokens_iter);
+                                    if (primary_tok->type != TokenType::IDENTIFIER) {
+                                        return err<ASTNode, ParseError>(PARSE_ERROR_CREATE(UNEXPECTED_TOKEN, primary_tok));
+                                    }
+                                    (void)iter_append(proc_params_iter, ProcParameterASTNode { .name = field_name, .type_name = {} });
+                                    (void)iter_append(operands_iter, BinaryOperand {
+                                        .type = BinaryOperandType::ADDRESS_OF,
+                                        .identifier = primary_tok->identifier.content,
+                                    });
+                                    break;
+                                }
                                 default:
                                     return err<ASTNode, ParseError>(PARSE_ERROR_CREATE(UNEXPECTED_TOKEN, val_tok));
                             }
@@ -815,6 +827,18 @@ auto parse_expression(
                                     .identifier = value_tok->identifier.content,
                                 });
                             }
+                            break;
+                        }
+                        case TokenType::ADDRESS_OF: {
+                            auto *primary_tok = iter_next(tokens_iter);
+                            if (primary_tok->type != TokenType::IDENTIFIER) {
+                                return err<ASTNode, ParseError>(PARSE_ERROR_CREATE(UNEXPECTED_TOKEN, primary_tok));
+                            }
+                            (void)iter_append(proc_params_iter, ProcParameterASTNode { .name = field_name, .type_name = {} });
+                            (void)iter_append(operands_iter, BinaryOperand {
+                                .type = BinaryOperandType::ADDRESS_OF,
+                                .identifier = primary_tok->identifier.content,
+                            });
                             break;
                         }
                         default:
@@ -1530,14 +1554,39 @@ auto parse_expression(
             return ok<ASTNode, ParseError>(*proc_node);
         }
         case TokenType::ADDRESS_OF: {
-            auto *ident_tok = iter_next(tokens_iter);
-            if (ident_tok->type != TokenType::IDENTIFIER) {
-                return err<ASTNode, ParseError>(PARSE_ERROR_CREATE(UNEXPECTED_TOKEN, ident_tok));
+            auto *primary_tok = iter_next(tokens_iter);
+            if (primary_tok->type != TokenType::IDENTIFIER) {
+                return err<ASTNode, ParseError>(PARSE_ERROR_CREATE(UNEXPECTED_TOKEN, primary_tok));
+            }
+            ASTNode *operand_node;
+            if (tokens_iter->current_index < tokens_iter->elements.length &&
+                iter_peek(tokens_iter)->type == TokenType::DOT)
+            {
+                (void)iter_next(tokens_iter); // consume .
+                auto *field_tok = iter_next(tokens_iter);
+                if (field_tok->type != TokenType::IDENTIFIER) {
+                    return err<ASTNode, ParseError>(PARSE_ERROR_CREATE(UNEXPECTED_TOKEN, field_tok));
+                }
+                operand_node = iter_append(nodes_block_iter, ASTNode {
+                    .type = ASTNodeType::MEMBER_ACCESS,
+                    .parent = nullptr,
+                    .member_access = {
+                        .object_name = primary_tok->identifier.content,
+                        .field_name = field_tok->identifier.content,
+                    },
+                });
+            }
+            else {
+                operand_node = iter_append(nodes_block_iter, ASTNode {
+                    .type = ASTNodeType::IDENTIFIER,
+                    .parent = nullptr,
+                    .identifier = primary_tok->identifier.content,
+                });
             }
             return ok<ASTNode, ParseError>(ASTNode {
                 .type = ASTNodeType::ADDRESS_OF,
                 .parent = nullptr,
-                .identifier = ident_tok->identifier.content,
+                .unary_operand = operand_node,
             });
         }
         case TokenType::KEYWORD_STRUCT: {

@@ -1,23 +1,32 @@
-package henri.presentation_fi
+package henri.presentation.presentation_fi
+
+import "./file"
 
 Template :: struct ->
-    content: Str
+    name: Str
 
 Slide :: struct ->
     title: Str
+    content: Str
     template: ^Template
 
 main :: proc() ->
-    single_title_template := Template{
-        content = "<h1>Bloom-ohjelmointikieli</h1>"
+    title_template := Template{
+        name = "title"
     }
 
     slides := [const]Slide{
         .{
             title = "Bloom-ohjelmointikieli",
-            template = %single_title_template,
+            content = "<html><body><h1>Bloom-ohjelmointikieli</h1></body></html>",
+            template = %title_template,
         }
     }
 
     for slide, i in slides ->
         print("Slide #{}: {}", i + 1, slide.title)
+
+    f := henri.presentation.file_open_for_write("presentation.html")
+    for slide, i in slides ->
+        henri.presentation.file_write_str(%f, slide.content)
+    henri.presentation.file_close(%f)

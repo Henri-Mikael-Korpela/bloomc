@@ -34,6 +34,7 @@ enum class ASTNodeType : uint8_t {
     FOR_LOOP,
     FOR_RANGE_LOOP,
     IF_ELSE,
+    IMPORT_DEF,
     MAKE_SLICE,
     MAKE_DYNAMIC_ARRAY,
     SCOPE,
@@ -190,6 +191,9 @@ struct ASTNode {
         struct {
             Str name;
         } package_def;
+        struct {
+            Str path;
+        } import_def;
         struct {
             bool value;
         } boolean_literal;
@@ -405,6 +409,7 @@ constexpr auto to_string(ASTNodeType type) -> Str {
         case ASTNodeType::MAKE_DYNAMIC_ARRAY:  return STR("make_dynamic_array");
         case ASTNodeType::SCOPE:               return STR("scope");
         case ASTNodeType::IF_ELSE:             return STR("if_else");
+        case ASTNodeType::IMPORT_DEF:          return STR("import_def");
         case ASTNodeType::IDENTIFIER:          return STR("identifier");
         case ASTNodeType::INTEGER_LITERAL:     return STR("integer_literal");
         case ASTNodeType::MEMBER_ACCESS:       return STR("member_access");

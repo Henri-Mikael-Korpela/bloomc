@@ -112,6 +112,131 @@ auto run(int argc, char* argv[]) -> int {
         return 1;
     }
 
+    // Process import statements
+    {
+        std::vector<std::string> import_paths;
+        for (size_t ni = 0; ni < ast_nodes.length; ni++) {
+            if (ast_nodes.data[ni].type != ASTNodeType::IMPORT_DEF) { continue; }
+            Str p = ast_nodes.data[ni].import_def.path;
+            std::string ps(p.data, p.length);
+            if (ps.size() < 4 || ps.substr(ps.size() - 4) != ".blm") {
+                ps += ".blm";
+            }
+            import_paths.push_back((input_file_path.parent_path() / ps).string());
+        }
+
+        if (!import_paths.empty()) {
+            // Collect imported nodes (parsed separately)
+            std::vector<Array<ASTNode>> imported;
+            for (auto const &imp : import_paths) {
+                if (!std::filesystem::exists(imp)) {
+                    eprint("Error: Imported file not found: %s\n", imp.c_str());
+                    delete_allocator(&main_allocator);
+                    return 1;
+                }
+                int imp_fd = open(imp.c_str(), O_RDONLY);
+                if (imp_fd == -1) {
+                    eprint("Error opening imported file\n");
+                    delete_allocator(&main_allocator);
+                    return 1;
+                }
+                struct stat imp_stat;
+                fstat(imp_fd, &imp_stat);
+                byte *imp_mem = static_cast<byte*>(mmap(nullptr, imp_stat.st_size, PROT_READ, MAP_PRIVATE, imp_fd, 0));
+                close(imp_fd);
+                if (imp_mem == MAP_FAILED) {
+                    eprint("Error mapping imported file\n");
+                    delete_allocator(&main_allocator);
+                    return 1;
+                }
+                auto imp_buf = allocate_array<char>(&main_allocator, imp_stat.st_size + 1);
+                memcpy(imp_buf.data, imp_mem, imp_stat.st_size);
+                imp_buf.data[imp_stat.st_size] = '\0';
+                munmap(imp_mem, imp_stat.st_size);
+
+                auto imp_content = cstr_to_str(imp_buf.data);
+                Array<Token> imp_tokens = tokenize(&imp_content, &main_allocator);
+                bool imp_had_errors = false;
+                auto imp_nodes = parse(&imp_tokens, &main_allocator, imp_content, cstr_to_str(imp.c_str()), &imp_had_errors);
+                if (imp_had_errors) {
+                    delete_allocator(&main_allocator);
+                    return 1;
+                }
+                imported.push_back(imp_nodes);
+            }
+
+            // Count top-level nodes across all files
+            size_t main_top = 0;
+            for (size_t i = 0; i < ast_nodes.length; i++) {
+                if (ast_nodes.data[i].parent == nullptr) main_top++;
+            }
+            size_t imp_top = 0;
+            for (auto const &inodes : imported) {
+                for (size_t i = 0; i < inodes.length; i++) {
+                    if (inodes.data[i].parent == nullptr &&
+                        inodes.data[i].type != ASTNodeType::PACKAGE_DEF &&
+                        inodes.data[i].type != ASTNodeType::IMPORT_DEF) {
+                        imp_top++;
+                    }
+                }
+            }
+
+            // Create combined array of top-level nodes only.
+            // Emit struct/enum defs before proc defs so C sees all types before use.
+            auto combined = allocate_array<ASTNode>(&main_allocator, main_top + imp_top);
+            size_t dest = 0;
+
+            auto copy_top_level = [&](ASTNode *orig, bool procs_only) {
+                ASTNodeType t = orig->type;
+                bool is_type_def = (t == ASTNodeType::STRUCT_DEF || t == ASTNodeType::ENUM_DEF);
+                bool is_proc = (t == ASTNodeType::PROC_DEF);
+                bool is_meta = (t == ASTNodeType::PACKAGE_DEF || t == ASTNodeType::IMPORT_DEF);
+                if (is_meta) { return; }
+                if (procs_only && !is_proc) { return; }
+                if (!procs_only && !is_type_def) { return; }
+                combined.data[dest] = *orig;
+                ASTNode *nd = &combined.data[dest];
+                if (is_proc) {
+                    for (size_t bi = 0; bi < nd->proc_def.body.length; bi++) {
+                        ASTNode *bn = &nd->proc_def.body.data[bi];
+                        if (bn->parent == orig) { bn->parent = nd; }
+                    }
+                }
+                dest++;
+            };
+
+            // Pass 1: struct/enum defs from main then imports (C needs types before procs)
+            for (size_t i = 0; i < ast_nodes.length; i++) {
+                ASTNode *orig = &ast_nodes.data[i];
+                if (orig->parent != nullptr) { continue; }
+                copy_top_level(orig, false);
+            }
+            for (auto const &inodes : imported) {
+                for (size_t i = 0; i < inodes.length; i++) {
+                    ASTNode *orig = &inodes.data[i];
+                    if (orig->parent != nullptr) { continue; }
+                    copy_top_level(orig, false);
+                }
+            }
+
+            // Pass 2: proc defs — imports first so C sees them before the main file calls them
+            for (auto const &inodes : imported) {
+                for (size_t i = 0; i < inodes.length; i++) {
+                    ASTNode *orig = &inodes.data[i];
+                    if (orig->parent != nullptr) { continue; }
+                    copy_top_level(orig, true);
+                }
+            }
+            for (size_t i = 0; i < ast_nodes.length; i++) {
+                ASTNode *orig = &ast_nodes.data[i];
+                if (orig->parent != nullptr) { continue; }
+                copy_top_level(orig, true);
+            }
+
+            ast_nodes = Array<ASTNode>(combined.data, dest);
+        }
+    }
+
     std::filesystem::create_directories("build/tmp");
     char temp_c_file[] = "build/tmp/transpiled_XXXXXX.c";
     int temp_fd = mkstemps(temp_c_file, 2);
@@ -393,6 +518,131 @@ auto build(int argc, char* argv[]) -> int {
     if (had_parse_errors) {
         delete_allocator(&main_allocator);
         return 1;
+    }
+
+    // Process import statements
+    {
+        std::vector<std::string> import_paths;
+        for (size_t ni = 0; ni < ast_nodes.length; ni++) {
+            if (ast_nodes.data[ni].type != ASTNodeType::IMPORT_DEF) { continue; }
+            Str p = ast_nodes.data[ni].import_def.path;
+            std::string ps(p.data, p.length);
+            if (ps.size() < 4 || ps.substr(ps.size() - 4) != ".blm") {
+                ps += ".blm";
+            }
+            import_paths.push_back((input_file_path.parent_path() / ps).string());
+        }
+
+        if (!import_paths.empty()) {
+            // Collect imported nodes (parsed separately)
+            std::vector<Array<ASTNode>> imported;
+            for (auto const &imp : import_paths) {
+                if (!std::filesystem::exists(imp)) {
+                    eprint("Error: Imported file not found: %s\n", imp.c_str());
+                    delete_allocator(&main_allocator);
+                    return 1;
+                }
+                int imp_fd = open(imp.c_str(), O_RDONLY);
+                if (imp_fd == -1) {
+                    eprint("Error opening imported file\n");
+                    delete_allocator(&main_allocator);
+                    return 1;
+                }
+                struct stat imp_stat;
+                fstat(imp_fd, &imp_stat);
+                byte *imp_mem = static_cast<byte*>(mmap(nullptr, imp_stat.st_size, PROT_READ, MAP_PRIVATE, imp_fd, 0));
+                close(imp_fd);
+                if (imp_mem == MAP_FAILED) {
+                    eprint("Error mapping imported file\n");
+                    delete_allocator(&main_allocator);
+                    return 1;
+                }
+                auto imp_buf = allocate_array<char>(&main_allocator, imp_stat.st_size + 1);
+                memcpy(imp_buf.data, imp_mem, imp_stat.st_size);
+                imp_buf.data[imp_stat.st_size] = '\0';
+                munmap(imp_mem, imp_stat.st_size);
+
+                auto imp_content = cstr_to_str(imp_buf.data);
+                Array<Token> imp_tokens = tokenize(&imp_content, &main_allocator);
+                bool imp_had_errors = false;
+                auto imp_nodes = parse(&imp_tokens, &main_allocator, imp_content, cstr_to_str(imp.c_str()), &imp_had_errors);
+                if (imp_had_errors) {
+                    delete_allocator(&main_allocator);
+                    return 1;
+                }
+                imported.push_back(imp_nodes);
+            }
+
+            // Count top-level nodes across all files
+            size_t main_top = 0;
+            for (size_t i = 0; i < ast_nodes.length; i++) {
+                if (ast_nodes.data[i].parent == nullptr) main_top++;
+            }
+            size_t imp_top = 0;
+            for (auto const &inodes : imported) {
+                for (size_t i = 0; i < inodes.length; i++) {
+                    if (inodes.data[i].parent == nullptr &&
+                        inodes.data[i].type != ASTNodeType::PACKAGE_DEF &&
+                        inodes.data[i].type != ASTNodeType::IMPORT_DEF) {
+                        imp_top++;
+                    }
+                }
+            }
+
+            // Create combined array of top-level nodes only.
+            // Emit struct/enum defs before proc defs so C sees all types before use.
+            auto combined = allocate_array<ASTNode>(&main_allocator, main_top + imp_top);
+            size_t dest = 0;
+
+            auto copy_top_level = [&](ASTNode *orig, bool procs_only) {
+                ASTNodeType t = orig->type;
+                bool is_type_def = (t == ASTNodeType::STRUCT_DEF || t == ASTNodeType::ENUM_DEF);
+                bool is_proc = (t == ASTNodeType::PROC_DEF);
+                bool is_meta = (t == ASTNodeType::PACKAGE_DEF || t == ASTNodeType::IMPORT_DEF);
+                if (is_meta) { return; }
+                if (procs_only && !is_proc) { return; }
+                if (!procs_only && !is_type_def) { return; }
+                combined.data[dest] = *orig;
+                ASTNode *nd = &combined.data[dest];
+                if (is_proc) {
+                    for (size_t bi = 0; bi < nd->proc_def.body.length; bi++) {
+                        ASTNode *bn = &nd->proc_def.body.data[bi];
+                        if (bn->parent == orig) { bn->parent = nd; }
+                    }
+                }
+                dest++;
+            };
+
+            // Pass 1: struct/enum defs from main then imports (C needs types before procs)
+            for (size_t i = 0; i < ast_nodes.length; i++) {
+                ASTNode *orig = &ast_nodes.data[i];
+                if (orig->parent != nullptr) { continue; }
+                copy_top_level(orig, false);
+            }
+            for (auto const &inodes : imported) {
+                for (size_t i = 0; i < inodes.length; i++) {
+                    ASTNode *orig = &inodes.data[i];
+                    if (orig->parent != nullptr) { continue; }
+                    copy_top_level(orig, false);
+                }
+            }
+
+            // Pass 2: proc defs — imports first so C sees them before the main file calls them
+            for (auto const &inodes : imported) {
+                for (size_t i = 0; i < inodes.length; i++) {
+                    ASTNode *orig = &inodes.data[i];
+                    if (orig->parent != nullptr) { continue; }
+                    copy_top_level(orig, true);
+                }
+            }
+            for (size_t i = 0; i < ast_nodes.length; i++) {
+                ASTNode *orig = &ast_nodes.data[i];
+                if (orig->parent != nullptr) { continue; }
+                copy_top_level(orig, true);
+            }
+
+            ast_nodes = Array<ASTNode>(combined.data, dest);
+        }
     }
 
     std::filesystem::create_directories("build/tmp");

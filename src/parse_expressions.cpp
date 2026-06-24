@@ -1091,6 +1091,69 @@ auto parse_expression(
                     tokens_iter->current_index < tokens_iter->elements.length &&
                     iter_peek(tokens_iter)->type == TokenType::DOT)
                 {
+                    // Scan ahead: qualified proc call (a.b.c(args)) or member access (a.b)?
+                    {
+                        size_t scan = tokens_iter->current_index; // at DOT
+                        bool is_qualified_call = false;
+                        while (scan < tokens_iter->elements.length &&
+                               tokens_iter->elements.data[scan].type == TokenType::DOT)
+                        {
+                            scan++;
+                            if (scan < tokens_iter->elements.length &&
+                                tokens_iter->elements.data[scan].type == TokenType::IDENTIFIER)
+                            {
+                                scan++;
+                            }
+                            else { break; }
+                        }
+                        if (scan < tokens_iter->elements.length &&
+                            tokens_iter->elements.data[scan].type == TokenType::PARENTHESIS_OPEN)
+                        {
+                            is_qualified_call = true;
+                        }
+                        if (is_qualified_call) {
+                            Str proc_name = {};
+                            while (tokens_iter->current_index < tokens_iter->elements.length &&
+                                   tokens_iter->elements.data[tokens_iter->current_index].type == TokenType::DOT)
+                            {
+                                (void)iter_next(tokens_iter); // consume DOT
+                                auto *id_tok = iter_next(tokens_iter); // consume IDENTIFIER
+                                proc_name = id_tok->identifier.content;
+                            }
+                            int paren_depth = 0;
+                            int64_t close_paren_index = iter_get_index_at_if<Token>(
+                                tokens_iter, [&paren_depth](auto *t) {
+                                    if (t->type == TokenType::PARENTHESIS_OPEN)  { paren_depth++; return false; }
+                                    if (t->type == TokenType::PARENTHESIS_CLOSE) {
+                                        if (paren_depth == 1) { return true; }
+                                        paren_depth--;
+                                    }
+                                    return false;
+                                }
+                            );
+                            auto arg_tokens_iter = iter_slice_by_offset(
+                                tokens_iter,
+                                tokens_iter->current_index + 1,
+                                close_paren_index
+                            );
+                            ASTNode temp_node = {
+                                .type = ASTNodeType::PROC_CALL,
+                                .parent = nullptr,
+                                .proc_call = { .caller_identifier = proc_name },
+                            };
+                            if (!parse_proc_call_arguments(&arg_tokens_iter, &temp_node, nodes_block_iter, context, operands_iter, errors, token->position)) {
+                                return err<BinaryOperand, ParseError>(PARSE_ERROR_CREATE(UNEXPECTED_TOKEN, token));
+                            }
+                            tokens_iter->current_index = close_paren_index + 1;
+                            return ok<BinaryOperand, ParseError>(BinaryOperand {
+                                .type = BinaryOperandType::PROC_CALL,
+                                .proc_call = {
+                                    .caller_identifier = temp_node.proc_call.caller_identifier,
+                                    .arguments = temp_node.proc_call.arguments,
+                                },
+                            });
+                        }
+                    }
                     (void)iter_next(tokens_iter); // consume .
                     auto *field_token = iter_next(tokens_iter);
                     if (field_token->type != TokenType::IDENTIFIER) {

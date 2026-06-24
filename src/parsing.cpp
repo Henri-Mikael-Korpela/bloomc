@@ -200,6 +200,30 @@ auto parse(Array<Token> *tokens, ArenaAllocator *allocator, Str source_content, 
             continue;
         }
 
+        if (current_token->type == TokenType::KEYWORD_IMPORT) {
+            auto *path_tok = iter_next(&tokens_iter);
+            if (path_tok->type != TokenType::STRING_LITERAL) {
+                append(&errors, ParseError {
+                    .code = ParseErrorCode::UNEXPECTED_TOKEN,
+                    .position = path_tok->position,
+                    .src_code_line = __LINE__,
+                    .token_type = path_tok->type,
+                });
+                goto after_parsing;
+            }
+            if (tokens_iter.current_index < tokens_iter.elements.length &&
+                iter_peek(&tokens_iter)->type == TokenType::NEWLINE)
+            {
+                (void)iter_next(&tokens_iter);
+            }
+            (void)iter_append(&nodes_block_iter, ASTNode {
+                .type = ASTNodeType::IMPORT_DEF,
+                .parent = nullptr,
+                .import_def = { .path = path_tok->string_literal.content },
+            });
+            continue;
+        }
+
         // Parse top-level nodes
         parse_top_level_node:
             if (current_token->type == TokenType::IDENTIFIER) {

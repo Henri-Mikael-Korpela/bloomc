@@ -3646,6 +3646,8 @@ auto transpile_to_c(Array<ASTNode> *ast_nodes, ArenaAllocator *allocator) -> Str
             }
             case ASTNodeType::PACKAGE_DEF:
                 break;
+            case ASTNodeType::IMPORT_DEF:
+                break;
             default:
                 break;
         }

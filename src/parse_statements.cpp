@@ -352,6 +352,74 @@ auto parse_statement(
                 break;
             }
             case TokenType::DOT: {
+                // Scan ahead: qualified proc call (a.b.c(args)) or member assign (a.b = val)?
+                {
+                    size_t scan = tokens_iter->current_index; // at DOT
+                    bool is_qualified_call = false;
+                    while (scan < tokens_iter->elements.length &&
+                           tokens_iter->elements.data[scan].type == TokenType::DOT)
+                    {
+                        scan++;
+                        if (scan < tokens_iter->elements.length &&
+                            tokens_iter->elements.data[scan].type == TokenType::IDENTIFIER)
+                        {
+                            scan++;
+                        }
+                        else { break; }
+                    }
+                    if (scan < tokens_iter->elements.length &&
+                        tokens_iter->elements.data[scan].type == TokenType::PARENTHESIS_OPEN)
+                    {
+                        is_qualified_call = true;
+                    }
+                    if (is_qualified_call) {
+                        Str proc_name = {};
+                        while (tokens_iter->current_index < tokens_iter->elements.length &&
+                               tokens_iter->elements.data[tokens_iter->current_index].type == TokenType::DOT)
+                        {
+                            (void)iter_next(tokens_iter); // consume DOT
+                            auto *id_tok = iter_next(tokens_iter); // consume IDENTIFIER
+                            proc_name = id_tok->identifier.content;
+                        }
+                        int paren_depth = 0;
+                        int64_t proc_call_end_token_index = iter_get_index_at_if<Token>(
+                            tokens_iter, [&paren_depth](auto *token) {
+                                if (token->type == TokenType::PARENTHESIS_OPEN) {
+                                    paren_depth++;
+                                    return false;
+                                }
+                                if (token->type == TokenType::PARENTHESIS_CLOSE) {
+                                    if (paren_depth == 1) { return true; }
+                                    paren_depth--;
+                                }
+                                return false;
+                            }
+                        );
+                        auto proc_call_arg_tokens_iter = iter_slice_by_offset(
+                            tokens_iter,
+                            tokens_iter->current_index + 1,
+                            proc_call_end_token_index
+                        );
+                        auto *proc_call_node = iter_append(nodes_block_iter, ASTNode {
+                            .type = ASTNodeType::PROC_CALL,
+                            .parent = parent_node,
+                            .proc_call = { .caller_identifier = proc_name },
+                        });
+                        if (!parse_proc_call_arguments(&proc_call_arg_tokens_iter, proc_call_node, nodes_block_iter, context, operands_iter, errors, next_token->position)) {
+                            if (errors->length == 0) {
+                                append(errors, PARSE_ERROR_CREATE(UNEXPECTED_TOKEN, iter_current(tokens_iter)));
+                            }
+                            return false;
+                        }
+                        tokens_iter->current_index = proc_call_end_token_index + 1;
+                        assert(
+                            iter_current(tokens_iter)->type == TokenType::NEWLINE ||
+                            iter_current(tokens_iter)->type == TokenType::END &&
+                            "Expected newline or end after qualified proc call");
+                        (void)iter_next(tokens_iter);
+                        break;
+                    }
+                }
                 (void)iter_next(tokens_iter); // consume .
                 auto *field_token = expect_token_or_append_error(tokens_iter, TokenType::IDENTIFIER, errors);
                 if (field_token == nullptr) { return false; }
@@ -1292,8 +1360,23 @@ auto parse_statement(
         (void)iter_next(tokens_iter);
         break;
     case TokenType::KEYWORD_DEFER: {
-        auto *proc_name_token = expect_token_or_append_error(tokens_iter, TokenType::IDENTIFIER, errors);
-        if (proc_name_token == nullptr) { return false; }
+        auto *first_ident_token = expect_token_or_append_error(tokens_iter, TokenType::IDENTIFIER, errors);
+        if (first_ident_token == nullptr) { return false; }
+
+        // Consume qualifier dots: a.b.c( → use last identifier as proc name
+        Token *proc_name_token = first_ident_token;
+        while (tokens_iter->current_index < tokens_iter->elements.length &&
+               tokens_iter->elements.data[tokens_iter->current_index].type == TokenType::DOT)
+        {
+            (void)iter_next(tokens_iter); // consume DOT
+            auto *next_ident = iter_next(tokens_iter);
+            if (next_ident == nullptr || next_ident->type != TokenType::IDENTIFIER) {
+                Token *err_tok = (next_ident != nullptr) ? next_ident : first_ident_token;
+                append(errors, PARSE_ERROR_CREATE(UNEXPECTED_TOKEN, err_tok));
+                return false;
+            }
+            proc_name_token = next_ident;
+        }
 
         int paren_depth = 0;
         int64_t proc_call_end_token_index = iter_get_index_at_if<Token>(

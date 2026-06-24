@@ -31,6 +31,18 @@ auto parse_proc_call_arguments(
     PendingNestedCall pending_nested_calls[MAX_PENDING_NESTED_CALLS];
     size_t pending_nested_call_count = 0;
 
+    // ADDRESS_OF args need an operand node that must land AFTER the args slice.
+    // Defer allocation until all args are processed.
+    struct DeferredAddressOf {
+        ASTNode *address_of_node;
+        Str identifier_name;
+        bool is_member;   // true → member access, false → simple identifier
+        Str field_name;
+    };
+    constexpr size_t MAX_DEFERRED_ADDRESS_OF = 16;
+    DeferredAddressOf deferred_addr_of[MAX_DEFERRED_ADDRESS_OF];
+    size_t deferred_addr_of_count = 0;
+
     size_t const proc_call_nodes_begin_index = nodes_block_iter->current_index;
     size_t arg_count = 0;
 
@@ -910,7 +922,8 @@ auto parse_proc_call_arguments(
                     });
                     return false;
                 }
-                ASTNode *operand_node;
+                bool is_member = false;
+                Str field_name = {};
                 if (tokens_iter->current_index < tokens_iter->elements.length &&
                     iter_peek(tokens_iter)->type == TokenType::DOT)
                 {
@@ -925,27 +938,24 @@ auto parse_proc_call_arguments(
                         });
                         return false;
                     }
-                    operand_node = iter_append(nodes_block_iter, ASTNode {
-                        .type = ASTNodeType::MEMBER_ACCESS,
-                        .parent = proc_call_node,
-                        .member_access = {
-                            .object_name = primary_tok->identifier.content,
-                            .field_name = field_tok->identifier.content,
-                        },
-                    });
+                    is_member = true;
+                    field_name = field_tok->identifier.content;
                 }
-                else {
-                    operand_node = iter_append(nodes_block_iter, ASTNode {
-                        .type = ASTNodeType::IDENTIFIER,
-                        .parent = proc_call_node,
-                        .identifier = primary_tok->identifier.content,
-                    });
-                }
-                (void)iter_append(nodes_block_iter, ASTNode {
+                // Append ADDRESS_OF node first (claims the arg slot), defer operand allocation
+                // so that subsequent args land at the correct index in the slice.
+                auto *addr_node = iter_append(nodes_block_iter, ASTNode {
                     .type = ASTNodeType::ADDRESS_OF,
                     .parent = proc_call_node,
-                    .unary_operand = operand_node,
+                    .unary_operand = nullptr, // filled after all args are processed
                 });
+                if (deferred_addr_of_count < MAX_DEFERRED_ADDRESS_OF) {
+                    deferred_addr_of[deferred_addr_of_count++] = {
+                        addr_node,
+                        primary_tok->identifier.content,
+                        is_member,
+                        field_name,
+                    };
+                }
                 if (!check_arg_type(next_token)) { return false; }
                 arg_count++;
                 break;
@@ -1126,6 +1136,31 @@ auto parse_proc_call_arguments(
         nodes_block_iter->elements.data + proc_call_nodes_begin_index,
         arg_count
     );
+
+    // Now allocate deferred ADDRESS_OF operand nodes (after the args slice so they
+    // don't shift arg indices).
+    for (size_t d = 0; d < deferred_addr_of_count; d++) {
+        auto *da = &deferred_addr_of[d];
+        ASTNode *operand_node;
+        if (da->is_member) {
+            operand_node = iter_append(nodes_block_iter, ASTNode {
+                .type = ASTNodeType::MEMBER_ACCESS,
+                .parent = proc_call_node,
+                .member_access = {
+                    .object_name = da->identifier_name,
+                    .field_name = da->field_name,
+                },
+            });
+        }
+        else {
+            operand_node = iter_append(nodes_block_iter, ASTNode {
+                .type = ASTNodeType::IDENTIFIER,
+                .parent = proc_call_node,
+                .identifier = da->identifier_name,
+            });
+        }
+        da->address_of_node->unary_operand = operand_node;
+    }
 
     return true;
 }
